@@ -158,6 +158,10 @@ struct HomeView: View {
                     .font(.subheadline.weight(.semibold))
                     .monospacedDigit()
                 }
+                if let summary = RainSummary.text(slots: snapshot.upcomingRain(now: Date()), now: Date()) {
+                    Label(summary, systemImage: "umbrella")
+                        .font(.subheadline.weight(.semibold))
+                }
             } else {
                 Text(env.weather.errorMessage ?? "未取得です").foregroundStyle(.secondary)
             }

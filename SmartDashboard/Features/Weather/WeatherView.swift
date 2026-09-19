@@ -1,3 +1,4 @@
+import Charts
 import CoreLocation
 import SwiftUI
 
@@ -16,8 +17,15 @@ struct WeatherView: View {
                     Section(snapshot.placeName) {
                         currentView(snapshot.current)
                     }
-                    if let latitude = snapshot.latitude, let longitude = snapshot.longitude {
-                        let coordinate = CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+                    Section("今後2時間の雨") {
+                        rainView(snapshot)
+                        NavigationLink {
+                            RadarView(center: Self.coordinate(of: snapshot))
+                        } label: {
+                            Label("雨雲レーダー", systemImage: "cloud.rain")
+                        }
+                    }
+                    if let coordinate = Self.coordinate(of: snapshot) {
                         Section {
                             MapContainerView(center: coordinate, spanMeters: 4000, pin: coordinate, isInteractive: false)
                                 .frame(height: 170)
@@ -28,7 +36,7 @@ struct WeatherView: View {
                     Section("今後24時間") {
                         hourlyView(snapshot)
                     }
-                    Section("3日間") {
+                    Section("7日間") {
                         ForEach(snapshot.daily) { day in
                             dailyRow(day, offset: snapshot.utcOffsetSeconds)
                         }
@@ -144,7 +152,56 @@ struct WeatherView: View {
         }
     }
 
+    static func coordinate(of snapshot: WeatherSnapshot) -> CLLocationCoordinate2D? {
+        guard let latitude = snapshot.latitude, let longitude = snapshot.longitude else { return nil }
+        return CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+    }
+
+    /// 15分刻みの降水量の棒グラフ
+    @ViewBuilder
+    private func rainView(_ snapshot: WeatherSnapshot) -> some View {
+        let slots = snapshot.upcomingRain(now: Date())
+        if slots.isEmpty {
+            Text("15分ごとの予報は未取得です").foregroundStyle(.secondary)
+        } else {
+            VStack(alignment: .leading, spacing: 6) {
+                if let summary = RainSummary.text(slots: slots, now: Date()) {
+                    Text(summary).font(.headline)
+                }
+                Chart(slots) { slot in
+                    BarMark(
+                        x: .value("時刻", Self.minuteText(slot.time, offset: snapshot.utcOffsetSeconds)),
+                        y: .value("降水量", slot.precipitation)
+                    )
+                    .foregroundStyle(.blue)
+                }
+                .chartYScale(domain: 0...max(1.0, (slots.map(\.precipitation).max() ?? 0) * 1.2))
+                .chartYAxisLabel("mm / 15分")
+                .frame(height: 120)
+            }
+            .padding(.vertical, 4)
+        }
+    }
+
     private func dailyRow(_ day: WeatherSnapshot.Day, offset: Int) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            dailyMainRow(day, offset: offset)
+            Text(Self.sunText(day, offset: offset))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+        }
+    }
+
+    static func sunText(_ day: WeatherSnapshot.Day, offset: Int) -> String {
+        var parts: [String] = []
+        if let sunrise = day.sunrise { parts.append("日の出 \(minuteText(sunrise, offset: offset))") }
+        if let sunset = day.sunset { parts.append("日の入 \(minuteText(sunset, offset: offset))") }
+        if let uv = day.uvIndexMax { parts.append(String(format: "UV %.1f", uv)) }
+        return parts.joined(separator: "・")
+    }
+
+    private func dailyMainRow(_ day: WeatherSnapshot.Day, offset: Int) -> some View {
         HStack {
             Text(Self.dayText(day.date, offset: offset))
                 .frame(width: 84, alignment: .leading)
@@ -180,6 +237,10 @@ struct WeatherView: View {
 
     static func hourText(_ date: Date, offset: Int) -> String {
         formatter("H時", offset: offset).string(from: date)
+    }
+
+    static func minuteText(_ date: Date, offset: Int) -> String {
+        formatter("H:mm", offset: offset).string(from: date)
     }
 
     static func dayText(_ date: Date, offset: Int) -> String {

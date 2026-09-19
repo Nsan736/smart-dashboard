@@ -27,12 +27,22 @@ struct OpenMeteoResponse: Decodable {
         let temperature_2m_min: [Double?]
         let precipitation_probability_max: [Double?]
         let weather_code: [Int?]
+        let sunrise: [TimeInterval?]?
+        let sunset: [TimeInterval?]?
+        let uv_index_max: [Double?]?
+    }
+
+    /// 15分ごとの降水量(mm)
+    struct Minutely15: Decodable {
+        let time: [TimeInterval]
+        let precipitation: [Double?]
     }
 
     let latitude: Double
     let longitude: Double
     let utc_offset_seconds: Int
     let current: Current
+    let minutely_15: Minutely15?
     let hourly: Hourly
     let daily: Daily
 }
@@ -64,7 +74,17 @@ struct WeatherSnapshot: Codable, Equatable {
         var temperatureMin: Double?
         var precipitationProbability: Double?
         var weatherCode: Int?
+        var sunrise: Date?
+        var sunset: Date?
+        var uvIndexMax: Double?
         var id: Date { date }
+    }
+
+    /// 15分ごとの降水量
+    struct RainSlot: Codable, Equatable, Identifiable {
+        var time: Date
+        var precipitation: Double
+        var id: Date { time }
     }
 
     /// "current" または登録地点のID。地点を切り替えたらキャッシュを古いとみなす。
@@ -77,6 +97,8 @@ struct WeatherSnapshot: Codable, Equatable {
     var current: Current
     var hourly: [Hour]
     var daily: [Day]
+    /// 今後2時間の15分ごとの降水量。古いキャッシュにはない。
+    var rain: [RainSlot]?
 
     init(response r: OpenMeteoResponse, sourceID: String, placeName: String, latitude: Double? = nil, longitude: Double? = nil) {
         self.sourceID = sourceID
@@ -108,9 +130,28 @@ struct WeatherSnapshot: Codable, Equatable {
                 temperatureMax: r.daily.temperature_2m_max[safe: i] ?? nil,
                 temperatureMin: r.daily.temperature_2m_min[safe: i] ?? nil,
                 precipitationProbability: r.daily.precipitation_probability_max[safe: i] ?? nil,
-                weatherCode: r.daily.weather_code[safe: i] ?? nil
+                weatherCode: r.daily.weather_code[safe: i] ?? nil,
+                sunrise: Self.value(r.daily.sunrise, i).map { Date(timeIntervalSince1970: $0) },
+                sunset: Self.value(r.daily.sunset, i).map { Date(timeIntervalSince1970: $0) },
+                uvIndexMax: Self.value(r.daily.uv_index_max, i)
             )
         }
+        rain = r.minutely_15.map { minutely in
+            minutely.time.enumerated().map { i, t in
+                RainSlot(time: Date(timeIntervalSince1970: t), precipitation: (minutely.precipitation[safe: i] ?? nil) ?? 0)
+            }
+        }
+    }
+
+    /// 省略されることのある配列から、欠損も考慮して値を取り出す
+    private static func value<T>(_ array: [T?]?, _ index: Int) -> T? {
+        guard let array, array.indices.contains(index) else { return nil }
+        return array[index]
+    }
+
+    /// 現在時刻以降の15分値(最大2時間分)
+    func upcomingRain(now: Date) -> [RainSlot] {
+        Array((rain ?? []).filter { $0.time.addingTimeInterval(15 * 60) > now }.prefix(8))
     }
 
     /// 現在時刻以降の予報(キャッシュが古くなっても過去の時間帯を出さない)
@@ -122,6 +163,29 @@ struct WeatherSnapshot: Codable, Equatable {
 extension Array {
     subscript(safe index: Int) -> Element? {
         indices.contains(index) ? self[index] : nil
+    }
+}
+
+/// 直近の雨の要約(ホーム用)
+enum RainSummary {
+    /// 雨とみなす15分あたりの降水量(mm)
+    static let threshold = 0.1
+
+    static func text(slots: [WeatherSnapshot.RainSlot], now: Date) -> String? {
+        guard !slots.isEmpty else { return nil }
+        let rainy = slots.map { $0.precipitation >= threshold }
+        guard let first = rainy.firstIndex(of: true) else { return "2時間は雨の予報なし" }
+        if first == 0 {
+            guard let stop = rainy.firstIndex(of: false) else { return "2時間は雨が続く予報" }
+            let minutes = max(0, Int(slots[stop].time.timeIntervalSince(now) / 60))
+            return "雨の予報(あと\(roundToFive(minutes))分ほどでやむ見込み)"
+        }
+        let minutes = max(0, Int(slots[first].time.timeIntervalSince(now) / 60))
+        return "\(roundToFive(minutes))分後から雨の予報"
+    }
+
+    private static func roundToFive(_ minutes: Int) -> Int {
+        max(5, Int((Double(minutes) / 5).rounded()) * 5)
     }
 }
 
