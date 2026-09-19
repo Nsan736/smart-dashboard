@@ -52,7 +52,6 @@ final class TileDownloader {
 
     /// サーバーに負荷をかけないよう同時接続は2本まで
     static let maxConcurrent = 2
-    static let tileURLTemplate = "https://cyberjapandata.gsi.go.jp/xyz/pale/%d/%d/%d.png"
 
     init(store: TileStore, http: HTTPClient, settings: AppSettings, network: NetworkMonitor) {
         self.store = store
@@ -65,8 +64,9 @@ final class TileDownloader {
     var isOverLimit: Bool { storedBytes >= storageLimitBytes }
     var canDownloadNow: Bool { isForeground && MapMode.canDownloadTiles(network: network.status) }
 
-    static func tileURL(_ tile: TileCoord) -> URL {
-        URL(string: String(format: tileURLTemplate, tile.z, tile.x, tile.y))!
+    /// 地理院タイル(淡色地図)
+    nonisolated static func tileURL(_ tile: TileCoord) -> URL {
+        URL(string: "https://cyberjapandata.gsi.go.jp/xyz/pale/\(tile.z)/\(tile.x)/\(tile.y).png")!
     }
 
     // MARK: - 状態の変化
