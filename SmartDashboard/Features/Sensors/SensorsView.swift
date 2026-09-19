@@ -42,6 +42,7 @@ struct SensorsView: View {
         motion.start()
         device.start()
         if noiseEnabled { noise.start() }
+        ScreenAwake.set("sensors", env.settings.sensorsKeepAwake)
     }
 
     private func stopAll() {
@@ -49,45 +50,35 @@ struct SensorsView: View {
         motion.stop()
         device.stop()
         noise.stop()
+        ScreenAwake.set("sensors", false)
     }
 
     // MARK: - 速度
 
     private var speedSection: some View {
-        Section("速度") {
+        Section {
             if let text = location.availability.unavailableText {
                 unavailable(text)
             } else {
-                BigValue(value: location.speed.map { String(format: "%.1f", $0 * 3.6) } ?? "-", unit: "km/h", size: 64)
+                SpeedReadout(location: location, size: 64)
                 HStack {
-                    smallMetric("最高", String(format: "%.1f km/h", location.trip.maxSpeed * 3.6))
-                    smallMetric("平均", String(format: "%.1f km/h", location.trip.averageSpeed * 3.6))
-                    smallMetric("距離", String(format: "%.2f km", location.trip.distance / 1000))
+                    smallMetric("最高", String(format: "%.1f km/h", location.estimator.maxSpeed * 3.6))
+                    smallMetric("平均", String(format: "%.1f km/h", location.estimator.averageSpeed * 3.6))
+                    smallMetric("距離", String(format: "%.2f km", location.estimator.distance / 1000))
                 }
                 HStack {
-                    if location.trip.isRecording {
-                        Button("停止") { location.stopTrip() }
-                            .buttonStyle(.borderedProminent)
-                            .tint(.red)
-                    } else {
-                        Button("開始") { location.startTrip() }
-                            .buttonStyle(.borderedProminent)
-                    }
-                    Button("リセット") { location.resetTrip() }
-                        .buttonStyle(.bordered)
-                    Spacer()
-                    if let accuracy = location.horizontalAccuracy, accuracy >= 0 {
-                        Text(String(format: "精度 ±%.0f m", accuracy))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                if location.trip.isRecording {
-                    Text("記録はこの画面を離れると止まります")
+                    Text("この画面を開いてからの値")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("リセット") { location.resetStatistics() }
+                        .buttonStyle(.bordered)
                 }
             }
+        } header: {
+            Text("速度")
+        } footer: {
+            Text("高精度のGPSで測ります。屋内や地下では測れません。画面を離れると測位を止めます。")
         }
     }
 
@@ -168,6 +159,13 @@ struct SensorsView: View {
                             .monospacedDigit()
                     }
                 }
+                HStack {
+                    smallMetric("ペース", PedometerSnapshot.paceText(secondsPerMeter: motion.currentPace) ?? "-")
+                    smallMetric("歩調", PedometerSnapshot.cadenceText(stepsPerSecond: motion.currentCadence) ?? "-")
+                }
+                Text("歩数は数秒おきにまとめて更新されるため、数秒の遅れがあります。ペースと歩調は歩いている間だけ表示されます。")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -239,6 +237,57 @@ struct SensorsView: View {
                 .minimumScaleFactor(0.6)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// リアルタイムの速度。GPSの速度が無効なときは位置の差分から求め、どちらも使えなければ「測位中…」と表示する。
+struct SpeedReadout: View {
+    let location: LocationSensors
+    var size: CGFloat = 56
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if location.isReducedAccuracy {
+                Label("位置の精度が「おおよそ」のため、速度を測れません", systemImage: "location.slash")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("設定 → プライバシーとセキュリティ → 位置情報サービス → LiveContainer →「正確な位置情報」をオンにしてください。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    if let speed = location.currentSpeed(now: context.date) {
+                        BigValue(value: String(format: "%.1f", speed * 3.6), unit: "km/h", size: size)
+                    } else {
+                        Text("測位中…")
+                            .font(.system(size: size * 0.55, weight: .bold, design: .rounded))
+                            .foregroundStyle(.secondary)
+                    }
+                    Text(Self.statusText(location: location, now: context.date))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    /// 「GPS: 水平精度 ±5m・最後の測位から2秒・速度はGPSの値」
+    static func statusText(location: LocationSensors, now: Date) -> String {
+        guard let lastUpdate = location.lastUpdate, let accuracy = location.horizontalAccuracy else {
+            return "GPS: まだ測位できていません"
+        }
+        var parts = [accuracy >= 0 ? String(format: "水平精度 ±%.0fm", accuracy) : "水平精度 不明",
+                     "最後の測位から\(max(0, Int(now.timeIntervalSince(lastUpdate))))秒"]
+        if accuracy < 0 || accuracy > SpeedEstimator.maxHorizontalAccuracy {
+            parts.append("精度が悪いため速度の計算から除外中")
+        } else if let source = location.estimator.source {
+            parts.append(source == .reported ? "速度はGPSの値" : "速度は位置の差分から計算")
+        }
+        return "GPS: " + parts.joined(separator: "・")
     }
 }
 

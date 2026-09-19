@@ -91,6 +91,15 @@ final class AppSettings {
         timetableOverrideDayKey = type == nil ? nil : DayTypeResolver.dayKey(now)
     }
 
+    /// センサー画面の表示中は画面を消さない(初期値はオン)
+    var sensorsKeepAwake: Bool {
+        didSet { defaults.set(sensorsKeepAwake, forKey: Keys.sensorsKeepAwake) }
+    }
+    /// ホームで速度を表示する(高精度のGPSで電池を多く使う。初期値はオン)
+    var homeShowsSpeed: Bool {
+        didSet { defaults.set(homeShowsSpeed, forKey: Keys.homeShowsSpeed) }
+    }
+
     static let defaultExchangeCodes = ["USD", "EUR", "GBP", "CNY", "KRW"]
 
     init(defaults: UserDefaults = .standard) {
@@ -108,6 +117,8 @@ final class AppSettings {
         tileAreas = Self.loadJSON([TileArea].self, from: defaults, forKey: Keys.tileAreas) ?? []
         didCreateDefaultTileArea = defaults.bool(forKey: Keys.didCreateDefaultTileArea)
         cellularLimitEnabled = defaults.bool(forKey: Keys.cellularLimitEnabled)
+        sensorsKeepAwake = defaults.object(forKey: Keys.sensorsKeepAwake) as? Bool ?? true
+        homeShowsSpeed = defaults.object(forKey: Keys.homeShowsSpeed) as? Bool ?? true
         yearEndHolidayTimetable = defaults.object(forKey: Keys.yearEndHolidayTimetable) as? Bool ?? true
         timetableOverrideDayKey = defaults.string(forKey: Keys.timetableOverrideDayKey)
         timetableOverrideType = defaults.string(forKey: Keys.timetableOverrideType).flatMap(DayType.init(rawValue:))
@@ -145,6 +156,8 @@ final class AppSettings {
         static let tileAreas = "map.tileAreas"
         static let didCreateDefaultTileArea = "map.didCreateDefaultTileArea"
         static let cellularLimitEnabled = "usage.cellularLimitEnabled"
+        static let sensorsKeepAwake = "sensors.keepAwake"
+        static let homeShowsSpeed = "home.showsSpeed"
         static let yearEndHolidayTimetable = "train.yearEndHolidayTimetable"
         static let timetableOverrideDayKey = "train.timetableOverrideDayKey"
         static let timetableOverrideType = "train.timetableOverrideType"

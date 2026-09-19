@@ -5,6 +5,7 @@ struct HomeView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.scenePhase) private var scenePhase
     @State private var motion = MotionSensors()
+    @State private var location = LocationSensors()
     @State private var device = DeviceStatus()
     @State private var isVisible = false
 
@@ -40,16 +41,22 @@ struct HomeView: View {
             guard isVisible else { return }
             if phase == .active { startSensors() } else { stopSensors() }
         }
+        .onChange(of: env.settings.homeShowsSpeed) { _, _ in
+            if isVisible { startSensors() }
+        }
     }
 
     private func startSensors() {
         motion.startLight()
         device.start()
+        // 速度は高精度のGPSを使うので、設定でオフにできる。方位は使わない。
+        if env.settings.homeShowsSpeed { location.start(includesHeading: false) } else { location.stop() }
     }
 
     private func stopSensors() {
         motion.stop()
         device.stop()
+        location.stop()
     }
 
     // MARK: - タイマー
@@ -201,6 +208,13 @@ struct HomeView: View {
 
     private var sensorCard: some View {
         HomeCard(title: "センサー", symbol: "gauge.with.dots.needle.33percent") {
+            if env.settings.homeShowsSpeed {
+                if let text = location.availability.unavailableText {
+                    sensorValue("速度", text)
+                } else {
+                    SpeedReadout(location: location, size: 44)
+                }
+            }
             Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 8) {
                 GridRow {
                     sensorValue("画面の明るさ", String(format: "%.0f%%", device.brightness * 100))

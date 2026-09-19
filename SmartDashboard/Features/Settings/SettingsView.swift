@@ -60,6 +60,15 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    Toggle("センサー画面の表示中は画面を消さない", isOn: $settings.sensorsKeepAwake)
+                    Toggle("ホームで速度を表示する", isOn: $settings.homeShowsSpeed)
+                } header: {
+                    Text("センサー")
+                } footer: {
+                    Text("速度は高精度のGPSを使うため、表示中は電池を多く使います。画面を離れると測位を止めます。ホームは開いている時間が長くなりやすいので、気になる場合はオフにしてください。")
+                }
+
+                Section {
                     Toggle("年末年始(12/30〜1/3)は休日ダイヤ", isOn: $settings.yearEndHolidayTimetable)
                 } header: {
                     Text("電車のダイヤ")
