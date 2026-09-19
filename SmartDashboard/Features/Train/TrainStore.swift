@@ -351,7 +351,7 @@ final class TrainStore {
         return Dictionary(list.map { ($0.sameAs, $0.name) }, uniquingKeysWith: { a, _ in a })
     }
 
-    private func trainTypeNames(of op: TrainOperator) async -> [String: String] {
+    func trainTypeNames(of op: TrainOperator) async -> [String: String] {
         let key = "trainTypes.\(op.id)"
         if let cached = await cache.load([ODPTTrainType].self, key: key),
            Date().timeIntervalSince(cached.fetchedAt) < DataKind.railwayCatalog.minimumInterval {
@@ -395,7 +395,7 @@ final class TrainStore {
 
     /// 行先の駅名。キャッシュ済みの路線一覧で引けるものは通信しない。
     /// 他社線の駅は公開エンドポイントでは引けないことがあり、その場合はIDの末尾を表示する。
-    private func resolveStationNames(_ ids: [String], op: TrainOperator) async -> [String: String] {
+    func resolveStationNames(_ ids: [String], op: TrainOperator) async -> [String: String] {
         var names: [String: String] = [:]
         if let railways = await cache.load([ODPTRailway].self, key: "railways2.\(op.id)")?.value {
             for order in railways.flatMap({ $0.stationOrder ?? [] }) {

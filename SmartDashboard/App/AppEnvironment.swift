@@ -42,6 +42,7 @@ final class AppEnvironment {
     let tiles: TileDownloader
     let radar: RadarStore
     let rain: RainNowcastStore
+    let live: TrainLiveStore
     @ObservationIgnored let cache: DiskCache
     @ObservationIgnored let http: HTTPClient
     @ObservationIgnored let keychain: KeychainStore
@@ -76,7 +77,7 @@ final class AppEnvironment {
         self.http = http
         let keychain = KeychainStore()
         self.keychain = keychain
-        trains = TrainStore(
+        let trainStore = TrainStore(
             api: ODPTClient(http: http, tokenProvider: { keychain.string(for: KeychainAccount.odptToken) }),
             cache: cache,
             timetableStorage: DiskCache(directory: support.appendingPathComponent("timetables", isDirectory: true)),
@@ -84,9 +85,15 @@ final class AppEnvironment {
             settings: settings, network: network,
             hasToken: { !(keychain.string(for: KeychainAccount.odptToken) ?? "").isEmpty },
             onFetched: { fetchLog.mark($0, at: $1) })
+        trains = trainStore
         timers = TimerStore()
         let location = LocationProvider()
         self.location = location
+        live = TrainLiveStore(
+            api: ODPTClient(http: http, tokenProvider: { keychain.string(for: KeychainAccount.odptToken) }),
+            storage: DiskCache(directory: support.appendingPathComponent("train-schedules", isDirectory: true)),
+            settings: settings, network: network, trains: trainStore, location: location,
+            onFetched: { fetchLog.mark(.trainDelay, at: $0) })
         let tiles = TileDownloader(store: TileStore(root: TileStore.defaultRoot()), http: http, settings: settings, network: network)
         self.tiles = tiles
         let radarLoader = RadarTileLoader(http: http, root: RadarTileLoader.defaultRoot())
