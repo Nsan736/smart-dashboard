@@ -11,7 +11,11 @@ struct SmartDashboardApp: App {
                 .environment(env)
                 .task { env.network.start() }
                 .onChange(of: scenePhase, initial: true) { _, phase in
-                    guard phase == .active else { return }
+                    guard phase == .active else {
+                        // フォアグラウンドを離れたら地図の保存を止める
+                        env.tiles.evaluate(isForeground: false)
+                        return
+                    }
                     Task { await env.refreshStaleData() }
                 }
                 .onChange(of: env.network.status) { _, _ in

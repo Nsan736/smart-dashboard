@@ -30,6 +30,7 @@ struct SettingsView: View {
 
                 Section("登録内容") {
                     NavigationLink("天気の地点") { PlacesEditorView() }
+                    NavigationLink("地図(表示と保存)") { MapSettingsView() }
                     NavigationLink("電車の路線・駅") { TrainRegistrationListView() }
                     NavigationLink("為替の通貨") {
                         CurrencyPickerView(available: env.exchange.cached?.value.availableCodes ?? AppSettings.defaultExchangeCodes)

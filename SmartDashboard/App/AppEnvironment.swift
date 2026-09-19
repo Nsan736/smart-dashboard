@@ -39,9 +39,11 @@ final class AppEnvironment {
     let exchange: ExchangeStore
     let timers: TimerStore
     let trains: TrainStore
+    let tiles: TileDownloader
     @ObservationIgnored let cache: DiskCache
     @ObservationIgnored let http: HTTPClient
     @ObservationIgnored let keychain: KeychainStore
+    @ObservationIgnored let location: LocationProvider
 
     private(set) var cacheSize: Int64 = 0
     private(set) var hasODPTToken = false
@@ -73,9 +75,21 @@ final class AppEnvironment {
             hasToken: { !(keychain.string(for: KeychainAccount.odptToken) ?? "").isEmpty },
             onFetched: { fetchLog.mark($0, at: $1) })
         timers = TimerStore()
+        let location = LocationProvider()
+        self.location = location
+        let tiles = TileDownloader(store: TileStore(root: TileStore.defaultRoot()), http: http, settings: settings, network: network)
+        self.tiles = tiles
         weather = WeatherStore(
             api: OpenMeteoClient(http: http), cache: cache, settings: settings, network: network,
-            location: LocationProvider(), onFetched: { fetchLog.mark(.weather, at: $0) })
+            location: location, placeNames: PlaceNameResolver(),
+            onCurrentLocation: { latitude, longitude in
+                // 地図を保存する最初の登録エリア(現在地から半径20km)を一度だけ作る
+                guard !settings.didCreateDefaultTileArea, settings.tileAreas.isEmpty else { return }
+                settings.didCreateDefaultTileArea = true
+                settings.tileAreas = [TileArea(name: "現在地周辺", latitude: latitude, longitude: longitude, radiusKm: 20)]
+                tiles.evaluate(isForeground: true)
+            },
+            onFetched: { fetchLog.mark(.weather, at: $0) })
         exchange = ExchangeStore(
             api: ERAPIClient(http: http), cache: cache, settings: settings, network: network,
             onFetched: { fetchLog.mark(.exchange, at: $0) })
@@ -85,6 +99,7 @@ final class AppEnvironment {
     /// 起動時とフォアグラウンド復帰時に呼ぶ。古くなったデータだけを各Storeが取得する。
     func refreshStaleData() async {
         timers.resume()
+        tiles.evaluate(isForeground: true)
         await weather.refreshIfStale()
         await exchange.refreshIfStale()
         await trains.refreshInfoIfStale()

@@ -15,18 +15,24 @@ final class WeatherStore {
     @ObservationIgnored private let settings: AppSettings
     @ObservationIgnored private let network: NetworkMonitor
     @ObservationIgnored private let location: LocationProvider
+    @ObservationIgnored private let placeNames: PlaceNameResolver
+    @ObservationIgnored private let onCurrentLocation: @MainActor (Double, Double) -> Void
     @ObservationIgnored private let onFetched: @MainActor (Date) -> Void
     @ObservationIgnored private var loadTask: Task<Void, Never>?
 
     private static let cacheKey = "weather"
 
     init(api: WeatherAPI, cache: DiskCache, settings: AppSettings, network: NetworkMonitor,
-         location: LocationProvider, onFetched: @escaping @MainActor (Date) -> Void) {
+         location: LocationProvider, placeNames: PlaceNameResolver,
+         onCurrentLocation: @escaping @MainActor (Double, Double) -> Void,
+         onFetched: @escaping @MainActor (Date) -> Void) {
         self.api = api
         self.cache = cache
         self.settings = settings
         self.network = network
         self.location = location
+        self.placeNames = placeNames
+        self.onCurrentLocation = onCurrentLocation
         self.onFetched = onFetched
     }
 
@@ -86,9 +92,11 @@ final class WeatherStore {
             let longitude: Double
             if settings.weatherUsesCurrentLocation {
                 let loc = try await location.currentLocation()
-                name = "現在地"
                 latitude = loc.coordinate.latitude
                 longitude = loc.coordinate.longitude
+                onCurrentLocation(latitude, longitude)
+                // 500m以内で取得済みならキャッシュの地名を使う
+                name = await placeNames.name(latitude: latitude, longitude: longitude) ?? "現在地"
             } else if let place = settings.selectedPlace {
                 name = place.name
                 latitude = place.latitude
@@ -98,7 +106,8 @@ final class WeatherStore {
                 return
             }
             let response = try await api.fetch(latitude: latitude, longitude: longitude)
-            let snapshot = WeatherSnapshot(response: response, sourceID: sourceID, placeName: name)
+            let snapshot = WeatherSnapshot(response: response, sourceID: sourceID, placeName: name,
+                                           latitude: latitude, longitude: longitude)
             let now = Date()
             cached = CachedValue(value: snapshot, fetchedAt: now)
             try? await cache.save(snapshot, key: Self.cacheKey, fetchedAt: now)

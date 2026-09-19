@@ -70,14 +70,19 @@ struct WeatherSnapshot: Codable, Equatable {
     /// "current" または登録地点のID。地点を切り替えたらキャッシュを古いとみなす。
     var sourceID: String
     var placeName: String
+    /// 取得に使った座標(小さな地図の表示用)。古いキャッシュにはない。
+    var latitude: Double?
+    var longitude: Double?
     var utcOffsetSeconds: Int
     var current: Current
     var hourly: [Hour]
     var daily: [Day]
 
-    init(response r: OpenMeteoResponse, sourceID: String, placeName: String) {
+    init(response r: OpenMeteoResponse, sourceID: String, placeName: String, latitude: Double? = nil, longitude: Double? = nil) {
         self.sourceID = sourceID
         self.placeName = placeName
+        self.latitude = latitude
+        self.longitude = longitude
         utcOffsetSeconds = r.utc_offset_seconds
         current = Current(
             time: Date(timeIntervalSince1970: r.current.time),

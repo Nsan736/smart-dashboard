@@ -1,3 +1,4 @@
+import CoreLocation
 import SwiftUI
 
 struct WeatherView: View {
@@ -14,6 +15,15 @@ struct WeatherView: View {
                     let snapshot = cached.value
                     Section(snapshot.placeName) {
                         currentView(snapshot.current)
+                    }
+                    if let latitude = snapshot.latitude, let longitude = snapshot.longitude {
+                        let coordinate = CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+                        Section {
+                            MapContainerView(center: coordinate, spanMeters: 4000, pin: coordinate, isInteractive: false)
+                                .frame(height: 170)
+                                .listRowInsets(EdgeInsets())
+                            NavigationLink("地図を開く") { FullMapView(center: coordinate) }
+                        }
                     }
                     Section("今後24時間") {
                         hourlyView(snapshot)
