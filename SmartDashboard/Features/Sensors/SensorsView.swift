@@ -205,8 +205,6 @@ struct SensorsView: View {
     private var deviceSection: some View {
         Section("端末") {
             LabeledContent("画面の明るさ", value: String(format: "%.0f%%", device.brightness * 100))
-            LabeledContent("バッテリー", value: device.batteryText)
-            LabeledContent("充電状態", value: device.batteryStateText)
         }
     }
 
@@ -267,50 +265,26 @@ struct LevelView: View {
     }
 }
 
-/// 画面の明るさとバッテリー
+/// 画面の明るさ
 @MainActor
 @Observable
 final class DeviceStatus {
     private(set) var brightness: Double = 0
-    private(set) var batteryLevel: Float = -1
-    private(set) var batteryState: UIDevice.BatteryState = .unknown
 
-    @ObservationIgnored private var observers: [NSObjectProtocol] = []
+    @ObservationIgnored private var observer: NSObjectProtocol?
 
     func start() {
-        guard observers.isEmpty else { return }
-        UIDevice.current.isBatteryMonitoringEnabled = true
-        read()
-        let names = [UIScreen.brightnessDidChangeNotification, UIDevice.batteryLevelDidChangeNotification, UIDevice.batteryStateDidChangeNotification]
-        observers = names.map { name in
-            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.read() }
-            }
+        guard observer == nil else { return }
+        brightness = Double(UIScreen.main.brightness)
+        observer = NotificationCenter.default.addObserver(
+            forName: UIScreen.brightnessDidChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.brightness = Double(UIScreen.main.brightness) }
         }
     }
 
     func stop() {
-        for observer in observers { NotificationCenter.default.removeObserver(observer) }
-        observers = []
-        UIDevice.current.isBatteryMonitoringEnabled = false
-    }
-
-    private func read() {
-        brightness = Double(UIScreen.main.brightness)
-        batteryLevel = UIDevice.current.batteryLevel
-        batteryState = UIDevice.current.batteryState
-    }
-
-    var batteryText: String {
-        batteryLevel < 0 ? "利用不可" : String(format: "%.0f%%", batteryLevel * 100)
-    }
-
-    var batteryStateText: String {
-        switch batteryState {
-        case .charging: return "充電中"
-        case .full: return "満充電"
-        case .unplugged: return "バッテリー駆動"
-        default: return "不明"
-        }
+        if let observer { NotificationCenter.default.removeObserver(observer) }
+        observer = nil
     }
 }

@@ -192,7 +192,7 @@ struct HomeView: View {
         HomeCard(title: "センサー", symbol: "gauge.with.dots.needle.33percent") {
             Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 8) {
                 GridRow {
-                    sensorValue("バッテリー", "\(device.batteryText) \(device.batteryStateText)")
+                    sensorValue("画面の明るさ", String(format: "%.0f%%", device.brightness * 100))
                     sensorValue("歩数", motion.pedometerAvailability.unavailableText
                         ?? motion.stepsToday.map { "\($0) 歩" } ?? "-")
                 }
