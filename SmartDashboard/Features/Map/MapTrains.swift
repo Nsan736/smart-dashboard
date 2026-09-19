@@ -12,9 +12,11 @@ struct MapTrain {
     let label: String
     /// 各停以外は形を変える
     let isExpress: Bool
+    /// 選ばれていない路線の電車。薄く表示する。
+    var isDimmed = false
 
     var appearance: String {
-        "\(color.description)|\(label)|\(isExpress)|\(heading.map { String(Int($0 / 5)) } ?? "-")"
+        "\(color.description)|\(label)|\(isExpress)|\(isDimmed)|\(heading.map { String(Int($0 / 5)) } ?? "-")"
     }
 }
 
@@ -40,6 +42,7 @@ final class TrainAnnotation: MKPointAnnotation {
     var heading: Double?
     var label = ""
     var isExpress = false
+    var isDimmed = false
 }
 
 final class StationDotAnnotation: MKPointAnnotation {
@@ -76,6 +79,7 @@ final class TrainAnnotationView: MKAnnotationView {
     func apply(_ train: TrainAnnotation) {
         arrow.image = Self.icon(color: train.color, isExpress: train.isExpress, hasHeading: train.heading != nil)
         arrow.transform = CGAffineTransform(rotationAngle: CGFloat((train.heading ?? 0) * .pi / 180))
+        alpha = train.isDimmed ? 0.3 : 1
         typeLabel.isHidden = train.label.isEmpty
         typeLabel.text = train.label
         typeLabel.backgroundColor = UIColor.black.withAlphaComponent(0.65)

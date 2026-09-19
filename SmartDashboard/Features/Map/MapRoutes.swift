@@ -11,10 +11,12 @@ struct MapLine {
     let casingColor: UIColor?
     /// 太くして点滅させ、目立たせる
     let isEmphasized: Bool
+    /// 選ばれていない路線。薄く細く描く。
+    var isDimmed = false
 
     /// 描き直しが必要かどうかの判定に使う
     var signature: String {
-        "\(id)|\(coordinates.count)|\(color.description)|\(casingColor?.description ?? "-")|\(isEmphasized)"
+        "\(id)|\(coordinates.count)|\(color.description)|\(casingColor?.description ?? "-")|\(isEmphasized)|\(isDimmed)"
     }
 }
 
@@ -35,6 +37,8 @@ final class RouteOverlay: MKPolyline {
     var strokeColor: UIColor = .systemGray
     var strokeWidth: CGFloat = 4
     var blinks = false
+    /// 通常の不透明度(薄く表示する路線は小さい)
+    var baseAlpha: CGFloat = 1
 }
 
 final class StationAnnotation: MKPointAnnotation {

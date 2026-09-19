@@ -90,6 +90,8 @@ struct DashboardMapView: UIViewRepresentable {
     var markers: [MapMarker] = []
     /// この値が変わったとき、線とピンの全体が入るように表示範囲を合わせる
     var fitKey: String?
+    /// 表示範囲を合わせる対象の線。nilならすべての線。
+    var fitLineIDs: Set<String>?
     var onSelectLine: ((String) -> Void)?
     var onSelectMarker: ((String) -> Void)?
     /// 電車(1秒ごとに位置が変わる)と、駅の点
@@ -175,7 +177,7 @@ struct DashboardMapView: UIViewRepresentable {
         coordinator.updateStationDots(stationDots, on: map)
         coordinator.updateTrains(trains, on: map)
         coordinator.recenterIfNeeded(key: recenterKey, on: map)
-        coordinator.fitIfNeeded(key: fitKey, lines: lines, markers: markers, on: map)
+        coordinator.fitIfNeeded(key: fitKey, lines: lines.filter { fitLineIDs?.contains($0.id) ?? true }, markers: markers, on: map)
 
         // 外から中心が変わったとき(現在地の更新など)だけ移動する
         if let center, !isInteractive || coordinator.lastCenter == nil {
@@ -263,6 +265,7 @@ struct DashboardMapView: UIViewRepresentable {
             annotation.heading = train.heading
             annotation.label = train.label
             annotation.isExpress = train.isExpress
+            annotation.isDimmed = train.isDimmed
         }
 
         // MARK: 駅の点
@@ -311,10 +314,11 @@ struct DashboardMapView: UIViewRepresentable {
             routeRenderers = [:]
             for line in lines where line.coordinates.count >= 2 {
                 // 縁取り(路線の色)を下に、運行状況の色を上に重ねる
+                // 選ばれていない路線は、細く薄く描く
                 if let casing = line.casingColor {
-                    routeOverlays.append(makeOverlay(line, color: casing, width: line.isEmphasized ? 11 : 8, isCasing: true))
+                    routeOverlays.append(makeOverlay(line, color: casing, width: line.isDimmed ? 5 : (line.isEmphasized ? 11 : 8), isCasing: true))
                 }
-                routeOverlays.append(makeOverlay(line, color: line.color, width: line.isEmphasized ? 7 : 4, isCasing: false))
+                routeOverlays.append(makeOverlay(line, color: line.color, width: line.isDimmed ? 2.5 : (line.isEmphasized ? 7 : 4), isCasing: false))
             }
             // 保存済み地図のタイル(.aboveLabels の一番下)より上に描く
             map.addOverlays(routeOverlays, level: .aboveLabels)
@@ -328,6 +332,7 @@ struct DashboardMapView: UIViewRepresentable {
             overlay.strokeColor = color
             overlay.strokeWidth = width
             overlay.blinks = line.isEmphasized && !isCasing
+            overlay.baseAlpha = line.isDimmed ? 0.3 : 1
             return overlay
         }
 
@@ -343,7 +348,7 @@ struct DashboardMapView: UIViewRepresentable {
             blinkDimmed.toggle()
             for overlay in routeOverlays where overlay.blinks {
                 guard let renderer = routeRenderers[ObjectIdentifier(overlay)] else { continue }
-                renderer.alpha = blinkDimmed ? 0.3 : 1
+                renderer.alpha = blinkDimmed ? 0.3 : overlay.baseAlpha
                 renderer.setNeedsDisplay()
             }
         }
@@ -482,6 +487,7 @@ struct DashboardMapView: UIViewRepresentable {
                 renderer.lineWidth = route.strokeWidth
                 renderer.lineCap = .round
                 renderer.lineJoin = .round
+                renderer.alpha = route.baseAlpha
                 routeRenderers[ObjectIdentifier(route)] = renderer
                 return renderer
             }
@@ -522,6 +528,7 @@ struct MapContainerView: View {
     var lines: [MapLine] = []
     var markers: [MapMarker] = []
     var fitKey: String?
+    var fitLineIDs: Set<String>?
     var onSelectLine: ((String) -> Void)?
     var onSelectMarker: ((String) -> Void)?
     var trains: [MapTrain] = []
@@ -546,6 +553,7 @@ struct MapContainerView: View {
             lines: lines,
             markers: markers,
             fitKey: fitKey,
+            fitLineIDs: fitLineIDs,
             onSelectLine: onSelectLine,
             onSelectMarker: onSelectMarker,
             trains: trains,
