@@ -37,6 +37,7 @@ final class AppEnvironment {
     let fetchLog: FetchLog
     let weather: WeatherStore
     let exchange: ExchangeStore
+    let timers: TimerStore
     @ObservationIgnored let cache: DiskCache
     @ObservationIgnored let http: HTTPClient
     @ObservationIgnored let keychain: KeychainStore
@@ -61,6 +62,7 @@ final class AppEnvironment {
         self.cache = cache
         self.http = http
         keychain = KeychainStore()
+        timers = TimerStore()
         weather = WeatherStore(
             api: OpenMeteoClient(http: http), cache: cache, settings: settings, network: network,
             location: LocationProvider(), onFetched: { fetchLog.mark(.weather, at: $0) })
@@ -71,6 +73,7 @@ final class AppEnvironment {
 
     /// 起動時とフォアグラウンド復帰時に呼ぶ。古くなったデータだけを各Storeが取得する。
     func refreshStaleData() async {
+        timers.resume()
         await weather.refreshIfStale()
         await exchange.refreshIfStale()
         await updateCacheSize()
