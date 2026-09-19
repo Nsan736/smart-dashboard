@@ -63,7 +63,7 @@ iOS向けの個人用「手元ダッシュボード」アプリ。SwiftUI製。A
   - 行全体をTimelineViewで再描画しない(操作を妨げる)。再描画するのは残り時間の文字だけ
 - センサー: バッテリーは表示しない(iOSのステータスバーで見られるため)
   - 速度: センサー画面とホームが表示されている間は、常にリアルタイムで表示する(開始・停止ボタンはない)。画面を離れたら測位を止める。`LocationSensors` は天気用の `LocationProvider` とは別のインスタンスで、desiredAccuracy = BestForNavigation、distanceFilter = None、activityType = .otherNavigation、pausesLocationUpdatesAutomatically = false
-  - 速度の計算は `SpeedEstimator`(CoreLocationに依存しない純粋なロジック)。speedAccuracy が十分なら CLLocation.speed、無効なら直近の位置の差分から求め、3点で平滑化する。horizontalAccuracy の悪い点は除外する。どちらも使えなければ「測位中…」(無効な速度を0と表示しない)。最高・平均・距離は「画面を開いてからの値」でリセットできる
+  - 速度の計算は `SpeedEstimator`(CoreLocationに依存しない純粋なロジック)。speedAccuracy が十分なら CLLocation.speed、無効なら直近の位置の差分から求め、3点で平滑化する。horizontalAccuracy の悪い点は除外する。屋内や地下などGPSで動きを検出できないときは、CMPedometer の currentPace から歩行速度を推定する。優先順位は (1) GPSの速度 (2) 位置の差分 (3) 歩行ペース (4) 停止中(0)または「測位中…」(`SpeedEstimator.reading`)。どの方法で出した値かを必ず表示し、位置の差分で停止と判定したときは理由(精度±◯mのため検出できない)も表示する。歩行ペースは最高・平均・距離にも使うが、GPSで動きが取れている区間では足さない(二重に数えない)。無効な速度を0と表示しない。最高・平均・距離は「画面を開いてからの値」でリセットできる
   - 位置の精度が「おおよそ」(reducedAccuracy)のときは、速度が測れない理由と設定の案内を表示する。GPSの状態(水平精度、最後の測位からの秒数)も小さく表示する
   - 歩数: CMPedometer.startUpdates(from: 今日の0時)で継続的に受け取る(最初の値だけは queryPedometerData で補う)。ペースと歩調も表示する。更新は数秒おきにまとめて届く旨を注記する
   - CLLocationManager のデリゲートはメインスレッドで呼ばれるので `MainActor.assumeIsolated` で同期的に状態を更新する。CMPedometer のコールバックは任意のスレッドなので、Sendable な値に詰め替えてから `Task { @MainActor in }` で更新する
