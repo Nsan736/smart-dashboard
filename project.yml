@@ -1,0 +1,59 @@
+name: SmartDashboard
+options:
+  bundleIdPrefix: com.nsan
+  deploymentTarget:
+    iOS: "17.0"
+  developmentLanguage: ja
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    TARGETED_DEVICE_FAMILY: "1,2"
+targets:
+  SmartDashboard:
+    type: application
+    platform: iOS
+    sources:
+      - path: SmartDashboard
+    info:
+      path: SmartDashboard/Info.plist
+      properties:
+        CFBundleDisplayName: スマートダッシュボード
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleDevelopmentRegion: ja
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        NSLocationWhenInUseUsageDescription: 現在地の天気の取得と、速度・高度の表示に位置情報を使います。
+        NSMotionUsageDescription: 歩数、気圧、傾きの表示にモーションデータを使います。
+        NSMicrophoneUsageDescription: 周囲の騒音レベルの目安を表示するためにマイクを使います。録音データは保存しません。
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.nsan.smartdashboard
+        GENERATE_INFOPLIST_FILE: NO
+        ENABLE_PREVIEWS: YES
+  SmartDashboardTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: SmartDashboardTests
+    dependencies:
+      - target: SmartDashboard
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.nsan.smartdashboard.tests
+schemes:
+  SmartDashboard:
+    build:
+      targets:
+        SmartDashboard: all
+        SmartDashboardTests: [test]
+    test:
+      targets:
+        - SmartDashboardTests
