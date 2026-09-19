@@ -147,7 +147,7 @@ final class TimerStore {
     }
 
     private func updateIdleTimer() {
-        UIApplication.shared.isIdleTimerDisabled = keepAwake && hasActivity
+        ScreenAwake.set("timer", keepAwake && hasActivity)
     }
 
     // MARK: - ローカル通知
