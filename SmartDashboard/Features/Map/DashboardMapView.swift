@@ -92,6 +92,12 @@ struct DashboardMapView: UIViewRepresentable {
     var fitKey: String?
     var onSelectLine: ((String) -> Void)?
     var onSelectMarker: ((String) -> Void)?
+    /// 電車(1秒ごとに位置が変わる)と、駅の点
+    var trains: [MapTrain] = []
+    var stationDots: [MapStationDot] = []
+    var onSelectTrain: ((String) -> Void)?
+    /// この値が変わったら、現在地へ移動する
+    var recenterKey = 0
     /// 表示範囲が変わったとき(範囲、ズーム)
     var onRegionChange: ((GeoBounds, Int) -> Void)?
 
@@ -163,8 +169,12 @@ struct DashboardMapView: UIViewRepresentable {
             }
         }
 
+        coordinator.onSelectTrain = onSelectTrain
         coordinator.updateRoutes(lines, on: map)
         coordinator.updateMarkers(markers, on: map)
+        coordinator.updateStationDots(stationDots, on: map)
+        coordinator.updateTrains(trains, on: map)
+        coordinator.recenterIfNeeded(key: recenterKey, on: map)
         coordinator.fitIfNeeded(key: fitKey, lines: lines, markers: markers, on: map)
 
         // 外から中心が変わったとき(現在地の更新など)だけ移動する
@@ -179,7 +189,8 @@ struct DashboardMapView: UIViewRepresentable {
         }
 
         // ピン
-        let currentPin = map.annotations.compactMap { $0 as? MKPointAnnotation }.first { !($0 is StationAnnotation) }
+        // 駅や電車の注釈(MKPointAnnotation のサブクラス)は除き、素のピンだけを対象にする
+        let currentPin = map.annotations.compactMap { $0 as? MKPointAnnotation }.first { type(of: $0) == MKPointAnnotation.self }
         if let pin {
             if let currentPin {
                 currentPin.coordinate = pin
@@ -210,6 +221,84 @@ struct DashboardMapView: UIViewRepresentable {
         private var routeRenderers: [ObjectIdentifier: MKPolylineRenderer] = [:]
         private var blinkTimer: Timer?
         private var blinkDimmed = false
+        var onSelectTrain: ((String) -> Void)?
+        private var trainAnnotations: [String: TrainAnnotation] = [:]
+        private var stationDotSignature = ""
+        private var lastRecenterKey = 0
+        private var currentZoom = 0
+
+        // MARK: 電車
+
+        /// 毎秒呼ばれる。追加と削除は差分だけ行い、位置は1秒かけてなめらかに動かす。
+        func updateTrains(_ trains: [MapTrain], on map: MKMapView) {
+            let ids = Set(trains.map(\.id))
+            let removed = trainAnnotations.filter { !ids.contains($0.key) }
+            if !removed.isEmpty {
+                map.removeAnnotations(Array(removed.values))
+                for key in removed.keys { trainAnnotations[key] = nil }
+            }
+            for train in trains {
+                if let annotation = trainAnnotations[train.id] {
+                    UIView.animate(withDuration: 1, delay: 0, options: [.curveLinear, .allowUserInteraction]) {
+                        annotation.coordinate = train.coordinate
+                    }
+                    if annotation.appearance != train.appearance {
+                        configure(annotation, with: train)
+                        (map.view(for: annotation) as? TrainAnnotationView)?.apply(annotation)
+                    }
+                } else {
+                    let annotation = TrainAnnotation()
+                    annotation.trainID = train.id
+                    annotation.coordinate = train.coordinate
+                    configure(annotation, with: train)
+                    trainAnnotations[train.id] = annotation
+                    map.addAnnotation(annotation)
+                }
+            }
+        }
+
+        private func configure(_ annotation: TrainAnnotation, with train: MapTrain) {
+            annotation.appearance = train.appearance
+            annotation.color = train.color
+            annotation.heading = train.heading
+            annotation.label = train.label
+            annotation.isExpress = train.isExpress
+        }
+
+        // MARK: 駅の点
+
+        func updateStationDots(_ dots: [MapStationDot], on map: MKMapView) {
+            let signature = dots.map(\.signature).joined(separator: ";")
+            guard signature != stationDotSignature else { return }
+            stationDotSignature = signature
+            map.removeAnnotations(map.annotations.filter { $0 is StationDotAnnotation })
+            for dot in dots {
+                let annotation = StationDotAnnotation()
+                annotation.stationID = dot.id
+                annotation.title = dot.title
+                annotation.coordinate = dot.coordinate
+                annotation.isMajor = dot.isMajor
+                annotation.isRegistered = dot.isRegistered
+                map.addAnnotation(annotation)
+            }
+        }
+
+        /// ズームに応じて駅名を出し分ける(広域では主要駅と登録駅だけ)
+        private func refreshStationNames(on map: MKMapView) {
+            for annotation in map.annotations {
+                guard let station = annotation as? StationDotAnnotation,
+                      let view = map.view(for: station) as? StationDotView else { continue }
+                view.apply(station, showsName: MapStationRule.showsName(zoom: currentZoom, isMajor: station.isMajor))
+            }
+        }
+
+        func recenterIfNeeded(key: Int, on map: MKMapView) {
+            guard key != lastRecenterKey else { return }
+            lastRecenterKey = key
+            guard let location = map.userLocation.location else { return }
+            let region = MKCoordinateRegion(center: location.coordinate, latitudinalMeters: 3000, longitudinalMeters: 3000)
+            map.setRegion(region, animated: true)
+        }
 
         // MARK: 線
 
@@ -281,6 +370,20 @@ struct DashboardMapView: UIViewRepresentable {
         }
 
         func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
+            if let train = annotation as? TrainAnnotation {
+                let view = (mapView.dequeueReusableAnnotationView(withIdentifier: TrainAnnotationView.reuseID) as? TrainAnnotationView)
+                    ?? TrainAnnotationView(annotation: train, reuseIdentifier: TrainAnnotationView.reuseID)
+                view.annotation = train
+                view.apply(train)
+                return view
+            }
+            if let station = annotation as? StationDotAnnotation {
+                let view = (mapView.dequeueReusableAnnotationView(withIdentifier: StationDotView.reuseID) as? StationDotView)
+                    ?? StationDotView(annotation: station, reuseIdentifier: StationDotView.reuseID)
+                view.annotation = station
+                view.apply(station, showsName: MapStationRule.showsName(zoom: currentZoom, isMajor: station.isMajor))
+                return view
+            }
             guard annotation is StationAnnotation else { return nil }
             let identifier = "station"
             let view = (mapView.dequeueReusableAnnotationView(withIdentifier: identifier) as? MKMarkerAnnotationView)
@@ -294,6 +397,16 @@ struct DashboardMapView: UIViewRepresentable {
         }
 
         func mapView(_ mapView: MKMapView, didSelect view: MKAnnotationView) {
+            if let train = view.annotation as? TrainAnnotation {
+                onSelectTrain?(train.trainID)
+                mapView.deselectAnnotation(train, animated: false)
+                return
+            }
+            if let dot = view.annotation as? StationDotAnnotation {
+                if dot.isRegistered { onSelectMarker?(dot.stationID) }
+                mapView.deselectAnnotation(dot, animated: false)
+                return
+            }
             guard let station = view.annotation as? StationAnnotation else { return }
             onSelectMarker?(station.markerID)
             mapView.deselectAnnotation(station, animated: false)
@@ -388,6 +501,10 @@ struct DashboardMapView: UIViewRepresentable {
                 minLongitude: region.center.longitude - region.span.longitudeDelta / 2,
                 maxLongitude: region.center.longitude + region.span.longitudeDelta / 2)
             let zoom = TileMath.zoomLevel(longitudeDelta: region.span.longitudeDelta, widthPoints: Double(mapView.bounds.width))
+            if zoom != currentZoom {
+                currentZoom = zoom
+                refreshStationNames(on: mapView)
+            }
             onRegionChange?(bounds, zoom)
         }
     }
@@ -407,6 +524,10 @@ struct MapContainerView: View {
     var fitKey: String?
     var onSelectLine: ((String) -> Void)?
     var onSelectMarker: ((String) -> Void)?
+    var trains: [MapTrain] = []
+    var stationDots: [MapStationDot] = []
+    var onSelectTrain: ((String) -> Void)?
+    var recenterKey = 0
 
     static let gsiURL = URL(string: "https://maps.gsi.go.jp/development/ichiran.html")!
 
@@ -427,6 +548,10 @@ struct MapContainerView: View {
             fitKey: fitKey,
             onSelectLine: onSelectLine,
             onSelectMarker: onSelectMarker,
+            trains: trains,
+            stationDots: stationDots,
+            onSelectTrain: onSelectTrain,
+            recenterKey: recenterKey,
             onRegionChange: { bounds, zoom in
                 // Wi-Fi接続中に Apple Maps で見た範囲を保存する
                 guard mode == .apple, isInteractive else { return }
