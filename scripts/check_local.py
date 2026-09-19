@@ -9,7 +9,7 @@
 - ワークフローのトリガーが方針どおりか(mainへのpushで動かない)
 - make_apps_json.py が動き、履歴を引き継ぐか
 - Swiftのソースの括弧の対応(簡易チェック)
-- @MainActor なクラスの静的メンバーを、@MainActor でないテストから呼んでいないか
+- @MainActor な型(View に準拠した型を含む)の静的メンバーを、@MainActor でないテストから呼んでいないか
 """
 import glob
 import json
@@ -133,7 +133,8 @@ def check_main_actor_statics():
                 continue
             m = re.match(r"^(?:final )?(?:class|struct|enum|actor|extension) (\w+)", line)
             if m:
-                current = m.group(1) if (pending or "@MainActor" in line) else None
+                is_view = re.search(r":\s*(?:[\w.]+,\s*)*View\b", line) is not None
+                current = m.group(1) if (pending or "@MainActor" in line or is_view) else None
                 pending = False
             elif stripped and not stripped.startswith("@"):
                 pending = False
