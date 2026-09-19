@@ -9,6 +9,7 @@
 - ワークフローのトリガーが方針どおりか(mainへのpushで動かない)
 - make_apps_json.py が動き、履歴を引き継ぐか
 - Swiftのソースの括弧の対応(簡易チェック)
+- @MainActor なクラスの静的メンバーを、@MainActor でないテストから呼んでいないか
 """
 import glob
 import json
@@ -118,7 +119,45 @@ def check_swift_brackets():
         check(ok and not stack, f"{os.path.relpath(path, ROOT)}: 括弧の対応が取れていない可能性")
 
 
-for step in (check_fixtures, check_yaml, check_apps_json, check_swift_brackets):
+def check_main_actor_statics():
+    """ciで実際に起きた失敗の再発防止。nonisolated でない静的メンバーを集め、テスト側の呼び出しを調べる。"""
+    import re
+    isolated = {}
+    for path in glob.glob(os.path.join(ROOT, "SmartDashboard", "**", "*.swift"), recursive=True):
+        lines = open(path, encoding="utf-8").read().splitlines()
+        current, pending = None, False
+        for line in lines:
+            stripped = line.strip()
+            if stripped.startswith("@MainActor") and "class" not in stripped and "func" not in stripped:
+                pending = True
+                continue
+            m = re.match(r"^(?:final )?(?:class|struct|enum|actor|extension) (\w+)", line)
+            if m:
+                current = m.group(1) if (pending or "@MainActor" in line) else None
+                pending = False
+            elif stripped and not stripped.startswith("@"):
+                pending = False
+            if current:
+                s = re.match(r"^\s+(?:private(?:\(set\))? |fileprivate )?static (?:func|let|var) (\w+)", line)
+                if s and "nonisolated" not in line and "private static" not in line:
+                    isolated.setdefault(current, set()).add(s.group(1))
+    for path in glob.glob(os.path.join(ROOT, "SmartDashboardTests", "*.swift")):
+        lines = open(path, encoding="utf-8").read().splitlines()
+        for i, line in enumerate(lines):
+            for cls, members in isolated.items():
+                for member in members:
+                    if re.search(rf"{cls}\.{member}", line):
+                        context = [l for l in lines[:i] if re.search(r"func test|class \w+: XCTestCase", l) or "@MainActor" in l]
+                        recent = context[-3:]
+                        func_idx = max((k for k, l in enumerate(recent) if "func test" in l), default=-1)
+                        ok = func_idx > 0 and "@MainActor" in recent[func_idx - 1]
+                        cls_lines = [k for k, l in enumerate(context) if "XCTestCase" in l]
+                        if cls_lines and cls_lines[-1] > 0 and "@MainActor" in context[cls_lines[-1] - 1]:
+                            ok = True
+                        check(ok, f"{os.path.basename(path)}:{i + 1}: {cls}.{member} は @MainActor。テストを @MainActor にするか nonisolated にする")
+
+
+for step in (check_fixtures, check_yaml, check_apps_json, check_swift_brackets, check_main_actor_statics):
     step()
 
 if errors:
