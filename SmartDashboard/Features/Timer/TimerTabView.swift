@@ -40,6 +40,7 @@ private struct CountdownListView: View {
     @State private var minutes = 5
     @State private var seconds = 0
     @State private var label = ""
+    @State private var pendingDelete: CountdownTimer?
 
     private var duration: TimeInterval { TimeInterval(hours * 3600 + minutes * 60 + seconds) }
 
@@ -49,28 +50,9 @@ private struct CountdownListView: View {
             if !store.timers.isEmpty {
                 Section("タイマー") {
                     ForEach(store.timers) { timer in
-                        TimerRow(timer: timer)
-                    }
-                    .onDelete { offsets in
-                        for id in offsets.map({ store.timers[$0].id }) { store.remove(id) }
+                        TimerRow(timer: timer) { pendingDelete = timer }
                     }
                 }
-            }
-            Section("プリセット") {
-                ForEach(store.presets) { preset in
-                    Button {
-                        store.addTimer(label: preset.label, duration: preset.duration, startNow: true)
-                    } label: {
-                        HStack {
-                            Label(preset.label, systemImage: "play.circle")
-                            Spacer()
-                            Text(TimeText.countdown(preset.duration))
-                                .monospacedDigit()
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-                .onDelete { store.removePresets(at: $0) }
             }
             Section("新しいタイマー") {
                 HStack(spacing: 0) {
@@ -80,19 +62,11 @@ private struct CountdownListView: View {
                 }
                 .frame(height: 120)
                 TextField("ラベル(省略可)", text: $label)
-                HStack {
-                    Button("開始") {
-                        store.addTimer(label: label, duration: duration, startNow: true)
-                        label = ""
-                    }
-                    .buttonStyle(.borderedProminent)
-                    Spacer()
-                    Button("プリセットに保存") {
-                        store.addPreset(label: label, duration: duration)
-                        label = ""
-                    }
-                    .buttonStyle(.bordered)
+                Button("開始") {
+                    store.addTimer(label: label, duration: duration, startNow: true)
+                    label = ""
                 }
+                .buttonStyle(.borderedProminent)
                 .disabled(duration < 1)
             }
             if store.notificationsAvailable == false {
@@ -102,6 +76,20 @@ private struct CountdownListView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+        }
+        .confirmationDialog(
+            "このタイマーを削除しますか？",
+            isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
+            titleVisibility: .visible,
+            presenting: pendingDelete
+        ) { timer in
+            Button("削除", role: .destructive) {
+                store.remove(timer.id)
+                pendingDelete = nil
+            }
+            Button("キャンセル", role: .cancel) { pendingDelete = nil }
+        } message: { timer in
+            Text(timer.label)
         }
     }
 
@@ -115,23 +103,23 @@ private struct CountdownListView: View {
     }
 }
 
+/// 行全体は再描画せず、残り時間の文字だけをTimelineViewで更新する。
+/// 状態(動作中→終了)の切り替わりは TimerStore が timers を更新することで反映される。
 private struct TimerRow: View {
     @Environment(AppEnvironment.self) private var env
     let timer: CountdownTimer
+    let onDelete: () -> Void
 
     var body: some View {
         let store = env.timers
-        TimelineView(.periodic(from: .now, by: 0.25)) { context in
-            let state = timer.state(now: context.date)
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
+        let state = timer.state(now: Date())
+        VStack(alignment: .leading, spacing: 4) {
+            // 上段: ラベルと削除。削除は操作ボタンから離して右上に置く。
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 0) {
                     Text(timer.label)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                    Text(state == .finished ? "終了" : TimeText.countdown(timer.remaining(now: context.date)))
-                        .font(.system(size: 44, weight: .bold, design: .rounded))
-                        .monospacedDigit()
-                        .foregroundStyle(state == .finished ? Color.red : Color.primary)
                     if let end = timer.endDate, state == .running {
                         Text("\(end.formatted(date: .omitted, time: .shortened)) に終了")
                             .font(.caption)
@@ -139,20 +127,34 @@ private struct TimerRow: View {
                     }
                 }
                 Spacer()
+                Button(role: .destructive, action: onDelete) {
+                    Image(systemName: "trash")
+                        .font(.body)
+                        .frame(width: 44, height: 36)
+                }
+                .buttonStyle(.bordered)
+                .tint(.red)
+                .accessibilityLabel("タイマーを削除")
+            }
+            // 下段: 残り時間と操作
+            HStack {
+                RemainingTimeText(timer: timer)
+                Spacer()
                 switch state {
                 case .running:
-                    iconButton("pause.fill") { store.pause(timer.id) }
+                    iconButton("pause.fill", "一時停止") { store.pause(timer.id) }
                 case .idle, .paused:
-                    iconButton("play.fill") { store.start(timer.id) }
+                    iconButton("play.fill", "開始") { store.start(timer.id) }
                 case .finished:
                     EmptyView()
                 }
-                iconButton("arrow.counterclockwise") { store.reset(timer.id) }
+                iconButton("arrow.counterclockwise", "リセット") { store.reset(timer.id) }
             }
         }
+        .padding(.vertical, 2)
     }
 
-    private func iconButton(_ symbol: String, action: @escaping () -> Void) -> some View {
+    private func iconButton(_ symbol: String, _ label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.title2)
@@ -160,6 +162,28 @@ private struct TimerRow: View {
         }
         .buttonStyle(.bordered)
         .buttonBorderShape(.circle)
+        .accessibilityLabel(label)
+    }
+}
+
+private struct RemainingTimeText: View {
+    let timer: CountdownTimer
+
+    var body: some View {
+        if timer.endDate == nil {
+            text(timer.remaining(now: Date()), finished: false)
+        } else {
+            TimelineView(.periodic(from: .now, by: 0.25)) { context in
+                text(timer.remaining(now: context.date), finished: timer.state(now: context.date) == .finished)
+            }
+        }
+    }
+
+    private func text(_ remaining: TimeInterval, finished: Bool) -> some View {
+        Text(finished ? "終了" : TimeText.countdown(remaining))
+            .font(.system(size: 44, weight: .bold, design: .rounded))
+            .monospacedDigit()
+            .foregroundStyle(finished ? Color.red : Color.primary)
     }
 }
 

@@ -45,12 +45,6 @@ struct CountdownTimer: Codable, Equatable, Identifiable {
     }
 }
 
-struct TimerPreset: Codable, Equatable, Identifiable {
-    var id = UUID()
-    var label: String
-    var duration: TimeInterval
-}
-
 /// ラップ付きのストップウォッチ。開始時刻と累積時間で保持する。
 struct Stopwatch: Codable, Equatable {
     var startedAt: Date?

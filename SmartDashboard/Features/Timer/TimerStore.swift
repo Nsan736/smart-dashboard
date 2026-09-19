@@ -8,7 +8,6 @@ import UserNotifications
 @Observable
 final class TimerStore {
     private(set) var timers: [CountdownTimer] = []
-    private(set) var presets: [TimerPreset] = []
     private(set) var stopwatch = Stopwatch()
     /// 通知の許可状態の表示用。nilは未確認。
     private(set) var notificationsAvailable: Bool?
@@ -28,11 +27,8 @@ final class TimerStore {
         keepAwake = defaults.bool(forKey: Keys.keepAwake)
         timers = Self.load([CountdownTimer].self, defaults, Keys.timers) ?? []
         stopwatch = Self.load(Stopwatch.self, defaults, Keys.stopwatch) ?? Stopwatch()
-        presets = Self.load([TimerPreset].self, defaults, Keys.presets) ?? [
-            TimerPreset(label: "3分", duration: 180),
-            TimerPreset(label: "5分", duration: 300),
-            TimerPreset(label: "10分", duration: 600),
-        ]
+        // 廃止したプリセット機能の保存データを破棄する
+        defaults.removeObject(forKey: "timer.presets")
     }
 
     var hasActivity: Bool {
@@ -71,6 +67,7 @@ final class TimerStore {
         cancelNotification(id)
     }
 
+    /// 動作中でも削除でき、登録済みのローカル通知も取り消す
     func remove(_ id: UUID) {
         timers.removeAll { $0.id == id }
         cancelNotification(id)
@@ -81,19 +78,6 @@ final class TimerStore {
         guard let index = timers.firstIndex(where: { $0.id == id }) else { return }
         body(&timers[index])
         changed()
-    }
-
-    // MARK: - プリセット
-
-    func addPreset(label: String, duration: TimeInterval) {
-        guard duration >= 1 else { return }
-        presets.append(TimerPreset(label: label.isEmpty ? TimeText.duration(duration) : label, duration: duration))
-        save(presets, Keys.presets)
-    }
-
-    func removePresets(at offsets: IndexSet) {
-        presets.remove(atOffsets: offsets)
-        save(presets, Keys.presets)
     }
 
     // MARK: - ストップウォッチ
@@ -204,7 +188,6 @@ final class TimerStore {
 
     private enum Keys {
         static let timers = "timer.timers"
-        static let presets = "timer.presets"
         static let stopwatch = "timer.stopwatch"
         static let keepAwake = "timer.keepAwake"
     }
