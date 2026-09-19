@@ -1,0 +1,81 @@
+name: release
+
+# v* のタグをpushしたときだけ動く。テストは ci で確認済みのコミットにタグを付ける前提で、ここでは行わない。
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  XCODE_APP: /Applications/Xcode_16.4.app
+  IPA_NAME: SmartDashboard.ipa
+  HOMEBREW_NO_AUTO_UPDATE: "1"
+  HOMEBREW_NO_INSTALL_CLEANUP: "1"
+  HOMEBREW_NO_ENV_HINTS: "1"
+
+jobs:
+  release:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 準備(Xcode選択、XcodeGen、プロジェクト生成)
+        run: |
+          sudo xcode-select -s "$XCODE_APP"
+          command -v xcodegen >/dev/null || brew install --quiet xcodegen
+          xcodegen generate --quiet
+          echo "APP_VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
+      - name: 署名なしビルド(iphoneos)
+        run: |
+          xcodebuild build \
+            -project SmartDashboard.xcodeproj \
+            -scheme SmartDashboard \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination "generic/platform=iOS" \
+            -derivedDataPath build/DerivedData \
+            MARKETING_VERSION="$APP_VERSION" \
+            CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            > build.log 2>&1 || true
+          grep -E "error:|\*\* BUILD" build.log | sort -u | head -n 80
+          grep -q "\*\* BUILD SUCCEEDED \*\*" build.log || { tail -n 60 build.log; exit 1; }
+
+      - name: ipaを作成
+        run: |
+          mkdir Payload
+          cp -R "build/DerivedData/Build/Products/Release-iphoneos/SmartDashboard.app" Payload/
+          zip -qry "$IPA_NAME" Payload
+
+      - name: GitHub Releasesへアップロード
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "$IPA_NAME" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "$IPA_NAME" --title "$GITHUB_REF_NAME" --generate-notes --latest
+          fi
+
+      - name: apps.jsonを更新してmainにコミット
+        run: |
+          cp "$IPA_NAME" scripts/make_apps_json.py "$RUNNER_TEMP/"
+          git fetch origin main
+          git checkout -B main origin/main
+          python3 "$RUNNER_TEMP/make_apps_json.py" apps.json "$APP_VERSION" "$RUNNER_TEMP/$IPA_NAME" "$GITHUB_REPOSITORY"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps.json
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: apps.json を v$APP_VERSION に更新 [skip ci]"
+            git push origin main
+          fi
