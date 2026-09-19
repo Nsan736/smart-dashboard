@@ -47,6 +47,7 @@ struct HomeView: View {
     }
 
     private func startSensors() {
+        motion.onPedometerUpdate = { [location] snapshot, date in location.addPedometer(snapshot, at: date) }
         motion.startLight()
         device.start()
         // 速度は高精度のGPSを使うので、設定でオフにできる。方位は使わない。
@@ -209,11 +210,7 @@ struct HomeView: View {
     private var sensorCard: some View {
         HomeCard(title: "センサー", symbol: "gauge.with.dots.needle.33percent") {
             if env.settings.homeShowsSpeed {
-                if let text = location.availability.unavailableText {
-                    sensorValue("速度", text)
-                } else {
-                    SpeedReadout(location: location, size: 44)
-                }
+                SpeedReadout(location: location, size: 44)
             }
             Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 8) {
                 GridRow {

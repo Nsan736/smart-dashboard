@@ -60,10 +60,14 @@ final class LocationSensors: NSObject, CLLocationManagerDelegate {
         manager.headingFilter = 2
     }
 
-    /// 現在の速度(m/s)。測位が途絶えていたらnil。
-    func currentSpeed(now: Date) -> Double? {
-        guard let lastFix = estimator.lastFix, now.timeIntervalSince(lastFix.timestamp) <= SpeedEstimator.staleAfter else { return nil }
-        return estimator.currentSpeed
+    /// 画面に出す速度と、その求め方(GPS → 位置の差分 → 歩行ペース → 停止中 の順)
+    func reading(now: Date) -> SpeedReading {
+        estimator.reading(now: now)
+    }
+
+    /// 歩数計の更新を渡す。屋内や地下で、GPSの代わりに歩行ペースから速度を出すために使う。
+    func addPedometer(_ snapshot: PedometerSnapshot, at date: Date) {
+        estimator.addPedometer(steps: snapshot.steps, distance: snapshot.distance, secondsPerMeter: snapshot.pace, at: date)
     }
 
     func start(includesHeading: Bool = true) {

@@ -38,6 +38,7 @@ struct SensorsView: View {
     }
 
     private func startAll() {
+        motion.onPedometerUpdate = { [location] snapshot, date in location.addPedometer(snapshot, at: date) }
         location.start()
         motion.start()
         device.start()
@@ -57,10 +58,8 @@ struct SensorsView: View {
 
     private var speedSection: some View {
         Section {
-            if let text = location.availability.unavailableText {
-                unavailable(text)
-            } else {
-                SpeedReadout(location: location, size: 64)
+            SpeedReadout(location: location, size: 64)
+            if location.availability.unavailableText == nil || location.estimator.distance > 0 {
                 HStack {
                     smallMetric("最高", String(format: "%.1f km/h", location.estimator.maxSpeed * 3.6))
                     smallMetric("平均", String(format: "%.1f km/h", location.estimator.averageSpeed * 3.6))
@@ -78,7 +77,7 @@ struct SensorsView: View {
         } header: {
             Text("速度")
         } footer: {
-            Text("高精度のGPSで測ります。屋内や地下では測れません。画面を離れると測位を止めます。")
+            Text("高精度のGPSで測ります。屋内や地下などGPSで動きを検出できないときは、歩行ペースから推定します。画面を離れると測位を止めます。")
         }
     }
 
@@ -240,52 +239,73 @@ struct SensorsView: View {
     }
 }
 
-/// リアルタイムの速度。GPSの速度が無効なときは位置の差分から求め、どちらも使えなければ「測位中…」と表示する。
+/// リアルタイムの速度。GPSの値 → 位置の差分 → 歩行ペース の順に使い、どれも使えなければ停止中(0)か「測位中…」。
+/// どの方法で出した値かを必ず表示する。
 struct SpeedReadout: View {
     let location: LocationSensors
     var size: CGFloat = 56
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                let reading = location.reading(now: context.date)
+                if let speed = reading.speed {
+                    BigValue(value: String(format: "%.1f", speed * 3.6), unit: "km/h", size: size)
+                } else {
+                    Text(location.availability.unavailableText ?? (location.isReducedAccuracy ? "測定不可" : "測位中…"))
+                        .font(.system(size: size * 0.5, weight: .bold, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.5)
+                }
+                Text(SpeedStatusText.method(reading.source, horizontalAccuracy: location.horizontalAccuracy))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(reading.source == .stationary ? Color.orange : Color.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(SpeedStatusText.gps(lastUpdate: location.lastUpdate, horizontalAccuracy: location.horizontalAccuracy, now: context.date))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if location.isReducedAccuracy {
-                Label("位置の精度が「おおよそ」のため、速度を測れません", systemImage: "location.slash")
-                    .font(.subheadline.weight(.semibold))
+                Label("位置の精度が「おおよそ」のため、GPSでは速度を測れません", systemImage: "location.slash")
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
-                Text("設定 → プライバシーとセキュリティ → 位置情報サービス → LiveContainer →「正確な位置情報」をオンにしてください。")
+                Text("設定 → プライバシーとセキュリティ → 位置情報サービス → LiveContainer →「正確な位置情報」をオンにしてください。歩いている間は、歩行ペースから推定した速度を表示します。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-            } else {
-                TimelineView(.periodic(from: .now, by: 1)) { context in
-                    if let speed = location.currentSpeed(now: context.date) {
-                        BigValue(value: String(format: "%.1f", speed * 3.6), unit: "km/h", size: size)
-                    } else {
-                        Text("測位中…")
-                            .font(.system(size: size * 0.55, weight: .bold, design: .rounded))
-                            .foregroundStyle(.secondary)
-                    }
-                    Text(Self.statusText(location: location, now: context.date))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                        .fixedSize(horizontal: false, vertical: true)
-                }
             }
         }
     }
+}
 
-    /// 「GPS: 水平精度 ±5m・最後の測位から2秒・速度はGPSの値」
-    static func statusText(location: LocationSensors, now: Date) -> String {
-        guard let lastUpdate = location.lastUpdate, let accuracy = location.horizontalAccuracy else {
-            return "GPS: まだ測位できていません"
+/// 速度の状態の文言(Viewの外に置いてテストできるようにする)
+enum SpeedStatusText {
+    /// どの方法で出した値か
+    static func method(_ source: SpeedSource?, horizontalAccuracy: Double?) -> String {
+        switch source {
+        case .reported?: return "GPSの速度"
+        case .derived?: return "位置の差分から計算"
+        case .pedometer?: return "歩行ペースから推定(GPSでは動きを検出できないため)"
+        case .stationary?:
+            if let accuracy = horizontalAccuracy, accuracy >= 0 {
+                return String(format: "停止中(精度±%.0fmのため、ゆっくりした移動は検出できません)", accuracy)
+            }
+            return "停止中(ゆっくりした移動は検出できません)"
+        case nil: return "速度を求められません(GPSの測位も、歩数の更新もありません)"
         }
+    }
+
+    /// 「GPS: 水平精度 ±5m・最後の測位から2秒」
+    static func gps(lastUpdate: Date?, horizontalAccuracy: Double?, now: Date) -> String {
+        guard let lastUpdate, let accuracy = horizontalAccuracy else { return "GPS: まだ測位できていません" }
         var parts = [accuracy >= 0 ? String(format: "水平精度 ±%.0fm", accuracy) : "水平精度 不明",
                      "最後の測位から\(max(0, Int(now.timeIntervalSince(lastUpdate))))秒"]
         if accuracy < 0 || accuracy > SpeedEstimator.maxHorizontalAccuracy {
-            parts.append("精度が悪いため速度の計算から除外中")
-        } else if let source = location.estimator.source {
-            parts.append(source == .reported ? "速度はGPSの値" : "速度は位置の差分から計算")
+            parts.append("精度が悪いためGPSの計算から除外中")
         }
         return "GPS: " + parts.joined(separator: "・")
     }

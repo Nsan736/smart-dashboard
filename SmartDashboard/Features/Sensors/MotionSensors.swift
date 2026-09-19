@@ -28,6 +28,8 @@ final class MotionSensors {
     @ObservationIgnored private let altimeter = CMAltimeter()
     @ObservationIgnored private let motion = CMMotionManager()
     @ObservationIgnored private let pedometer = CMPedometer()
+    /// 歩数計の継続更新が届いたとき(速度の補完に使う)
+    @ObservationIgnored var onPedometerUpdate: (@MainActor (PedometerSnapshot, Date) -> Void)?
 
     func start() {
         startAltimeter()
@@ -136,7 +138,9 @@ final class MotionSensors {
         if isLiveUpdate {
             currentPace = snapshot.pace
             currentCadence = snapshot.cadence
-            lastPedometerUpdate = Date()
+            let now = Date()
+            lastPedometerUpdate = now
+            onPedometerUpdate?(snapshot, now)
         }
     }
 }
