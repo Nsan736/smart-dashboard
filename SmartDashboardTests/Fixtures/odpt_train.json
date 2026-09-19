@@ -1,0 +1,59 @@
+[
+ {
+  "dc:date": "2026-09-19T21:37:29+09:00",
+  "dct:valid": "2026-09-19T21:42:29+09:00",
+  "odpt:delay": 60,
+  "owl:sameAs": "odpt.Train:Toei.Oedo.2116A",
+  "odpt:railway": "odpt.Railway:Toei.Oedo",
+  "odpt:operator": "odpt.Operator:Toei",
+  "odpt:toStation": null,
+  "odpt:trainType": "odpt.TrainType:Toei.Local",
+  "odpt:fromStation": "odpt.Station:Toei.Oedo.Roppongi",
+  "odpt:trainNumber": "2116A",
+  "odpt:originStation": [
+   "odpt.Station:Toei.Oedo.Hikarigaoka"
+  ],
+  "odpt:railDirection": "odpt.RailDirection:InnerLoop",
+  "odpt:destinationStation": [
+   "odpt.Station:Toei.Oedo.Tochomae"
+  ]
+ },
+ {
+  "dc:date": "2026-09-19T21:37:29+09:00",
+  "dct:valid": "2026-09-19T21:42:29+09:00",
+  "odpt:delay": 60,
+  "owl:sameAs": "odpt.Train:Toei.Oedo.2024B",
+  "odpt:railway": "odpt.Railway:Toei.Oedo",
+  "odpt:operator": "odpt.Operator:Toei",
+  "odpt:toStation": "odpt.Station:Toei.Oedo.Toshimaen",
+  "odpt:trainType": "odpt.TrainType:Toei.Local",
+  "odpt:fromStation": "odpt.Station:Toei.Oedo.Nerima",
+  "odpt:trainNumber": "2024B",
+  "odpt:originStation": [
+   "odpt.Station:Toei.Oedo.Tochomae"
+  ],
+  "odpt:railDirection": "odpt.RailDirection:OuterLoop",
+  "odpt:destinationStation": [
+   "odpt.Station:Toei.Oedo.Hikarigaoka"
+  ]
+ },
+ {
+  "dc:date": "2026-09-19T21:37:29+09:00",
+  "dct:valid": "2026-09-19T21:42:29+09:00",
+  "odpt:delay": 0,
+  "owl:sameAs": "odpt.Train:Toei.Oedo.2028B",
+  "odpt:railway": "odpt.Railway:Toei.Oedo",
+  "odpt:operator": "odpt.Operator:Toei",
+  "odpt:toStation": null,
+  "odpt:trainType": "odpt.TrainType:Toei.Local",
+  "odpt:fromStation": "odpt.Station:Toei.Oedo.AoyamaItchome",
+  "odpt:trainNumber": "2028B",
+  "odpt:originStation": [
+   "odpt.Station:Toei.Oedo.Tochomae"
+  ],
+  "odpt:railDirection": "odpt.RailDirection:OuterLoop",
+  "odpt:destinationStation": [
+   "odpt.Station:Toei.Oedo.Hikarigaoka"
+  ]
+ }
+]

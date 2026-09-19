@@ -1,0 +1,473 @@
+[
+ {
+  "dc:date": "2025-12-15T14:00:00+09:00",
+  "dct:issued": "2025-12-15",
+  "odpt:train": "odpt.Train:Toei.Asakusa.1029N",
+  "owl:sameAs": "odpt.TrainTimetable:Toei.Asakusa.1029N.Weekday",
+  "odpt:railway": "odpt.Railway:Toei.Asakusa",
+  "odpt:calendar": "odpt.Calendar:Weekday",
+  "odpt:operator": "odpt.Operator:Toei",
+  "odpt:trainType": "odpt.TrainType:Toei.Local",
+  "odpt:trainNumber": "1029N",
+  "odpt:originStation": [
+   "odpt.Station:Toei.Asakusa.NishiMagome"
+  ],
+  "odpt:railDirection": "odpt.RailDirection:Northbound",
+  "odpt:destinationStation": [
+   "odpt.Station:Hokuso.Hokuso.ImbaNihonIdai"
+  ],
+  "odpt:trainTimetableObject": [
+   {
+    "odpt:departureTime": "10:54",
+    "odpt:platformNumber": "2",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.NishiMagome"
+   },
+   {
+    "odpt:arrivalTime": "10:55",
+    "odpt:departureTime": "10:56",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Magome",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.Magome"
+   },
+   {
+    "odpt:arrivalTime": "10:57",
+    "odpt:departureTime": "10:58",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Nakanobu",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.Nakanobu"
+   },
+   {
+    "odpt:arrivalTime": "10:59",
+    "odpt:departureTime": "11:00",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Togoshi",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.Togoshi"
+   },
+   {
+    "odpt:arrivalTime": "11:02",
+    "odpt:departureTime": "11:02",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Gotanda",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.Gotanda"
+   },
+   {
+    "odpt:arrivalTime": "11:03",
+    "odpt:departureTime": "11:04",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Takanawadai",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.Takanawadai"
+   },
+   {
+    "odpt:arrivalTime": "11:06",
+    "odpt:departureTime": "11:08",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Sengakuji",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.Sengakuji"
+   },
+   {
+    "odpt:arrivalTime": "11:09",
+    "odpt:departureTime": "11:10",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Mita",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.Mita"
+   },
+   {
+    "odpt:arrivalTime": "11:12",
+    "odpt:departureTime": "11:12",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Daimon",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.Daimon"
+   },
+   {
+    "odpt:arrivalTime": "11:14",
+    "odpt:departureTime": "11:14",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Shimbashi",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.Shimbashi"
+   },
+   {
+    "odpt:arrivalTime": "11:16",
+    "odpt:departureTime": "11:17",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.HigashiGinza",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.HigashiGinza"
+   },
+   {
+    "odpt:arrivalTime": "11:18",
+    "odpt:departureTime": "11:18",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Takaracho",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.Takaracho"
+   },
+   {
+    "odpt:arrivalTime": "11:19",
+    "odpt:departureTime": "11:20",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Nihombashi",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.Nihombashi"
+   },
+   {
+    "odpt:arrivalTime": "11:21",
+    "odpt:departureTime": "11:22",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Ningyocho",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.Ningyocho"
+   },
+   {
+    "odpt:arrivalTime": "11:23",
+    "odpt:departureTime": "11:24",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.HigashiNihombashi",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.HigashiNihombashi"
+   },
+   {
+    "odpt:arrivalTime": "11:25",
+    "odpt:departureTime": "11:25",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Asakusabashi",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.Asakusabashi"
+   },
+   {
+    "odpt:arrivalTime": "11:26",
+    "odpt:departureTime": "11:27",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Kuramae",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.Kuramae"
+   },
+   {
+    "odpt:arrivalTime": "11:28",
+    "odpt:departureTime": "11:29",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Asakusa",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.Asakusa"
+   },
+   {
+    "odpt:arrivalTime": "11:30",
+    "odpt:departureTime": "11:31",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.HonjoAzumabashi",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.HonjoAzumabashi"
+   },
+   {
+    "odpt:arrivalTime": "11:32",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Oshiage"
+   }
+  ]
+ },
+ {
+  "dc:date": "2025-12-15T14:00:00+09:00",
+  "dct:issued": "2025-12-15",
+  "odpt:train": "odpt.Train:Toei.Asakusa.1008T",
+  "owl:sameAs": "odpt.TrainTimetable:Toei.Asakusa.1008T.Weekday",
+  "odpt:railway": "odpt.Railway:Toei.Asakusa",
+  "odpt:calendar": "odpt.Calendar:Weekday",
+  "odpt:operator": "odpt.Operator:Toei",
+  "odpt:trainType": "odpt.TrainType:Toei.Local",
+  "odpt:trainNumber": "1008T",
+  "odpt:originStation": [
+   "odpt.Station:Keisei.Main.KeiseiSakura"
+  ],
+  "odpt:railDirection": "odpt.RailDirection:Southbound",
+  "odpt:destinationStation": [
+   "odpt.Station:Toei.Asakusa.NishiMagome"
+  ],
+  "odpt:trainTimetableObject": [
+   {
+    "odpt:departureTime": "11:31",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.Oshiage"
+   },
+   {
+    "odpt:arrivalTime": "11:33",
+    "odpt:departureTime": "11:33",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.HonjoAzumabashi",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.HonjoAzumabashi"
+   },
+   {
+    "odpt:arrivalTime": "11:34",
+    "odpt:departureTime": "11:35",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Asakusa",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.Asakusa"
+   },
+   {
+    "odpt:arrivalTime": "11:36",
+    "odpt:departureTime": "11:37",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Kuramae",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.Kuramae"
+   },
+   {
+    "odpt:arrivalTime": "11:38",
+    "odpt:departureTime": "11:38",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Asakusabashi",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.Asakusabashi"
+   },
+   {
+    "odpt:arrivalTime": "11:39",
+    "odpt:departureTime": "11:40",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.HigashiNihombashi",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.HigashiNihombashi"
+   },
+   {
+    "odpt:arrivalTime": "11:42",
+    "odpt:departureTime": "11:42",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Ningyocho",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.Ningyocho"
+   },
+   {
+    "odpt:arrivalTime": "11:43",
+    "odpt:departureTime": "11:44",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Nihombashi",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.Nihombashi"
+   },
+   {
+    "odpt:arrivalTime": "11:45",
+    "odpt:departureTime": "11:46",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Takaracho",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.Takaracho"
+   },
+   {
+    "odpt:arrivalTime": "11:47",
+    "odpt:departureTime": "11:47",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.HigashiGinza",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.HigashiGinza"
+   },
+   {
+    "odpt:arrivalTime": "11:49",
+    "odpt:departureTime": "11:50",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Shimbashi",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.Shimbashi"
+   },
+   {
+    "odpt:arrivalTime": "11:51",
+    "odpt:departureTime": "11:52",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Daimon",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.Daimon"
+   },
+   {
+    "odpt:arrivalTime": "11:54",
+    "odpt:departureTime": "11:54",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Mita",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.Mita"
+   },
+   {
+    "odpt:arrivalTime": "11:56",
+    "odpt:departureTime": "11:57",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Sengakuji",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.Sengakuji"
+   },
+   {
+    "odpt:arrivalTime": "11:59",
+    "odpt:departureTime": "12:00",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Takanawadai",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.Takanawadai"
+   },
+   {
+    "odpt:arrivalTime": "12:01",
+    "odpt:departureTime": "12:01",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Gotanda",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.Gotanda"
+   },
+   {
+    "odpt:arrivalTime": "12:03",
+    "odpt:departureTime": "12:04",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Togoshi",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.Togoshi"
+   },
+   {
+    "odpt:arrivalTime": "12:05",
+    "odpt:departureTime": "12:06",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Nakanobu",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.Nakanobu"
+   },
+   {
+    "odpt:arrivalTime": "12:07",
+    "odpt:departureTime": "12:08",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Magome",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.Magome"
+   },
+   {
+    "odpt:arrivalTime": "12:10",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.NishiMagome",
+    "odpt:platformNumber": "2"
+   }
+  ]
+ },
+ {
+  "dc:date": "2025-12-15T14:00:00+09:00",
+  "dct:issued": "2025-12-15",
+  "odpt:train": "odpt.Train:Toei.Asakusa.2208T",
+  "owl:sameAs": "odpt.TrainTimetable:Toei.Asakusa.2208T.Weekday",
+  "odpt:railway": "odpt.Railway:Toei.Asakusa",
+  "odpt:calendar": "odpt.Calendar:Weekday",
+  "odpt:operator": "odpt.Operator:Toei",
+  "odpt:trainType": "odpt.TrainType:Toei.Local",
+  "odpt:trainNumber": "2208T",
+  "odpt:originStation": [
+   "odpt.Station:Hokuso.Hokuso.ImbaNihonIdai"
+  ],
+  "odpt:railDirection": "odpt.RailDirection:Southbound",
+  "odpt:destinationStation": [
+   "odpt.Station:Toei.Asakusa.NishiMagome"
+  ],
+  "odpt:trainTimetableObject": [
+   {
+    "odpt:departureTime": "23:33",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.Oshiage"
+   },
+   {
+    "odpt:arrivalTime": "23:34",
+    "odpt:departureTime": "23:35",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.HonjoAzumabashi",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.HonjoAzumabashi"
+   },
+   {
+    "odpt:arrivalTime": "23:36",
+    "odpt:departureTime": "23:37",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Asakusa",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.Asakusa"
+   },
+   {
+    "odpt:arrivalTime": "23:38",
+    "odpt:departureTime": "23:38",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Kuramae",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.Kuramae"
+   },
+   {
+    "odpt:arrivalTime": "23:40",
+    "odpt:departureTime": "23:40",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Asakusabashi",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.Asakusabashi"
+   },
+   {
+    "odpt:arrivalTime": "23:41",
+    "odpt:departureTime": "23:42",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.HigashiNihombashi",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.HigashiNihombashi"
+   },
+   {
+    "odpt:arrivalTime": "23:43",
+    "odpt:departureTime": "23:44",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Ningyocho",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.Ningyocho"
+   },
+   {
+    "odpt:arrivalTime": "23:45",
+    "odpt:departureTime": "23:46",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Nihombashi",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.Nihombashi"
+   },
+   {
+    "odpt:arrivalTime": "23:47",
+    "odpt:departureTime": "23:47",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Takaracho",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.Takaracho"
+   },
+   {
+    "odpt:arrivalTime": "23:49",
+    "odpt:departureTime": "23:49",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.HigashiGinza",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.HigashiGinza"
+   },
+   {
+    "odpt:arrivalTime": "23:51",
+    "odpt:departureTime": "23:51",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Shimbashi",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.Shimbashi"
+   },
+   {
+    "odpt:arrivalTime": "23:53",
+    "odpt:departureTime": "23:54",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Daimon",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.Daimon"
+   },
+   {
+    "odpt:arrivalTime": "23:55",
+    "odpt:departureTime": "23:56",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Mita",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.Mita"
+   },
+   {
+    "odpt:arrivalTime": "23:58",
+    "odpt:departureTime": "23:58",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Sengakuji",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.Sengakuji"
+   },
+   {
+    "odpt:arrivalTime": "00:00",
+    "odpt:departureTime": "00:01",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Takanawadai",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.Takanawadai"
+   },
+   {
+    "odpt:arrivalTime": "00:02",
+    "odpt:departureTime": "00:03",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Gotanda",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.Gotanda"
+   },
+   {
+    "odpt:arrivalTime": "00:05",
+    "odpt:departureTime": "00:05",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Togoshi",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.Togoshi"
+   },
+   {
+    "odpt:arrivalTime": "00:07",
+    "odpt:departureTime": "00:07",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Nakanobu",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.Nakanobu"
+   },
+   {
+    "odpt:arrivalTime": "00:08",
+    "odpt:departureTime": "00:09",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Magome",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.Magome"
+   },
+   {
+    "odpt:arrivalTime": "00:11",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.NishiMagome",
+    "odpt:platformNumber": "1"
+   }
+  ]
+ },
+ {
+  "dc:date": "2025-12-15T14:00:00+09:00",
+  "dct:issued": "2025-12-13",
+  "odpt:train": "odpt.Train:Toei.Asakusa.1981K",
+  "owl:sameAs": "odpt.TrainTimetable:Toei.Asakusa.1981K.SaturdayHoliday",
+  "odpt:railway": "odpt.Railway:Toei.Asakusa",
+  "odpt:calendar": "odpt.Calendar:SaturdayHoliday",
+  "odpt:operator": "odpt.Operator:Toei",
+  "odpt:trainType": "odpt.TrainType:Toei.Local",
+  "odpt:trainNumber": "1981K",
+  "odpt:originStation": [
+   "odpt.Station:Toei.Asakusa.NishiMagome"
+  ],
+  "odpt:railDirection": "odpt.RailDirection:Northbound",
+  "odpt:destinationStation": [
+   "odpt.Station:Toei.Asakusa.Sengakuji"
+  ],
+  "odpt:trainTimetableObject": [
+   {
+    "odpt:departureTime": "19:39",
+    "odpt:platformNumber": "2",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.NishiMagome"
+   },
+   {
+    "odpt:arrivalTime": "19:41",
+    "odpt:departureTime": "19:41",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Magome",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.Magome"
+   },
+   {
+    "odpt:arrivalTime": "19:43",
+    "odpt:departureTime": "19:43",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Nakanobu",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.Nakanobu"
+   },
+   {
+    "odpt:arrivalTime": "19:45",
+    "odpt:departureTime": "19:45",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Togoshi",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.Togoshi"
+   },
+   {
+    "odpt:arrivalTime": "19:47",
+    "odpt:departureTime": "19:48",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Gotanda",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.Gotanda"
+   },
+   {
+    "odpt:arrivalTime": "19:50",
+    "odpt:departureTime": "19:50",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Takanawadai",
+    "odpt:departureStation": "odpt.Station:Toei.Asakusa.Takanawadai"
+   },
+   {
+    "odpt:arrivalTime": "19:52",
+    "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Sengakuji",
+    "odpt:platformNumber": "3"
+   }
+  ]
+ }
+]

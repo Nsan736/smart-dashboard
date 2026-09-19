@@ -119,6 +119,15 @@ def check_swift_brackets():
         check(ok and not stack, f"{os.path.relpath(path, ROOT)}: 括弧の対応が取れていない可能性")
 
 
+def check_double_backslash():
+    """文字列補間やキーパスのバックスラッシュが二重になっていないか(生成時のエスケープの誤り)。"""
+    bad = chr(92) * 2
+    for path in glob.glob(os.path.join(ROOT, "SmartDashboard*", "**", "*.swift"), recursive=True):
+        for number, line in enumerate(open(path, encoding="utf-8").read().splitlines(), 1):
+            if bad + "(" in line or bad + "." in line:
+                errors.append(f"{os.path.relpath(path, ROOT)}:{number}: バックスラッシュが二重になっています")
+
+
 def check_main_actor_statics():
     """ciで実際に起きた失敗の再発防止。nonisolated でない静的メンバーを集め、テスト側の呼び出しを調べる。"""
     import re
@@ -158,7 +167,7 @@ def check_main_actor_statics():
                         check(ok, f"{os.path.basename(path)}:{i + 1}: {cls}.{member} は @MainActor。テストを @MainActor にするか nonisolated にする")
 
 
-for step in (check_fixtures, check_yaml, check_apps_json, check_swift_brackets, check_main_actor_statics):
+for step in (check_fixtures, check_yaml, check_apps_json, check_swift_brackets, check_double_backslash, check_main_actor_statics):
     step()
 
 if errors:
