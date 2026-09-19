@@ -1,0 +1,34 @@
+{
+  "name": "スマートダッシュボード (Nsan736)",
+  "identifier": "com.nsan.smartdashboard.source",
+  "sourceURL": "https://raw.githubusercontent.com/Nsan736/smart-dashboard/main/apps.json",
+  "apps": [
+    {
+      "name": "スマートダッシュボード",
+      "bundleIdentifier": "com.nsan.smartdashboard",
+      "developerName": "Nsan736",
+      "subtitle": "手元ダッシュボード",
+      "localizedDescription": "天気、為替、電車、センサー、タイマーをまとめた個人用ダッシュボード。通信量を最小にする設計。",
+      "iconURL": "https://raw.githubusercontent.com/Nsan736/smart-dashboard/main/icon.png",
+      "tintColor": "2F7DE1",
+      "screenshotURLs": [],
+      "versions": [
+        {
+          "version": "0.1.0",
+          "date": "2026-09-19T08:17:37Z",
+          "localizedDescription": "v0.1.0",
+          "downloadURL": "https://github.com/Nsan736/smart-dashboard/releases/download/v0.1.0/SmartDashboard.ipa",
+          "size": 725499,
+          "minOSVersion": "17.0"
+        }
+      ],
+      "version": "0.1.0",
+      "versionDate": "2026-09-19T08:17:37Z",
+      "versionDescription": "v0.1.0",
+      "downloadURL": "https://github.com/Nsan736/smart-dashboard/releases/download/v0.1.0/SmartDashboard.ipa",
+      "size": 725499,
+      "minOSVersion": "17.0"
+    }
+  ],
+  "news": []
+}
