@@ -301,6 +301,7 @@ struct PlacesEditorView: View {
                 Text("緯度経度は小数第2位(約1km)に丸めて天気の取得に使います。")
             }
         }
+        .keyboardDismissable()
         .navigationTitle("地点")
         .toolbar { EditButton() }
     }

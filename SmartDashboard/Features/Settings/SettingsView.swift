@@ -67,6 +67,7 @@ struct SettingsView: View {
                     Button("キャッシュを削除", role: .destructive) { confirmClearCache = true }
                 }
             }
+            .keyboardDismissable()
             .navigationTitle("設定")
             .task {
                 odptToken = env.keychain.string(for: KeychainAccount.odptToken) ?? ""

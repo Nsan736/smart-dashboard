@@ -37,6 +37,7 @@ struct ExchangeView: View {
                     Text("出典: Rates By Exchange Rate API (https://www.exchangerate-api.com)")
                 }
             }
+            .keyboardDismissable()
             .navigationTitle("為替")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -78,6 +79,7 @@ struct ConverterView: View {
     @AppStorage("exchange.converter.code") private var code = "USD"
     @AppStorage("exchange.converter.toYen") private var toYen = true
     @State private var amountText = ""
+    @FocusState private var amountFocused: Bool
 
     private var amount: Double? {
         Double(amountText.replacingOccurrences(of: ",", with: ""))
@@ -99,16 +101,21 @@ struct ConverterView: View {
             Text("円 → \(code)").tag(false)
         }
         .pickerStyle(.segmented)
-        HStack {
-            TextField("金額", text: $amountText)
-                .keyboardType(.decimalPad)
-                .font(.title2.monospacedDigit())
-            Text(toYen ? code : "円").foregroundStyle(.secondary)
-        }
-        HStack {
-            Text("=").foregroundStyle(.secondary)
-            Spacer()
-            BigValue(value: result.map(Self.resultText) ?? "-", unit: toYen ? "円" : code, size: 36)
+        // 入力欄と結果を同じ行に置く。キーボードを出したとき、結果が隠れないようにするため。
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                TextField("金額", text: $amountText)
+                    .keyboardType(.decimalPad)
+                    .font(.title2.monospacedDigit())
+                    .focused($amountFocused)
+                Text(toYen ? code : "円").foregroundStyle(.secondary)
+                KeyboardCloseButton(isFocused: amountFocused)
+            }
+            HStack {
+                Text("=").foregroundStyle(.secondary)
+                Spacer()
+                BigValue(value: result.map(Self.resultText) ?? "-", unit: toYen ? "円" : code, size: 36)
+            }
         }
     }
 
@@ -153,6 +160,7 @@ struct CurrencyPickerView: View {
             }
         }
         .searchable(text: $query, prompt: "通貨コードまたは名前")
+        .keyboardDismissable()
         .navigationTitle("通貨")
         .toolbar { EditButton() }
     }

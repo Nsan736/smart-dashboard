@@ -180,6 +180,7 @@ struct TileAreaEditorView: View {
                 .disabled(area == nil)
             }
         }
+        .keyboardDismissable()
         .navigationTitle("エリアを追加")
         .task {
             if latitude.isEmpty { await fillCurrentLocation() }

@@ -77,6 +77,7 @@ private struct CountdownListView: View {
                 }
             }
         }
+        .keyboardDismissable()
         .confirmationDialog(
             "このタイマーを削除しますか？",
             isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
