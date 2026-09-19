@@ -16,7 +16,8 @@ protocol ODPTAPI: Sendable {
     func railways(of op: TrainOperator) async throws -> [ODPTRailway]
     func stations(ofRailway railwayID: String, op: TrainOperator) async throws -> [ODPTStation]
     func stations(ids: [String], endpoint: ODPTEndpoint) async throws -> [ODPTStation]
-    func trainInformation(op: TrainOperator, railwayIDs: [String]) async throws -> [ODPTTrainInformation]
+    /// 運行情報の応答を、デコードせずにそのまま返す(遅延時のサンプル収集にも使うため)
+    func trainInformationData(op: TrainOperator, railwayIDs: [String]) async throws -> Data
     func stationTimetables(stationID: String, directionID: String, op: TrainOperator) async throws -> [ODPTStationTimetable]
     func railDirections(endpoint: ODPTEndpoint) async throws -> [ODPTRailDirection]
     func trainTypes(of op: TrainOperator) async throws -> [ODPTTrainType]
@@ -43,9 +44,9 @@ struct ODPTClient: ODPTAPI {
     }
 
     /// 登録した路線だけに絞って取得する(カンマ区切りでOR指定)
-    func trainInformation(op: TrainOperator, railwayIDs: [String]) async throws -> [ODPTTrainInformation] {
-        guard !railwayIDs.isEmpty else { return [] }
-        return try await get("odpt:TrainInformation", [("odpt:railway", railwayIDs.joined(separator: ","))], op.endpoint, op.name)
+    func trainInformationData(op: TrainOperator, railwayIDs: [String]) async throws -> Data {
+        guard !railwayIDs.isEmpty else { return Data("[]".utf8) }
+        return try await getData("odpt:TrainInformation", [("odpt:railway", railwayIDs.joined(separator: ","))], op.endpoint, op.name)
     }
 
     func stationTimetables(stationID: String, directionID: String, op: TrainOperator) async throws -> [ODPTStationTimetable] {
@@ -61,11 +62,15 @@ struct ODPTClient: ODPTAPI {
     }
 
     private func get<T: Decodable>(_ type: String, _ query: [(String, String)], _ endpoint: ODPTEndpoint, _ name: String) async throws -> [T] {
+        try Self.decode([T].self, from: try await getData(type, query, endpoint, name))
+    }
+
+    private func getData(_ type: String, _ query: [(String, String)], _ endpoint: ODPTEndpoint, _ name: String) async throws -> Data {
         let token = tokenProvider()
         if endpoint.requiresToken, (token ?? "").isEmpty { throw ODPTError.tokenRequired(name) }
         let url = Self.makeURL(type: type, query: query, endpoint: endpoint, token: token)
         do {
-            return try Self.decode([T].self, from: try await http.get(url))
+            return try await http.get(url)
         } catch HTTPError.badStatus(let code) where code == 401 || code == 403 {
             throw ODPTError.unauthorized
         }

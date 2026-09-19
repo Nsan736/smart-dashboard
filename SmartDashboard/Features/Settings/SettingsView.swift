@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct SettingsView: View {
     @Environment(AppEnvironment.self) private var env
@@ -89,6 +90,14 @@ struct SettingsView: View {
                     Text("APIトークン")
                 } footer: {
                     Text("トークンはこの端末のKeychainだけに保存します。空にして保存すると削除します。")
+                }
+
+                Section {
+                    NavigationLink("運行情報の直近のレスポンス") { TrainInfoCaptureView() }
+                } header: {
+                    Text("開発者向け")
+                } footer: {
+                    Text("遅延などが起きたときの応答を確認・コピーできます。保存するのは直近の1件だけで、追加の通信はしません。")
                 }
 
                 Section("キャッシュ") {
@@ -213,5 +222,45 @@ struct UsageBreakdownView: View {
             }
         }
         .navigationTitle("機能別の内訳")
+    }
+}
+
+/// 開発者向け: 運行情報の直近の応答(生のJSON)を表示・コピーする
+struct TrainInfoCaptureView: View {
+    @Environment(AppEnvironment.self) private var env
+    @State private var copied = false
+
+    var body: some View {
+        List {
+            if let capture = env.trains.lastCapture {
+                Section {
+                    LabeledContent("取得時刻", value: Formatters.dateTime.string(from: capture.fetchedAt))
+                    LabeledContent("事業者", value: capture.value.operatorName)
+                    LabeledContent("サイズ", value: Formatters.bytes(Int64(capture.value.body.utf8.count)))
+                    Button {
+                        UIPasteboard.general.string = capture.value.body
+                        copied = true
+                    } label: {
+                        Label(copied ? "コピーしました" : "JSONをコピー", systemImage: copied ? "checkmark" : "doc.on.doc")
+                    }
+                    ShareLink(item: capture.value.body) {
+                        Label("共有", systemImage: "square.and.arrow.up")
+                    }
+                } footer: {
+                    Text("アクセストークンは応答の本文には含まれません。")
+                }
+                Section("JSON") {
+                    Text(capture.value.body)
+                        .font(.system(.caption, design: .monospaced))
+                        .textSelection(.enabled)
+                }
+            } else {
+                ContentUnavailableView("まだありません", systemImage: "doc.text",
+                                       description: Text("電車の画面で運行情報を更新すると、その応答がここに保存されます。"))
+            }
+        }
+        .navigationTitle("直近のレスポンス")
+        .navigationBarTitleDisplayMode(.inline)
+        .task { await env.trains.loadIfNeeded() }
     }
 }

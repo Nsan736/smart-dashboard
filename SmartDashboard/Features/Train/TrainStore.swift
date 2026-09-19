@@ -42,6 +42,14 @@ enum TrainStatus: String, Codable {
     }
 }
 
+/// 開発者向け: 運行情報の直近の応答(生のJSON)。直近の1件だけを保存する。
+/// トークンはURLのクエリにだけ含まれ、応答の本文には含まれない。
+struct TrainInfoCapture: Codable, Equatable {
+    var operatorName: String
+    var railwayIDs: [String]
+    var body: String
+}
+
 struct TrainInfoItem: Codable, Equatable, Identifiable {
     var railwayID: String
     var railwayName: String
@@ -62,6 +70,8 @@ final class TrainStore {
     private(set) var shapes: [String: RailwayShape] = [:]
     private(set) var isLoadingShapes = false
     private(set) var shapeError: String?
+    /// 開発者向け: 運行情報の直近の応答
+    private(set) var lastCapture: CachedValue<TrainInfoCapture>?
     private(set) var isLoadingInfo = false
     private(set) var downloadingTimetables: Set<UUID> = []
     private(set) var infoError: String?
@@ -80,6 +90,7 @@ final class TrainStore {
     @ObservationIgnored private var loadTask: Task<Void, Never>?
 
     private static let infoKey = "trainInfo"
+    private static let captureKey = "debug.trainInformation"
 
     init(api: ODPTAPI, cache: DiskCache, timetableStorage: DiskCache, shapeStorage: DiskCache, settings: AppSettings, network: NetworkMonitor,
          hasToken: @escaping @MainActor () -> Bool, onFetched: @escaping @MainActor (DataKind, Date) -> Void,
@@ -102,6 +113,7 @@ final class TrainStore {
             loadTask = Task { [weak self] in
                 guard let self else { return }
                 self.info = await self.cache.load([TrainInfoItem].self, key: Self.infoKey)
+                self.lastCapture = await self.cache.load(TrainInfoCapture.self, key: Self.captureKey)
                 for station in self.stations {
                     if let stored = await self.timetableStorage.load(StoredTimetable.self, key: station.id.uuidString) {
                         self.timetables[station.id] = stored.value
@@ -120,6 +132,7 @@ final class TrainStore {
     /// キャッシュ削除のあとに呼ぶ。保存した時刻表は消さない。
     func clearCachedInfo() {
         info = nil
+        lastCapture = nil
     }
 
     // MARK: - 登録
@@ -257,7 +270,14 @@ final class TrainStore {
         for (operatorID, group) in grouped {
             guard let op = OperatorCatalog.find(operatorID) else { continue }
             do {
-                let response = try await api.trainInformation(op: op, railwayIDs: group.map(\.railwayID))
+                let data = try await api.trainInformationData(op: op, railwayIDs: group.map(\.railwayID))
+                // デコードに失敗した応答こそ調べたいので、先に保存する。追加の通信はしない。
+                let capture = TrainInfoCapture(operatorName: op.name, railwayIDs: group.map(\.railwayID),
+                                               body: String(decoding: data, as: UTF8.self))
+                let capturedAt = Date()
+                lastCapture = CachedValue(value: capture, fetchedAt: capturedAt)
+                try? await cache.save(capture, key: Self.captureKey, fetchedAt: capturedAt)
+                let response = try ODPTClient.decode([ODPTTrainInformation].self, from: data)
                 items += Self.makeItems(lines: group, response: response)
             } catch {
                 errors.append(error.localizedDescription)
