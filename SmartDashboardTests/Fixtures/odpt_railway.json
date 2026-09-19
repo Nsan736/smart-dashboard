@@ -1,0 +1,45 @@
+[
+ {
+  "@id": "urn:ucode:_00001C00000000000001000003100E6E",
+  "@type": "odpt:Railway",
+  "dc:date": "2024-06-27T08:00:00+09:00",
+  "@context": "http://vocab.odpt.org/context_odpt_Railway.jsonld",
+  "dc:title": "浅草線",
+  "odpt:color": "#FF535F",
+  "owl:sameAs": "odpt.Railway:Toei.Asakusa",
+  "odpt:lineCode": "A",
+  "odpt:operator": "odpt.Operator:Toei",
+  "odpt:railwayTitle": {
+   "en": "Asakusa Line",
+   "ja": "浅草線"
+  },
+  "odpt:stationOrder": [
+   {
+    "odpt:index": 1,
+    "odpt:station": "odpt.Station:Toei.Asakusa.NishiMagome",
+    "odpt:stationTitle": {
+     "en": "Nishi-magome",
+     "ja": "西馬込"
+    }
+   },
+   {
+    "odpt:index": 2,
+    "odpt:station": "odpt.Station:Toei.Asakusa.Magome",
+    "odpt:stationTitle": {
+     "en": "Magome",
+     "ja": "馬込"
+    }
+   },
+   {
+    "odpt:index": 3,
+    "odpt:station": "odpt.Station:Toei.Asakusa.Nakanobu",
+    "odpt:stationTitle": {
+     "en": "Nakanobu",
+     "ja": "中延"
+    }
+   }
+  ],
+  "odpt:ascendingRailDirection": "odpt.RailDirection:Northbound",
+  "odpt:descendingRailDirection": "odpt.RailDirection:Southbound"
+ }
+]

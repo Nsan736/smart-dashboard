@@ -1,0 +1,28 @@
+[
+ {
+  "@id": "urn:ucode:_00001C00000000000001000003230794",
+  "@type": "odpt:TrainType",
+  "dc:date": "2019-04-25T16:00:00+09:00",
+  "@context": "http://vocab.odpt.org/context_odpt_TrainType.jsonld",
+  "dc:title": "アクセス特急",
+  "owl:sameAs": "odpt.TrainType:Toei.AccessExpress",
+  "odpt:operator": "odpt.Operator:Toei",
+  "odpt:trainTypeTitle": {
+   "en": "Access Express",
+   "ja": "アクセス特急"
+  }
+ },
+ {
+  "@id": "urn:ucode:_00001C00000000000001000003230795",
+  "@type": "odpt:TrainType",
+  "dc:date": "2019-04-25T16:00:00+09:00",
+  "@context": "http://vocab.odpt.org/context_odpt_TrainType.jsonld",
+  "dc:title": "エアポート快特",
+  "owl:sameAs": "odpt.TrainType:Toei.AirportRapidLimitedExpress",
+  "odpt:operator": "odpt.Operator:Toei",
+  "odpt:trainTypeTitle": {
+   "en": "Airport Rapid Limited Express",
+   "ja": "エアポート快特"
+  }
+ }
+]

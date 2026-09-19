@@ -1,0 +1,39 @@
+[
+ {
+  "@id": "urn:ucode:_00001C00000000000001000003230771",
+  "@type": "odpt:RailDirection",
+  "dc:date": "2019-04-25T14:00:00+09:00",
+  "@context": "http://vocab.odpt.org/context_odpt_RailDirection.jsonld",
+  "dc:title": "早稲田方面",
+  "owl:sameAs": "odpt.RailDirection:Toei.Waseda",
+  "odpt:operator": "odpt.Operator:Toei",
+  "odpt:railDirectionTitle": {
+   "en": "For Waseda",
+   "ja": "早稲田方面"
+  }
+ },
+ {
+  "@id": "urn:ucode:_00001C0000000000000100000320960D",
+  "@type": "odpt:RailDirection",
+  "dc:date": "2019-04-25T14:00:00+09:00",
+  "@context": "http://vocab.odpt.org/context_odpt_RailDirection.jsonld",
+  "dc:title": "北行",
+  "owl:sameAs": "odpt.RailDirection:Northbound",
+  "odpt:railDirectionTitle": {
+   "en": "Northbound",
+   "ja": "北行"
+  }
+ },
+ {
+  "@id": "urn:ucode:_00001C0000000000000100000320960E",
+  "@type": "odpt:RailDirection",
+  "dc:date": "2019-04-25T14:00:00+09:00",
+  "@context": "http://vocab.odpt.org/context_odpt_RailDirection.jsonld",
+  "dc:title": "南行",
+  "owl:sameAs": "odpt.RailDirection:Southbound",
+  "odpt:railDirectionTitle": {
+   "en": "Southbound",
+   "ja": "南行"
+  }
+ }
+]
