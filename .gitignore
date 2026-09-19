@@ -1,0 +1,33 @@
+# Xcode / XcodeGen
+*.xcodeproj
+*.xcworkspace
+xcuserdata/
+DerivedData/
+build/
+*.xcresult
+
+# 配布物
+Payload/
+*.ipa
+*.zip
+*.dSYM
+
+# 秘密情報
+.env
+.env.*
+*.pem
+*.p12
+*.mobileprovision
+Secrets*.swift
+secrets*.json
+*token*.txt
+
+# OS / エディタ
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.claude/settings.local.json
+
+# XcodeGenが生成する
+SmartDashboard/Info.plist
