@@ -52,13 +52,20 @@ final class AppEnvironment {
     init() {
         let support = DiskCache.defaultDirectory("SmartDashboard")
         try? FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
-        let usage = DataUsageStore(fileURL: support.appendingPathComponent("data-usage.json"))
+        let usage = DataUsageStore(fileURL: support.appendingPathComponent("data-usage-v2.json"),
+                                   legacyFileURL: support.appendingPathComponent("data-usage.json"))
         let settings = AppSettings()
         let network = NetworkMonitor()
         let fetchLog = FetchLog()
         let cache = DiskCache(directory: support.appendingPathComponent("cache", isDirectory: true))
-        let http = MeteredHTTPClient { [weak usage] bytes in
-            Task { @MainActor in usage?.add(bytes) }
+        let http = MeteredHTTPClient { [weak usage] record in
+            Task { @MainActor in usage?.add(record) }
+        }
+        settings.monthlyCellularBytes = usage.thisMonth(.cellular)
+        usage.onChange = { [weak usage] in
+            guard let usage else { return }
+            let bytes = usage.thisMonth(.cellular)
+            if settings.monthlyCellularBytes != bytes { settings.monthlyCellularBytes = bytes }
         }
         self.usage = usage
         self.settings = settings
@@ -84,7 +91,7 @@ final class AppEnvironment {
         radar = RadarStore(http: http, network: network, loader: radarLoader)
         weather = WeatherStore(
             api: OpenMeteoClient(http: http), cache: cache, settings: settings, network: network,
-            location: location, placeNames: PlaceNameResolver(),
+            location: location, placeNames: PlaceNameResolver(onRequest: { [weak usage] in usage?.addGeocodeRequest() }),
             onCurrentLocation: { latitude, longitude in
                 // 地図を保存する最初の登録エリア(現在地から半径20km)を一度だけ作る
                 guard !settings.didCreateDefaultTileArea, settings.tileAreas.isEmpty else { return }

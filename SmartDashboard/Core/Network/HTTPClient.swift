@@ -17,14 +17,14 @@ enum HTTPError: LocalizedError, Equatable {
     }
 }
 
-/// 受信バイト数を計測するHTTPクライアント。
+/// 受信バイト数を、通信1回ごとに回線と機能を判定して計測するHTTPクライアント。
 /// URLCacheは使わず、キャッシュはDiskCacheに一本化する。
 final class MeteredHTTPClient: NSObject, HTTPClient, URLSessionTaskDelegate, @unchecked Sendable {
-    private let onBytesReceived: @Sendable (Int64) -> Void
+    private let onReceived: @Sendable (UsageRecord) -> Void
     private var session: URLSession!
 
-    init(onBytesReceived: @escaping @Sendable (Int64) -> Void) {
-        self.onBytesReceived = onBytesReceived
+    init(onReceived: @escaping @Sendable (UsageRecord) -> Void) {
+        self.onReceived = onReceived
         super.init()
         let config = URLSessionConfiguration.ephemeral
         config.urlCache = nil
@@ -46,11 +46,21 @@ final class MeteredHTTPClient: NSObject, HTTPClient, URLSessionTaskDelegate, @un
         return data
     }
 
+    /// モバイル通信のほか、テザリングなど従量制の回線もモバイル通信として数える
+    static func link(isCellular: Bool, isExpensive: Bool) -> UsageLink {
+        isCellular || isExpensive ? .cellular : .wifi
+    }
+
     func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
-        var total: Int64 = 0
+        let category = UsageCategory.from(host: task.originalRequest?.url?.host)
+        var totals: [UsageLink: Int64] = [:]
         for t in metrics.transactionMetrics {
-            total += t.countOfResponseHeaderBytesReceived + t.countOfResponseBodyBytesReceived
+            let bytes = t.countOfResponseHeaderBytesReceived + t.countOfResponseBodyBytesReceived
+            guard bytes > 0 else { continue }
+            totals[Self.link(isCellular: t.isCellular, isExpensive: t.isExpensive), default: 0] += bytes
         }
-        if total > 0 { onBytesReceived(total) }
+        for (link, bytes) in totals {
+            onReceived(UsageRecord(bytes: bytes, link: link, category: category))
+        }
     }
 }

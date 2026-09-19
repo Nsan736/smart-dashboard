@@ -17,9 +17,12 @@ final class PlaceNameResolver {
     private let defaults: UserDefaults
     private let geocoder = CLGeocoder()
     private var entries: [GeocodedPlace]
+    /// CLGeocoderに問い合わせた回数の記録用(通信量はiOS側で発生し、アプリからは計測できない)
+    private let onRequest: @MainActor () -> Void
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = .standard, onRequest: @escaping @MainActor () -> Void = {}) {
         self.defaults = defaults
+        self.onRequest = onRequest
         entries = defaults.data(forKey: Self.key).flatMap { try? JSONDecoder().decode([GeocodedPlace].self, from: $0) } ?? []
     }
 
@@ -29,6 +32,7 @@ final class PlaceNameResolver {
             return hit.name
         }
         let location = CLLocation(latitude: latitude, longitude: longitude)
+        onRequest()
         guard let placemark = try? await geocoder.reverseGeocodeLocation(location, preferredLocale: Locale(identifier: "ja_JP")).first,
               let name = Self.formatName(administrativeArea: placemark.administrativeArea, locality: placemark.locality,
                                          subLocality: placemark.subLocality, fallback: placemark.name) else {

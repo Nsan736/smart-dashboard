@@ -33,17 +33,21 @@ enum RefreshDecision: Equatable {
     case blockedByExpensive
     case blockedByConstrained
     case blockedByWiFiOnly
+    case blockedByCellularLimit
 }
 
 /// 自動更新してよいかどうかを決める純関数。手動更新はオンラインなら常に許可する。
 struct RefreshPolicy {
     var wifiOnly: Bool
+    /// 今月のモバイル通信量が、設定した上限を超えているか(上限の設定がオフなら常にfalse)
+    var cellularLimitReached = false
 
     func autoDecision(kind: DataKind, fetchedAt: Date?, now: Date, network: NetworkStatus) -> RefreshDecision {
         if let fetchedAt, now.timeIntervalSince(fetchedAt) < kind.minimumInterval, fetchedAt <= now {
             return .fresh
         }
         guard network.isOnline else { return .offline }
+        if cellularLimitReached, network.isExpensive || !network.isWiFi { return .blockedByCellularLimit }
         if network.isConstrained { return .blockedByConstrained }
         if network.isExpensive { return .blockedByExpensive }
         if wifiOnly && !network.isWiFi { return .blockedByWiFiOnly }

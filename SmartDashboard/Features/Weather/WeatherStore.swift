@@ -128,6 +128,7 @@ extension RefreshDecision {
         case .blockedByExpensive: return "従量制の回線のため自動更新を停止中(手動更新は可能)"
         case .blockedByConstrained: return "省データモードのため自動更新を停止中(手動更新は可能)"
         case .blockedByWiFiOnly: return "Wi-Fi以外のため自動更新を停止中(手動更新は可能)"
+        case .blockedByCellularLimit: return "今月のモバイル通信量が上限を超えたため自動更新を停止中(手動更新は可能)"
         }
     }
 }

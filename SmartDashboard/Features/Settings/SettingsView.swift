@@ -20,12 +20,33 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    LabeledContent("今日", value: Formatters.bytes(env.usage.today))
-                    LabeledContent("今月", value: Formatters.bytes(env.usage.thisMonth))
+                    UsageSummaryRow(title: "今日", wifi: env.usage.today(.wifi), cellular: env.usage.today(.cellular),
+                                    unknown: env.usage.today(.unknown))
+                    UsageSummaryRow(title: "今月", wifi: env.usage.thisMonth(.wifi), cellular: env.usage.thisMonth(.cellular),
+                                    unknown: env.usage.thisMonth(.unknown))
+                    NavigationLink("機能別の内訳(今月)") { UsageBreakdownView() }
                 } header: {
                     Text("受信データ量")
                 } footer: {
-                    Text("このアプリが受信したヘッダーと本文の合計です。")
+                    Text("このアプリが受信したヘッダーと本文の合計を、通信1回ごとに回線を判定して記録しています。テザリングなど従量制の回線はモバイル通信に含めます。Apple Maps の地図と地名の取得はiOSが通信するため、ここには含まれません。")
+                }
+
+                Section {
+                    Toggle("今月のモバイル通信量が上限を超えたら自動更新を止める", isOn: $settings.cellularLimitEnabled)
+                    if settings.cellularLimitEnabled {
+                        Stepper(value: $settings.cellularLimitMB, in: 10...5000, step: 10) {
+                            Text("上限 \(settings.cellularLimitMB) MB")
+                        }
+                        if settings.cellularLimitReached {
+                            Label("上限を超えています。手動更新は使えます。", systemImage: "exclamationmark.triangle")
+                                .font(.footnote)
+                                .foregroundStyle(.orange)
+                        }
+                    }
+                } header: {
+                    Text("モバイル通信量の上限")
+                } footer: {
+                    Text("現在の設定では、従量制の回線での自動更新はもともと停止しています。この上限は、その動作に加えた保険として働きます。")
                 }
 
                 Section("登録内容") {
@@ -125,5 +146,64 @@ struct TrainRegistrationListView: View {
         }
         .navigationTitle("路線・駅")
         .toolbar { EditButton() }
+    }
+}
+
+/// 「今日」「今月」の受信量を、Wi-Fiとモバイル通信に分けて表示する
+struct UsageSummaryRow: View {
+    let title: String
+    let wifi: Int64
+    let cellular: Int64
+    let unknown: Int64
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.subheadline.weight(.semibold))
+            HStack {
+                Label(Formatters.bytes(wifi), systemImage: "wifi")
+                Spacer(minLength: 8)
+                Label(Formatters.bytes(cellular), systemImage: "antenna.radiowaves.left.and.right")
+            }
+            .font(.body.weight(.medium))
+            .monospacedDigit()
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            if unknown > 0 {
+                Text("回線不明(以前の記録): \(Formatters.bytes(unknown))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// 機能別の内訳(今月)
+struct UsageBreakdownView: View {
+    @Environment(AppEnvironment.self) private var env
+
+    var body: some View {
+        List {
+            Section {
+                ForEach(UsageCategory.allCases, id: \.self) { category in
+                    let wifi = env.usage.thisMonth(.wifi, category)
+                    let cellular = env.usage.thisMonth(.cellular, category)
+                    let unknown = env.usage.thisMonth(.unknown, category)
+                    if category != .legacy || unknown > 0 {
+                        UsageSummaryRow(title: category.label, wifi: wifi, cellular: cellular, unknown: unknown)
+                    }
+                }
+            } header: {
+                Text("今月")
+            } footer: {
+                Text("左がWi-Fi、右がモバイル通信です。")
+            }
+            Section {
+                LabeledContent("地名の取得", value: "\(env.usage.geocodeRequestsThisMonth) 回")
+            } footer: {
+                Text("地名(CLGeocoder)と Apple Maps の通信はiOSが行うため、アプリからは受信量を計測できません。地名は500m以上移動したときだけ取得するので、回数だけを記録しています。")
+            }
+        }
+        .navigationTitle("機能別の内訳")
     }
 }

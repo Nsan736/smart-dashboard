@@ -45,6 +45,15 @@ final class RefreshPolicyTests: XCTestCase {
         XCTAssertEqual(policy.autoDecision(kind: .weather, fetchedAt: now.addingTimeInterval(3600), now: now, network: wifi), .refresh)
     }
 
+    func testCellularLimit() {
+        let limited = RefreshPolicy(wifiOnly: false, cellularLimitReached: true)
+        XCTAssertEqual(limited.autoDecision(kind: .weather, fetchedAt: nil, now: now, network: cellular), .blockedByCellularLimit)
+        // Wi-Fiでは上限を超えていても自動更新する
+        XCTAssertEqual(limited.autoDecision(kind: .weather, fetchedAt: nil, now: now, network: wifi), .refresh)
+        XCTAssertEqual(limited.manualDecision(network: cellular), .refresh)
+        XCTAssertNotNil(RefreshDecision.blockedByCellularLimit.note)
+    }
+
     func testManualRefresh() {
         let policy = RefreshPolicy(wifiOnly: true)
         XCTAssertEqual(policy.manualDecision(network: cellular), .refresh)
@@ -86,21 +95,63 @@ final class DataUsageStoreTests: XCTestCase {
         var current = Calendar.current.date(from: components)!
         let store = DataUsageStore(fileURL: url, now: { current })
 
-        store.add(1000)
-        store.add(500)
-        XCTAssertEqual(store.today, 1500)
+        var changes = 0
+        store.onChange = { changes += 1 }
+        store.add(UsageRecord(bytes: 1000, link: .wifi, category: .weather))
+        store.add(UsageRecord(bytes: 500, link: .cellular, category: .weather))
+        store.add(UsageRecord(bytes: 0, link: .cellular, category: .train))
+        XCTAssertEqual(store.today(), 1500)
+        XCTAssertEqual(store.today(.wifi), 1000)
+        XCTAssertEqual(store.today(.cellular), 500)
+        XCTAssertEqual(changes, 2)
 
         components.day = 20
         current = Calendar.current.date(from: components)!
-        store.add(200)
-        XCTAssertEqual(store.today, 200)
-        XCTAssertEqual(store.thisMonth, 1700)
+        store.add(UsageRecord(bytes: 200, link: .cellular, category: .radar))
+        store.addGeocodeRequest()
+        XCTAssertEqual(store.today(), 200)
+        XCTAssertEqual(store.thisMonth(), 1700)
+        XCTAssertEqual(store.thisMonth(.cellular), 700)
+        XCTAssertEqual(store.thisMonth(.cellular, .radar), 200)
+        XCTAssertEqual(store.thisMonth(.wifi, .weather), 1000)
+        XCTAssertEqual(store.thisMonth(.wifi, .radar), 0)
+        XCTAssertEqual(store.geocodeRequestsThisMonth, 1)
 
         components.month = 10
         components.day = 1
         current = Calendar.current.date(from: components)!
-        XCTAssertEqual(store.today, 0)
-        XCTAssertEqual(store.thisMonth, 0)
+        XCTAssertEqual(store.today(), 0)
+        XCTAssertEqual(store.thisMonth(), 0)
+    }
+
+    func testLegacyRecordsAreKeptAsUnknownLink() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let legacy = dir.appendingPathComponent("data-usage.json")
+        try Data("{\"2026-09-18\":1200,\"2026-09-19\":300}".utf8).write(to: legacy)
+        let current = Calendar.current.date(from: DateComponents(year: 2026, month: 9, day: 19, hour: 12))!
+        let store = DataUsageStore(fileURL: dir.appendingPathComponent("data-usage-v2.json"), legacyFileURL: legacy, now: { current })
+        XCTAssertEqual(store.today(.unknown), 300)
+        XCTAssertEqual(store.thisMonth(.unknown), 1500)
+        XCTAssertEqual(store.thisMonth(.unknown, .legacy), 1500)
+        XCTAssertEqual(store.thisMonth(.wifi), 0)
+
+        store.add(UsageRecord(bytes: 50, link: .wifi, category: .exchange))
+        XCTAssertEqual(store.today(), 350)
+        XCTAssertEqual(store.today(.wifi), 50)
+    }
+
+    func testCategoryAndLinkDetection() {
+        XCTAssertEqual(UsageCategory.from(host: "api.open-meteo.com"), .weather)
+        XCTAssertEqual(UsageCategory.from(host: "open.er-api.com"), .exchange)
+        XCTAssertEqual(UsageCategory.from(host: "api-public.odpt.org"), .train)
+        XCTAssertEqual(UsageCategory.from(host: "api.odpt.org"), .train)
+        XCTAssertEqual(UsageCategory.from(host: "www.jma.go.jp"), .radar)
+        XCTAssertEqual(UsageCategory.from(host: "cyberjapandata.gsi.go.jp"), .mapTiles)
+        XCTAssertEqual(UsageCategory.from(host: nil), .other)
+        XCTAssertEqual(MeteredHTTPClient.link(isCellular: false, isExpensive: false), .wifi)
+        XCTAssertEqual(MeteredHTTPClient.link(isCellular: true, isExpensive: true), .cellular)
+        XCTAssertEqual(MeteredHTTPClient.link(isCellular: false, isExpensive: true), .cellular)
     }
 }
 

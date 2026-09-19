@@ -55,6 +55,20 @@ final class AppSettings {
         didSet { defaults.set(didCreateDefaultTileArea, forKey: Keys.didCreateDefaultTileArea) }
     }
 
+    /// 今月のモバイル通信量が上限を超えたら自動更新を止める(初期値はオフ)
+    var cellularLimitEnabled: Bool {
+        didSet { defaults.set(cellularLimitEnabled, forKey: Keys.cellularLimitEnabled) }
+    }
+    var cellularLimitMB: Int {
+        didSet { defaults.set(cellularLimitMB, forKey: Keys.cellularLimitMB) }
+    }
+    /// 今月のモバイル通信の受信量。DataUsageStore の変化に合わせて AppEnvironment が更新する(保存しない)。
+    var monthlyCellularBytes: Int64 = 0
+
+    var cellularLimitReached: Bool {
+        cellularLimitEnabled && monthlyCellularBytes >= Int64(cellularLimitMB) * 1_000_000
+    }
+
     static let defaultExchangeCodes = ["USD", "EUR", "GBP", "CNY", "KRW"]
 
     init(defaults: UserDefaults = .standard) {
@@ -71,9 +85,13 @@ final class AppSettings {
         tileStorageLimitMB = defaults.object(forKey: Keys.tileStorageLimitMB) as? Int ?? 200
         tileAreas = Self.loadJSON([TileArea].self, from: defaults, forKey: Keys.tileAreas) ?? []
         didCreateDefaultTileArea = defaults.bool(forKey: Keys.didCreateDefaultTileArea)
+        cellularLimitEnabled = defaults.bool(forKey: Keys.cellularLimitEnabled)
+        cellularLimitMB = defaults.object(forKey: Keys.cellularLimitMB) as? Int ?? 100
     }
 
-    var refreshPolicy: RefreshPolicy { RefreshPolicy(wifiOnly: wifiOnlyAutoRefresh) }
+    var refreshPolicy: RefreshPolicy {
+        RefreshPolicy(wifiOnly: wifiOnlyAutoRefresh, cellularLimitReached: cellularLimitReached)
+    }
 
     var selectedPlace: SavedPlace? {
         places.first { $0.id == selectedPlaceID } ?? places.first
@@ -101,5 +119,7 @@ final class AppSettings {
         static let tileStorageLimitMB = "map.tileStorageLimitMB"
         static let tileAreas = "map.tileAreas"
         static let didCreateDefaultTileArea = "map.didCreateDefaultTileArea"
+        static let cellularLimitEnabled = "usage.cellularLimitEnabled"
+        static let cellularLimitMB = "usage.cellularLimitMB"
     }
 }
