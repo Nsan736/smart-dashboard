@@ -43,6 +43,8 @@ final class AppEnvironment {
     let radar: RadarStore
     let rain: RainNowcastStore
     let live: TrainLiveStore
+    /// 電車タブの表示の状態。地図と路線図で共有する。
+    let trainDisplay: TrainDisplayState
     @ObservationIgnored let cache: DiskCache
     @ObservationIgnored let http: HTTPClient
     @ObservationIgnored let keychain: KeychainStore
@@ -87,6 +89,7 @@ final class AppEnvironment {
             onFetched: { fetchLog.mark($0, at: $1) })
         trains = trainStore
         timers = TimerStore()
+        trainDisplay = TrainDisplayState()
         let location = LocationProvider()
         self.location = location
         live = TrainLiveStore(
