@@ -60,6 +60,8 @@ struct ODPTRailway: Codable, Equatable, Identifiable {
     let railwayTitle: ODPTTitle?
     let operatorID: String
     let stationOrder: [StationOrder]?
+    /// 路線の色 (例 "#FF535F")。ない路線もある。
+    let color: String?
     let ascendingRailDirection: String?
     let descendingRailDirection: String?
 
@@ -73,6 +75,7 @@ struct ODPTRailway: Codable, Equatable, Identifiable {
         case railwayTitle = "odpt:railwayTitle"
         case operatorID = "odpt:operator"
         case stationOrder = "odpt:stationOrder"
+        case color = "odpt:color"
         case ascendingRailDirection = "odpt:ascendingRailDirection"
         case descendingRailDirection = "odpt:descendingRailDirection"
     }
@@ -82,6 +85,9 @@ struct ODPTStation: Codable, Equatable {
     let sameAs: String
     let title: String?
     let stationTitle: ODPTTitle?
+    /// 緯度経度 (geo:lat / geo:long)。提供されない駅もありうる。
+    let latitude: Double?
+    let longitude: Double?
 
     var name: String { stationTitle?.text ?? title ?? ODPTID.tail(sameAs) }
 
@@ -89,6 +95,8 @@ struct ODPTStation: Codable, Equatable {
         case sameAs = "owl:sameAs"
         case title = "dc:title"
         case stationTitle = "odpt:stationTitle"
+        case latitude = "geo:lat"
+        case longitude = "geo:long"
     }
 }
 

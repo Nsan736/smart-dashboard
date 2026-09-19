@@ -80,6 +80,7 @@ final class AppEnvironment {
             api: ODPTClient(http: http, tokenProvider: { keychain.string(for: KeychainAccount.odptToken) }),
             cache: cache,
             timetableStorage: DiskCache(directory: support.appendingPathComponent("timetables", isDirectory: true)),
+            shapeStorage: DiskCache(directory: support.appendingPathComponent("railway-shapes", isDirectory: true)),
             settings: settings, network: network,
             hasToken: { !(keychain.string(for: KeychainAccount.odptToken) ?? "").isEmpty },
             onFetched: { fetchLog.mark($0, at: $1) })

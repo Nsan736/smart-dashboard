@@ -1,0 +1,68 @@
+[
+ {
+  "@id": "urn:ucode:_00001C00000000000001000003102C7D",
+  "@type": "odpt:Station",
+  "dc:date": "2021-08-17T10:00:00+09:00",
+  "geo:lat": 35.596773,
+  "@context": "http://vocab.odpt.org/context_odpt_Station.jsonld",
+  "dc:title": "馬込",
+  "geo:long": 139.711884,
+  "owl:sameAs": "odpt.Station:Toei.Asakusa.Magome",
+  "odpt:railway": "odpt.Railway:Toei.Asakusa",
+  "odpt:operator": "odpt.Operator:Toei",
+  "odpt:stationCode": "A-02",
+  "odpt:stationTitle": {
+   "en": "Magome",
+   "ja": "馬込"
+  },
+  "odpt:stationTimetable": [
+   "odpt.StationTimetable:Toei.Asakusa.Magome.Southbound.Weekday"
+  ]
+ },
+ {
+  "@id": "urn:ucode:_00001C00000000000001000003102C7E",
+  "@type": "odpt:Station",
+  "dc:date": "2024-03-27T09:00:00+09:00",
+  "geo:lat": 35.605274,
+  "@context": "http://vocab.odpt.org/context_odpt_Station.jsonld",
+  "dc:title": "中延",
+  "geo:long": 139.713645,
+  "owl:sameAs": "odpt.Station:Toei.Asakusa.Nakanobu",
+  "odpt:railway": "odpt.Railway:Toei.Asakusa",
+  "odpt:operator": "odpt.Operator:Toei",
+  "odpt:stationCode": "A-03",
+  "odpt:stationTitle": {
+   "en": "Nakanobu",
+   "ja": "中延"
+  },
+  "odpt:stationTimetable": [
+   "odpt.StationTimetable:Toei.Asakusa.Nakanobu.Southbound.Weekday"
+  ],
+  "odpt:connectingRailway": [
+   "odpt.Railway:Tokyu.Oimachi"
+  ],
+  "odpt:connectingStation": [
+   "odpt.Station:Tokyu.Oimachi.Nakanobu"
+  ]
+ },
+ {
+  "@id": "urn:ucode:_00001C00000000000001000003102C7C",
+  "@type": "odpt:Station",
+  "dc:date": "2021-08-17T10:00:00+09:00",
+  "geo:lat": 35.58705,
+  "@context": "http://vocab.odpt.org/context_odpt_Station.jsonld",
+  "dc:title": "西馬込",
+  "geo:long": 139.706086,
+  "owl:sameAs": "odpt.Station:Toei.Asakusa.NishiMagome",
+  "odpt:railway": "odpt.Railway:Toei.Asakusa",
+  "odpt:operator": "odpt.Operator:Toei",
+  "odpt:stationCode": "A-01",
+  "odpt:stationTitle": {
+   "en": "Nishi-magome",
+   "ja": "西馬込"
+  },
+  "odpt:stationTimetable": [
+   "odpt.StationTimetable:Toei.Asakusa.NishiMagome.Northbound.Weekday"
+  ]
+ }
+]

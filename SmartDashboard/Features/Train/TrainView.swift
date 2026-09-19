@@ -1,12 +1,46 @@
+import CoreLocation
 import SwiftUI
+import UIKit
 
 struct TrainView: View {
     @Environment(AppEnvironment.self) private var env
+    @State private var selection: TrainMapSelection?
 
     var body: some View {
         let store = env.trains
+        let items = store.info?.value ?? []
+        let sortedLines = TrainSummary.sorted(store.lines, items: items)
         NavigationStack {
             List {
+                Section {
+                    Label(TrainSummary.text(lines: store.lines, items: items), systemImage: "tram")
+                        .font(.headline)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if !store.neededRailways.isEmpty {
+                        TrainMapView(selection: $selection)
+                            .frame(height: 260)
+                            .listRowInsets(EdgeInsets())
+                        TrainMapLegend()
+                        if let selection {
+                            TrainSelectionDetail(selection: selection)
+                        } else {
+                            Text("路線や駅のピンをタップすると、詳しい情報を表示します。")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        if let error = store.shapeError {
+                            Label(error, systemImage: "exclamationmark.triangle")
+                                .font(.footnote)
+                                .foregroundStyle(.red)
+                        }
+                        if !store.stationsWithoutCoordinates.isEmpty {
+                            Text("位置が提供されていない駅: \(store.stationsWithoutCoordinates.map(ODPTID.tail).joined(separator: "、"))")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
                 Section("次の電車") {
                     if store.stations.isEmpty {
                         Text("駅が登録されていません").foregroundStyle(.secondary)
@@ -22,14 +56,16 @@ struct TrainView: View {
                     }
                 }
 
-                Section("運行情報") {
+                Section("運行情報(状況が悪い順)") {
                     if store.lines.isEmpty {
                         Text("路線が登録されていません").foregroundStyle(.secondary)
                     }
-                    ForEach(store.lines) { line in
-                        TrainInfoRow(line: line, item: store.info?.value.first { $0.railwayID == line.railwayID })
+                    ForEach(sortedLines) { line in
+                        TrainInfoRow(line: line, item: items.first { $0.railwayID == line.railwayID })
                     }
-                    .onDelete { store.removeLines(at: $0) }
+                    .onDelete { offsets in
+                        store.removeLines(ids: offsets.map { sortedLines[$0].railwayID })
+                    }
                     if !store.lines.isEmpty {
                         DataStatusView(fetchedAt: store.info?.fetchedAt, note: store.autoRefreshNote, error: store.infoError)
                     }
@@ -48,11 +84,151 @@ struct TrainView: View {
             .navigationTitle("電車")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    RefreshToolbarButton(isLoading: store.isLoadingInfo) { await store.refreshInfoManually() }
+                    RefreshToolbarButton(isLoading: store.isLoadingInfo || store.isLoadingShapes) {
+                        await store.refreshInfoManually()
+                        await store.ensureShapes(manual: true)
+                    }
                 }
             }
-            .task { await store.refreshInfoIfStale() }
+            .task {
+                await store.refreshInfoIfStale()
+                await store.ensureShapes(manual: false)
+            }
         }
+    }
+}
+
+enum TrainMapSelection: Equatable {
+    case line(String)
+    case station(String)
+}
+
+/// 登録した路線を線で、登録した駅をピンで描く。線の色は運行状況、縁取りは路線本来の色。
+struct TrainMapView: View {
+    @Environment(AppEnvironment.self) private var env
+    @Binding var selection: TrainMapSelection?
+
+    var body: some View {
+        let store = env.trains
+        let items = store.info?.value ?? []
+        let shapes = store.neededRailways.compactMap { store.shapes[$0.railwayID] }.filter(\.isDrawable)
+        let lines = shapes.map { shape -> MapLine in
+            let isInfoLine = store.lines.contains { $0.railwayID == shape.railwayID }
+            let status = isInfoLine ? items.first(where: { $0.railwayID == shape.railwayID })?.status : nil
+            return MapLine(
+                id: shape.railwayID,
+                coordinates: shape.stops.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) },
+                color: TrainMapBuilder.uiColor(status),
+                casingColor: UIColor(hex: shape.colorHex),
+                isEmphasized: status == .delay || status == .suspended
+            )
+        }
+        let markers = TrainMapBuilder.markers(stations: store.stations, shapes: store.shapes)
+        ZStack {
+            MapContainerView(
+                isInteractive: true,
+                showsUserLocation: true,
+                lines: lines,
+                markers: markers,
+                fitKey: (shapes.map(\.railwayID) + markers.map(\.id)).joined(separator: ","),
+                onSelectLine: { selection = .line($0) },
+                onSelectMarker: { selection = .station($0) }
+            )
+            if shapes.isEmpty {
+                Text(store.isLoadingShapes ? "路線の形を取得中" : "路線の形は未取得です。右上の更新ボタンで取得します。")
+                    .font(.footnote)
+                    .padding(8)
+                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+                    .padding()
+            }
+        }
+    }
+
+}
+
+enum TrainMapBuilder {
+    /// 平常=緑、遅延=黄、見合わせ・運休=赤、不明=グレー
+    static func uiColor(_ status: TrainStatus?) -> UIColor {
+        switch status {
+        case .normal?: return .systemGreen
+        case .delay?: return .systemYellow
+        case .suspended?: return .systemRed
+        case .other?: return .systemBlue
+        case nil: return .systemGray
+        }
+    }
+
+    /// 同じ駅を複数の方面で登録していても、ピンは1つにする
+    static func markers(stations: [RegisteredStation], shapes: [String: RailwayShape]) -> [MapMarker] {
+        var seen = Set<String>()
+        return stations.compactMap { station -> MapMarker? in
+            guard seen.insert(station.stationID).inserted,
+                  let stop = shapes[station.railwayID]?.stops.first(where: { $0.stationID == station.stationID }) else { return nil }
+            return MapMarker(id: station.stationID, title: station.stationName,
+                             coordinate: CLLocationCoordinate2D(latitude: stop.latitude, longitude: stop.longitude))
+        }
+    }
+}
+
+struct TrainMapLegend: View {
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 12) { entries }
+            VStack(alignment: .leading, spacing: 2) { entries }
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+    }
+
+    @ViewBuilder
+    private var entries: some View {
+        entry("平常", .green)
+        entry("遅延", .yellow)
+        entry("見合わせ・運休", .red)
+        entry("不明", .gray)
+        Text("縁取り=路線の色")
+    }
+
+    private func entry(_ label: String, _ color: Color) -> some View {
+        HStack(spacing: 4) {
+            Capsule().fill(color).frame(width: 16, height: 5)
+            Text(label)
+        }
+    }
+}
+
+/// 地図でタップした路線・駅の詳しい情報
+struct TrainSelectionDetail: View {
+    @Environment(AppEnvironment.self) private var env
+    let selection: TrainMapSelection
+
+    var body: some View {
+        let store = env.trains
+        let items = store.info?.value ?? []
+        VStack(alignment: .leading, spacing: 8) {
+            switch selection {
+            case .line(let railwayID):
+                if let line = store.lines.first(where: { $0.railwayID == railwayID }) {
+                    TrainInfoRow(line: line, item: items.first { $0.railwayID == railwayID })
+                    if items.first(where: { $0.railwayID == railwayID })?.text == nil {
+                        Text("運行情報の本文はありません").font(.footnote).foregroundStyle(.secondary)
+                    }
+                } else {
+                    Text("この路線は運行情報を登録していません。").font(.footnote).foregroundStyle(.secondary)
+                }
+            case .station(let stationID):
+                let registered = store.stations.filter { $0.stationID == stationID }
+                ForEach(registered) { station in
+                    NextTrainRow(station: station)
+                }
+                if let railwayID = registered.first?.railwayID,
+                   let line = store.lines.first(where: { $0.railwayID == railwayID }) {
+                    Divider()
+                    TrainInfoRow(line: line, item: items.first { $0.railwayID == railwayID })
+                }
+            }
+        }
+        .padding(.vertical, 2)
     }
 }
 

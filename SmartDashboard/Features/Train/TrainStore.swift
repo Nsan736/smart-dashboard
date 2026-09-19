@@ -58,6 +58,10 @@ final class TrainStore {
     private(set) var stations: [RegisteredStation] = []
     private(set) var info: CachedValue<[TrainInfoItem]>?
     private(set) var timetables: [UUID: StoredTimetable] = [:]
+    /// 地図に描く路線の形。キーは路線ID。
+    private(set) var shapes: [String: RailwayShape] = [:]
+    private(set) var isLoadingShapes = false
+    private(set) var shapeError: String?
     private(set) var isLoadingInfo = false
     private(set) var downloadingTimetables: Set<UUID> = []
     private(set) var infoError: String?
@@ -67,6 +71,7 @@ final class TrainStore {
     @ObservationIgnored let api: ODPTAPI
     @ObservationIgnored private let cache: DiskCache
     @ObservationIgnored private let timetableStorage: DiskCache
+    @ObservationIgnored private let shapeStorage: DiskCache
     @ObservationIgnored private let settings: AppSettings
     @ObservationIgnored private let network: NetworkMonitor
     @ObservationIgnored private let hasToken: @MainActor () -> Bool
@@ -76,12 +81,13 @@ final class TrainStore {
 
     private static let infoKey = "trainInfo"
 
-    init(api: ODPTAPI, cache: DiskCache, timetableStorage: DiskCache, settings: AppSettings, network: NetworkMonitor,
+    init(api: ODPTAPI, cache: DiskCache, timetableStorage: DiskCache, shapeStorage: DiskCache, settings: AppSettings, network: NetworkMonitor,
          hasToken: @escaping @MainActor () -> Bool, onFetched: @escaping @MainActor (DataKind, Date) -> Void,
          defaults: UserDefaults = .standard) {
         self.api = api
         self.cache = cache
         self.timetableStorage = timetableStorage
+        self.shapeStorage = shapeStorage
         self.settings = settings
         self.network = network
         self.hasToken = hasToken
@@ -99,6 +105,11 @@ final class TrainStore {
                 for station in self.stations {
                     if let stored = await self.timetableStorage.load(StoredTimetable.self, key: station.id.uuidString) {
                         self.timetables[station.id] = stored.value
+                    }
+                }
+                for railway in self.neededRailways {
+                    if let stored = await self.shapeStorage.load(RailwayShape.self, key: railway.railwayID) {
+                        self.shapes[railway.railwayID] = stored.value
                     }
                 }
             }
@@ -119,6 +130,10 @@ final class TrainStore {
         save(lines, Keys.lines)
     }
 
+    func removeLines(ids: [String]) {
+        removeLines(at: IndexSet(lines.indices.filter { ids.contains(lines[$0].railwayID) }))
+    }
+
     func removeLines(at offsets: IndexSet) {
         lines.remove(atOffsets: offsets)
         save(lines, Keys.lines)
@@ -126,6 +141,7 @@ final class TrainStore {
             let ids = Set(lines.map(\.railwayID))
             self.info = CachedValue(value: info.value.filter { ids.contains($0.railwayID) }, fetchedAt: info.fetchedAt)
         }
+        removeUnusedShapes()
     }
 
     func addStation(_ station: RegisteredStation) {
@@ -140,6 +156,69 @@ final class TrainStore {
         for station in removed {
             timetables[station.id] = nil
             Task { await timetableStorage.remove(key: station.id.uuidString) }
+        }
+        removeUnusedShapes()
+    }
+
+    // MARK: - 路線の形(地図用)
+
+    /// 地図に描く必要のある路線(運行情報の路線と、時刻表の駅がある路線)
+    var neededRailways: [(operatorID: String, railwayID: String)] {
+        var seen = Set<String>()
+        let all = lines.map { ($0.operatorID, $0.railwayID) } + stations.map { ($0.operatorID, $0.railwayID) }
+        return all.filter { seen.insert($0.1).inserted }.map { (operatorID: $0.0, railwayID: $0.1) }
+    }
+
+    /// 緯度経度が取れなかった駅(報告用)
+    var stationsWithoutCoordinates: [String] {
+        shapes.values.flatMap(\.missingStationIDs).sorted()
+    }
+
+    /// まだ形を持っていない路線だけを取得する。一度作れば端末に保存し、以後は通信しない。
+    /// manual が false のときは自動更新のポリシーに従う(従量制の回線などでは取得しない)。
+    func ensureShapes(manual: Bool) async {
+        await loadIfNeeded()
+        let missing = neededRailways.filter { shapes[$0.railwayID] == nil }
+        guard !missing.isEmpty, !isLoadingShapes else { return }
+        let decision = manual
+            ? settings.refreshPolicy.manualDecision(network: network.status)
+            : settings.refreshPolicy.autoDecision(kind: .railwayCatalog, fetchedAt: nil, now: Date(), network: network.status)
+        guard decision == .refresh else { return }
+        isLoadingShapes = true
+        defer { isLoadingShapes = false }
+        shapeError = nil
+        for target in missing {
+            guard let op = OperatorCatalog.find(target.operatorID) else { continue }
+            do {
+                guard let railway = try await railways(of: op).first(where: { $0.sameAs == target.railwayID }) else { continue }
+                let list = try await stationsWithCoordinates(of: railway, op: op)
+                let shape = RailwayShape.build(railway: railway, stations: list)
+                shapes[target.railwayID] = shape
+                try? await shapeStorage.save(shape, key: target.railwayID, fetchedAt: Date())
+            } catch {
+                shapeError = error.localizedDescription
+            }
+        }
+    }
+
+    /// 駅データは30日間キャッシュする。緯度経度を含まない古いキャッシュは使わない。
+    private func stationsWithCoordinates(of railway: ODPTRailway, op: TrainOperator) async throws -> [ODPTStation] {
+        let key = "stations.\(railway.sameAs)"
+        if let cached = await cache.load([ODPTStation].self, key: key),
+           Date().timeIntervalSince(cached.fetchedAt) < DataKind.railwayCatalog.minimumInterval,
+           cached.value.contains(where: { $0.latitude != nil }) {
+            return cached.value
+        }
+        let list = try await api.stations(ofRailway: railway.sameAs, op: op)
+        try? await cache.save(list, key: key, fetchedAt: Date())
+        return list
+    }
+
+    private func removeUnusedShapes() {
+        let needed = Set(neededRailways.map(\.railwayID))
+        for id in shapes.keys where !needed.contains(id) {
+            shapes[id] = nil
+            Task { await shapeStorage.remove(key: id) }
         }
     }
 
@@ -214,7 +293,7 @@ final class TrainStore {
     // MARK: - 路線・駅の一覧(長期間キャッシュする)
 
     func railways(of op: TrainOperator) async throws -> [ODPTRailway] {
-        let key = "railways.\(op.id)"
+        let key = "railways2.\(op.id)"
         if let cached = await cache.load([ODPTRailway].self, key: key),
            Date().timeIntervalSince(cached.fetchedAt) < DataKind.railwayCatalog.minimumInterval {
             return cached.value
@@ -298,7 +377,7 @@ final class TrainStore {
     /// 他社線の駅は公開エンドポイントでは引けないことがあり、その場合はIDの末尾を表示する。
     private func resolveStationNames(_ ids: [String], op: TrainOperator) async -> [String: String] {
         var names: [String: String] = [:]
-        if let railways = await cache.load([ODPTRailway].self, key: "railways.\(op.id)")?.value {
+        if let railways = await cache.load([ODPTRailway].self, key: "railways2.\(op.id)")?.value {
             for order in railways.flatMap({ $0.stationOrder ?? [] }) {
                 if let name = order.stationTitle?.text { names[order.station] = name }
             }

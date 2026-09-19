@@ -85,6 +85,13 @@ struct DashboardMapView: UIViewRepresentable {
     var showsUserLocation = false
     /// 半透明で重ねる雨雲レーダー
     var radar: RadarLayer?
+    /// 路線などの線と、駅などのピン
+    var lines: [MapLine] = []
+    var markers: [MapMarker] = []
+    /// この値が変わったとき、線とピンの全体が入るように表示範囲を合わせる
+    var fitKey: String?
+    var onSelectLine: ((String) -> Void)?
+    var onSelectMarker: ((String) -> Void)?
     /// 表示範囲が変わったとき(範囲、ズーム)
     var onRegionChange: ((GeoBounds, Int) -> Void)?
 
@@ -97,6 +104,10 @@ struct DashboardMapView: UIViewRepresentable {
         map.showsCompass = isInteractive
         map.isPitchEnabled = false
         map.isRotateEnabled = false
+        let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
+        tap.cancelsTouchesInView = false
+        tap.delegate = context.coordinator
+        map.addGestureRecognizer(tap)
         if let center {
             map.setRegion(MKCoordinateRegion(center: center, latitudinalMeters: spanMeters, longitudinalMeters: spanMeters), animated: false)
             context.coordinator.lastCenter = center
@@ -111,6 +122,8 @@ struct DashboardMapView: UIViewRepresentable {
     func updateUIView(_ map: MKMapView, context: Context) {
         let coordinator = context.coordinator
         coordinator.onRegionChange = onRegionChange
+        coordinator.onSelectLine = onSelectLine
+        coordinator.onSelectMarker = onSelectMarker
         map.isScrollEnabled = isInteractive
         map.isZoomEnabled = isInteractive
         map.showsUserLocation = showsUserLocation
@@ -150,6 +163,10 @@ struct DashboardMapView: UIViewRepresentable {
             }
         }
 
+        coordinator.updateRoutes(lines, on: map)
+        coordinator.updateMarkers(markers, on: map)
+        coordinator.fitIfNeeded(key: fitKey, lines: lines, markers: markers, on: map)
+
         // 外から中心が変わったとき(現在地の更新など)だけ移動する
         if let center, !isInteractive || coordinator.lastCenter == nil {
             let moved = coordinator.lastCenter.map {
@@ -162,7 +179,7 @@ struct DashboardMapView: UIViewRepresentable {
         }
 
         // ピン
-        let currentPin = map.annotations.compactMap { $0 as? MKPointAnnotation }.first
+        let currentPin = map.annotations.compactMap { $0 as? MKPointAnnotation }.first { !($0 is StationAnnotation) }
         if let pin {
             if let currentPin {
                 currentPin.coordinate = pin
@@ -176,10 +193,157 @@ struct DashboardMapView: UIViewRepresentable {
         }
     }
 
-    final class Coordinator: NSObject, MKMapViewDelegate {
+    static func dismantleUIView(_ map: MKMapView, coordinator: Coordinator) {
+        coordinator.stopBlinking()
+    }
+
+    final class Coordinator: NSObject, MKMapViewDelegate, UIGestureRecognizerDelegate {
         var mode: MapMode?
         var baseOverlay: MKTileOverlay?
         var radarOverlay: RadarTileOverlay?
+        var onSelectLine: ((String) -> Void)?
+        var onSelectMarker: ((String) -> Void)?
+        private var routeOverlays: [RouteOverlay] = []
+        private var routeSignature = ""
+        private var markerSignature = ""
+        private var lastFitKey: String?
+        private var routeRenderers: [ObjectIdentifier: MKPolylineRenderer] = [:]
+        private var blinkTimer: Timer?
+        private var blinkDimmed = false
+
+        // MARK: 線
+
+        func updateRoutes(_ lines: [MapLine], on map: MKMapView) {
+            let signature = lines.map(\.signature).joined(separator: ";")
+            guard signature != routeSignature else { return }
+            routeSignature = signature
+            map.removeOverlays(routeOverlays)
+            routeOverlays = []
+            routeRenderers = [:]
+            for line in lines where line.coordinates.count >= 2 {
+                // 縁取り(路線の色)を下に、運行状況の色を上に重ねる
+                if let casing = line.casingColor {
+                    routeOverlays.append(makeOverlay(line, color: casing, width: line.isEmphasized ? 11 : 8, isCasing: true))
+                }
+                routeOverlays.append(makeOverlay(line, color: line.color, width: line.isEmphasized ? 7 : 4, isCasing: false))
+            }
+            // 保存済み地図のタイル(.aboveLabels の一番下)より上に描く
+            map.addOverlays(routeOverlays, level: .aboveLabels)
+            if lines.contains(where: \.isEmphasized) { startBlinking() } else { stopBlinking() }
+        }
+
+        private func makeOverlay(_ line: MapLine, color: UIColor, width: CGFloat, isCasing: Bool) -> RouteOverlay {
+            let overlay = RouteOverlay(coordinates: line.coordinates, count: line.coordinates.count)
+            overlay.lineID = line.id
+            overlay.isCasing = isCasing
+            overlay.strokeColor = color
+            overlay.strokeWidth = width
+            overlay.blinks = line.isEmphasized && !isCasing
+            return overlay
+        }
+
+        private func startBlinking() {
+            guard blinkTimer == nil else { return }
+            // タイマーはメインのRunLoopで動く
+            blinkTimer = Timer.scheduledTimer(withTimeInterval: 0.7, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated { self?.blinkTick() }
+            }
+        }
+
+        private func blinkTick() {
+            blinkDimmed.toggle()
+            for overlay in routeOverlays where overlay.blinks {
+                guard let renderer = routeRenderers[ObjectIdentifier(overlay)] else { continue }
+                renderer.alpha = blinkDimmed ? 0.3 : 1
+                renderer.setNeedsDisplay()
+            }
+        }
+
+        func stopBlinking() {
+            blinkTimer?.invalidate()
+            blinkTimer = nil
+        }
+
+        // MARK: ピン
+
+        func updateMarkers(_ markers: [MapMarker], on map: MKMapView) {
+            let signature = markers.map(\.signature).joined(separator: ";")
+            guard signature != markerSignature else { return }
+            markerSignature = signature
+            map.removeAnnotations(map.annotations.filter { $0 is StationAnnotation })
+            for marker in markers {
+                let annotation = StationAnnotation()
+                annotation.markerID = marker.id
+                annotation.title = marker.title
+                annotation.coordinate = marker.coordinate
+                map.addAnnotation(annotation)
+            }
+        }
+
+        func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
+            guard annotation is StationAnnotation else { return nil }
+            let identifier = "station"
+            let view = (mapView.dequeueReusableAnnotationView(withIdentifier: identifier) as? MKMarkerAnnotationView)
+                ?? MKMarkerAnnotationView(annotation: annotation, reuseIdentifier: identifier)
+            view.annotation = annotation
+            view.glyphImage = UIImage(systemName: "tram.fill")
+            view.markerTintColor = .systemIndigo
+            view.displayPriority = .required
+            view.canShowCallout = false
+            return view
+        }
+
+        func mapView(_ mapView: MKMapView, didSelect view: MKAnnotationView) {
+            guard let station = view.annotation as? StationAnnotation else { return }
+            onSelectMarker?(station.markerID)
+            mapView.deselectAnnotation(station, animated: false)
+        }
+
+        // MARK: 表示範囲
+
+        func fitIfNeeded(key: String?, lines: [MapLine], markers: [MapMarker], on map: MKMapView) {
+            guard let key, key != lastFitKey else { return }
+            let coordinates = lines.flatMap(\.coordinates) + markers.map(\.coordinate)
+            guard !coordinates.isEmpty else { return }
+            lastFitKey = key
+            var rect = MKMapRect.null
+            for coordinate in coordinates {
+                let point = MKMapPoint(coordinate)
+                rect = rect.union(MKMapRect(x: point.x, y: point.y, width: 1, height: 1))
+            }
+            map.setVisibleMapRect(rect, edgePadding: UIEdgeInsets(top: 36, left: 28, bottom: 28, right: 28), animated: false)
+        }
+
+        // MARK: 線のタップ
+
+        @objc func handleTap(_ recognizer: UITapGestureRecognizer) {
+            guard recognizer.state == .ended, let map = recognizer.view as? MKMapView else { return }
+            let point = recognizer.location(in: map)
+            // ピンのタップは didSelect で扱う
+            var hit = map.hitTest(point, with: nil)
+            while let view = hit {
+                if view is MKAnnotationView { return }
+                hit = view.superview
+            }
+            var best: (id: String, distance: CGFloat)?
+            for overlay in routeOverlays where !overlay.isCasing {
+                let points = overlay.points()
+                var screen: [CGPoint] = []
+                screen.reserveCapacity(overlay.pointCount)
+                for index in 0..<overlay.pointCount {
+                    screen.append(map.convert(points[index].coordinate, toPointTo: map))
+                }
+                let distance = MapGeometry.distance(from: point, toPolyline: screen)
+                if distance < (best?.distance ?? 24) { best = (overlay.lineID, distance) }
+            }
+            if let best { onSelectLine?(best.id) }
+        }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                               shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+            true
+        }
+
         var tileRevision = 0
         var lastCenter: CLLocationCoordinate2D?
         var onRegionChange: ((GeoBounds, Int) -> Void)?
@@ -199,6 +363,15 @@ struct DashboardMapView: UIViewRepresentable {
         }
 
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
+            if let route = overlay as? RouteOverlay {
+                let renderer = MKPolylineRenderer(polyline: route)
+                renderer.strokeColor = route.strokeColor
+                renderer.lineWidth = route.strokeWidth
+                renderer.lineCap = .round
+                renderer.lineJoin = .round
+                routeRenderers[ObjectIdentifier(route)] = renderer
+                return renderer
+            }
             if let tiles = overlay as? MKTileOverlay {
                 let renderer = MKTileOverlayRenderer(tileOverlay: tiles)
                 if tiles is RadarTileOverlay { renderer.alpha = 0.65 }
@@ -229,6 +402,11 @@ struct MapContainerView: View {
     var isInteractive = true
     var showsUserLocation = false
     var radar: RadarLayer?
+    var lines: [MapLine] = []
+    var markers: [MapMarker] = []
+    var fitKey: String?
+    var onSelectLine: ((String) -> Void)?
+    var onSelectMarker: ((String) -> Void)?
 
     static let gsiURL = URL(string: "https://maps.gsi.go.jp/development/ichiran.html")!
 
@@ -244,6 +422,11 @@ struct MapContainerView: View {
             isInteractive: isInteractive,
             showsUserLocation: showsUserLocation,
             radar: radar,
+            lines: lines,
+            markers: markers,
+            fitKey: fitKey,
+            onSelectLine: onSelectLine,
+            onSelectMarker: onSelectMarker,
             onRegionChange: { bounds, zoom in
                 // Wi-Fi接続中に Apple Maps で見た範囲を保存する
                 guard mode == .apple, isInteractive else { return }
