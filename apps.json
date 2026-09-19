@@ -14,6 +14,14 @@
       "screenshotURLs": [],
       "versions": [
         {
+          "version": "0.5.0",
+          "date": "2026-09-19T13:00:36Z",
+          "localizedDescription": "v0.5.0",
+          "downloadURL": "https://github.com/Nsan736/smart-dashboard/releases/download/v0.5.0/SmartDashboard.ipa",
+          "size": 1365775,
+          "minOSVersion": "17.0"
+        },
+        {
           "version": "0.3.2",
           "date": "2026-09-19T12:18:01Z",
           "localizedDescription": "v0.3.2",
@@ -54,11 +62,11 @@
           "minOSVersion": "17.0"
         }
       ],
-      "version": "0.3.2",
-      "versionDate": "2026-09-19T12:18:01Z",
-      "versionDescription": "v0.3.2",
-      "downloadURL": "https://github.com/Nsan736/smart-dashboard/releases/download/v0.3.2/SmartDashboard.ipa",
-      "size": 1162800,
+      "version": "0.5.0",
+      "versionDate": "2026-09-19T13:00:36Z",
+      "versionDescription": "v0.5.0",
+      "downloadURL": "https://github.com/Nsan736/smart-dashboard/releases/download/v0.5.0/SmartDashboard.ipa",
+      "size": 1365775,
       "minOSVersion": "17.0"
     }
   ],
