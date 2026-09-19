@@ -33,13 +33,14 @@ enum RefreshDecision: Equatable {
     case refresh
     case fresh
     case offline
-    case blockedByExpensive
     case blockedByConstrained
     case blockedByWiFiOnly
     case blockedByCellularLimit
 }
 
 /// 自動更新してよいかどうかを決める純関数。手動更新はオンラインなら常に許可する。
+/// モバイル通信(従量制の回線)でも、最短の更新間隔を守ったうえで自動更新する。
+/// 止めるのは、省データモード、「Wi-Fi時のみ」の設定、今月のモバイル通信量が上限を超えたとき。
 struct RefreshPolicy {
     var wifiOnly: Bool
     /// 今月のモバイル通信量が、設定した上限を超えているか(上限の設定がオフなら常にfalse)
@@ -50,10 +51,11 @@ struct RefreshPolicy {
             return .fresh
         }
         guard network.isOnline else { return .offline }
-        if cellularLimitReached, network.isExpensive || !network.isWiFi { return .blockedByCellularLimit }
         if network.isConstrained { return .blockedByConstrained }
-        if network.isExpensive { return .blockedByExpensive }
-        if wifiOnly && !network.isWiFi { return .blockedByWiFiOnly }
+        // テザリングのように、Wi-Fiでも従量制の回線はモバイル通信として扱う
+        let isMobile = network.isExpensive || !network.isWiFi
+        if wifiOnly && isMobile { return .blockedByWiFiOnly }
+        if cellularLimitReached && isMobile { return .blockedByCellularLimit }
         return .refresh
     }
 

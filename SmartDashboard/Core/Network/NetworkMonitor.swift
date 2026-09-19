@@ -9,7 +9,8 @@ struct NetworkStatus: Equatable {
     var isConstrained: Bool
     var isWiFi: Bool
 
-    static let unknown = NetworkStatus(isOnline: true, isExpensive: true, isConstrained: false, isWiFi: false)
+    /// 回線の状態が分かるまでの値。省データ扱いにして、判明するまで自動更新と地図の読み込みをしない。
+    static let unknown = NetworkStatus(isOnline: true, isExpensive: true, isConstrained: true, isWiFi: false)
 }
 
 @MainActor

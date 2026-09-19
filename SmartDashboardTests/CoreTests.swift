@@ -28,15 +28,28 @@ final class RefreshPolicyTests: XCTestCase {
         XCTAssertEqual(policy.autoDecision(kind: .exchange, fetchedAt: now.addingTimeInterval(-25 * 3600), now: now, network: wifi), .refresh)
     }
 
-    func testBlockedOnExpensiveOrConstrained() {
+    func testMobileRefreshesButLowDataModeDoesNot() {
         let policy = RefreshPolicy(wifiOnly: false)
-        XCTAssertEqual(policy.autoDecision(kind: .trainInfo, fetchedAt: nil, now: now, network: cellular), .blockedByExpensive)
+        // モバイル通信でも、最短の更新間隔を過ぎていれば自動更新する
+        XCTAssertEqual(policy.autoDecision(kind: .trainInfo, fetchedAt: nil, now: now, network: cellular), .refresh)
+        XCTAssertEqual(policy.autoDecision(kind: .rainNowcast, fetchedAt: now.addingTimeInterval(-11 * 60), now: now, network: cellular), .refresh)
+        XCTAssertEqual(policy.autoDecision(kind: .rainNowcast, fetchedAt: now.addingTimeInterval(-9 * 60), now: now, network: cellular), .fresh)
+        // 省データモードでは止める(モバイル通信でもWi-Fiでも)
         XCTAssertEqual(policy.autoDecision(kind: .trainInfo, fetchedAt: nil, now: now, network: lowData), .blockedByConstrained)
+        let cellularLowData = NetworkStatus(isOnline: true, isExpensive: true, isConstrained: true, isWiFi: false)
+        XCTAssertEqual(policy.autoDecision(kind: .trainInfo, fetchedAt: nil, now: now, network: cellularLowData), .blockedByConstrained)
         XCTAssertEqual(policy.autoDecision(kind: .trainInfo, fetchedAt: nil, now: now, network: offline), .offline)
+        // 回線の状態が分かるまでは自動更新しない
+        XCTAssertEqual(policy.autoDecision(kind: .trainInfo, fetchedAt: nil, now: now, network: .unknown), .blockedByConstrained)
     }
 
     func testWiFiOnly() {
         XCTAssertEqual(RefreshPolicy(wifiOnly: true).autoDecision(kind: .weather, fetchedAt: nil, now: now, network: wired), .blockedByWiFiOnly)
+        XCTAssertEqual(RefreshPolicy(wifiOnly: true).autoDecision(kind: .weather, fetchedAt: nil, now: now, network: cellular), .blockedByWiFiOnly)
+        XCTAssertEqual(RefreshPolicy(wifiOnly: true).autoDecision(kind: .weather, fetchedAt: nil, now: now, network: wifi), .refresh)
+        // テザリング(Wi-Fiだが従量制)はモバイル通信として扱う
+        let hotspot = NetworkStatus(isOnline: true, isExpensive: true, isConstrained: false, isWiFi: true)
+        XCTAssertEqual(RefreshPolicy(wifiOnly: true).autoDecision(kind: .weather, fetchedAt: nil, now: now, network: hotspot), .blockedByWiFiOnly)
         XCTAssertEqual(RefreshPolicy(wifiOnly: false).autoDecision(kind: .weather, fetchedAt: nil, now: now, network: wired), .refresh)
     }
 
@@ -48,6 +61,7 @@ final class RefreshPolicyTests: XCTestCase {
     func testCellularLimit() {
         let limited = RefreshPolicy(wifiOnly: false, cellularLimitReached: true)
         XCTAssertEqual(limited.autoDecision(kind: .weather, fetchedAt: nil, now: now, network: cellular), .blockedByCellularLimit)
+        XCTAssertEqual(RefreshPolicy(wifiOnly: false, cellularLimitReached: false).autoDecision(kind: .weather, fetchedAt: nil, now: now, network: cellular), .refresh)
         // Wi-Fiでは上限を超えていても自動更新する
         XCTAssertEqual(limited.autoDecision(kind: .weather, fetchedAt: nil, now: now, network: wifi), .refresh)
         XCTAssertEqual(limited.manualDecision(network: cellular), .refresh)
