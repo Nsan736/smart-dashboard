@@ -3,7 +3,15 @@ import Foundation
 import ImageIO
 
 /// 降水の強さの段階。0は雨なし、1〜8は気象庁ナウキャストのタイルの配色の順。
-/// 配色は実際のタイルのPNGパレットで確認したもの(2026-09-19)。強度の区切りは気象庁の凡例による。
+///
+/// 根拠(2026-09-19に確認):
+/// - 色: 実際のタイルのPNGパレット
+/// - 強度の区切り(1 / 5 / 10 / 20 / 30 / 50 / 80 mm/h): 気象庁「雨雲の動き」の凡例
+///   https://www.jma.go.jp/bosai/nowc/images/legend_jp_normal_hrpns.svg
+///   (ページの設定 https://www.jma.go.jp/bosai/nowc/table/nowc.properties__*.xml の hrpns の legendHTML が参照する画像)
+///   凡例では上から rgb(180,0,104) | 80 | rgb(255,40,0) | 50 | rgb(255,153,0) | 30 | rgb(255,245,0) | 20 |
+///   rgb(0,65,255) | 10 | rgb(33,140,255) | 5 | rgb(160,210,255) | 1 | rgb(242,242,255) の順に並ぶ。
+///   黄色だけ、凡例は (255,245,0)、タイルは (250,245,0) と少し違うので、色は近いものに丸めて判定する。
 enum RainLevel {
     /// (R, G, B, 下限mm/h, 上限mm/h)
     static let table: [(r: Int, g: Int, b: Int, lower: Double, upper: Double?)] = [
