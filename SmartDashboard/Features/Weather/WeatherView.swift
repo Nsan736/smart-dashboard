@@ -53,11 +53,20 @@ struct WeatherView: View {
             .navigationTitle("天気")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    RefreshToolbarButton(isLoading: store.isLoading) { await store.refreshManually() }
+                    RefreshToolbarButton(isLoading: store.isLoading || env.rain.isLoading) {
+                        await store.refreshManually()
+                        await env.refreshRainManually()
+                    }
                 }
             }
-            .refreshable { await store.refreshManually() }
-            .task { await store.refreshIfStale() }
+            .refreshable {
+                await store.refreshManually()
+                await env.refreshRainManually()
+            }
+            .task {
+                await store.refreshIfStale()
+                await env.refreshRainIfStale()
+            }
         }
     }
 
@@ -174,30 +183,87 @@ struct WeatherView: View {
         return CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
     }
 
-    /// 15分刻みの降水量の棒グラフ
+    /// 雨の要約と、直近1時間(ナウキャスト、5分刻み)・今後2時間(予報モデル、15分刻み)の棒グラフ
     @ViewBuilder
     private func rainView(_ snapshot: WeatherSnapshot) -> some View {
-        let slots = snapshot.upcomingRain(now: Date())
-        if slots.isEmpty {
-            Text("15分ごとの予報は未取得です").foregroundStyle(.secondary)
-        } else {
-            VStack(alignment: .leading, spacing: 6) {
-                if let summary = RainSummary.text(slots: slots, now: Date()) {
-                    Text(summary).font(.headline)
+        let now = Date()
+        let slots = snapshot.upcomingRain(now: now)
+        VStack(alignment: .leading, spacing: 8) {
+            if let outlook = env.rainOutlook(now: now) {
+                Text(outlook.headline)
+                    .font(.headline)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let later = outlook.later {
+                    Text(later)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
+                if let note = outlook.note {
+                    Text(note)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            if let nowcast = env.rain.cached, env.rainOutlook(now: now)?.note == nil {
+                let points = Self.nowcastBars(nowcast.value, now: now)
+                if !points.isEmpty {
+                    Text("直近1時間(気象庁ナウキャスト・\(Formatters.ageLabel(nowcast.fetchedAt, now: now)))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Chart(points) { point in
+                        BarMark(x: .value("分後", point.minutes), y: .value("強さ", point.value), width: .fixed(12))
+                            .foregroundStyle(.blue)
+                    }
+                    .chartXScale(domain: -5...65)
+                    .chartXAxis { AxisMarks(values: [0, 15, 30, 45, 60]) }
+                    .chartYScale(domain: 0...max(5.0, (points.map(\.value).max() ?? 0) * 1.2))
+                    .chartYAxisLabel("mm/h(目安)")
+                    .frame(height: 110)
+                }
+            }
+            if !slots.isEmpty {
+                Text("今後2時間(予報モデル。15分値は1時間値からの補間)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Chart(slots) { slot in
                     BarMark(
-                        x: .value("時刻", Self.minuteText(slot.time, offset: snapshot.utcOffsetSeconds)),
-                        y: .value("降水量", slot.precipitation)
+                        x: .value("分後", Int((slot.time.timeIntervalSince(now) / 60).rounded())),
+                        y: .value("降水量", slot.precipitation),
+                        width: .fixed(14)
                     )
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(.teal)
                 }
+                .chartXScale(domain: -15...125)
+                .chartXAxis { AxisMarks(values: [0, 30, 60, 90, 120]) }
                 .chartYScale(domain: 0...max(1.0, (slots.map(\.precipitation).max() ?? 0) * 1.2))
                 .chartYAxisLabel("mm / 15分")
-                .frame(height: 120)
+                .frame(height: 110)
+            } else if env.rainOutlook(now: now) == nil {
+                Text("雨の予報は未取得です").foregroundStyle(.secondary)
             }
-            .padding(.vertical, 4)
+            Text("横軸は今からの分数です。")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
         }
+        .padding(.vertical, 4)
+    }
+
+    struct NowcastBar: Identifiable {
+        let minutes: Int
+        let value: Double
+        var id: Int { minutes }
+    }
+
+    /// 実況を0分として、5分刻みで並べる
+    static func nowcastBars(_ nowcast: RainNowcast, now: Date) -> [NowcastBar] {
+        guard let observed = nowcast.points.last(where: { !$0.isForecast }) else { return [] }
+        var seen = Set<Int>()
+        return nowcast.points
+            .filter { $0.time >= observed.time }
+            .map { NowcastBar(minutes: Int(($0.time.timeIntervalSince(observed.time) / 60).rounded()), value: RainLevel.representative($0.level)) }
+            .filter { $0.minutes <= 60 && seen.insert($0.minutes).inserted }
     }
 
     /// 1行に詰め込まず3段にする。天気のラベルは省略しない。

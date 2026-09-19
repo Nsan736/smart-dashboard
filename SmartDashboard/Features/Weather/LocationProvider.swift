@@ -13,7 +13,7 @@ enum LocationError: LocalizedError {
     }
 }
 
-/// 低精度・省電力で現在地を1回だけ取得する
+/// 現在地を100m程度の精度で1回だけ取得する。取得したら測位は止まる(requestLocation)ので、電池を消費し続けない。
 @MainActor
 final class LocationProvider: NSObject, CLLocationManagerDelegate {
     private let manager = CLLocationManager()
@@ -23,7 +23,7 @@ final class LocationProvider: NSObject, CLLocationManagerDelegate {
     override init() {
         super.init()
         manager.delegate = self
-        manager.desiredAccuracy = kCLLocationAccuracyThreeKilometers
+        manager.desiredAccuracy = kCLLocationAccuracyHundredMeters
     }
 
     func currentLocation() async throws -> CLLocation {
@@ -36,7 +36,9 @@ final class LocationProvider: NSObject, CLLocationManagerDelegate {
         case .authorizedWhenInUse, .authorizedAlways: break
         default: throw LocationError.denied
         }
-        if let last = manager.location, abs(last.timestamp.timeIntervalSinceNow) < 600 {
+        // 直前の測位が十分新しく、精度もよければ使い回す
+        if let last = manager.location, abs(last.timestamp.timeIntervalSinceNow) < 300,
+           last.horizontalAccuracy >= 0, last.horizontalAccuracy <= 200 {
             return last
         }
         guard locationContinuation == nil else { throw LocationError.unavailable }

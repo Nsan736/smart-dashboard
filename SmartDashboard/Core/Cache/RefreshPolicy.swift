@@ -4,6 +4,7 @@ import Foundation
 enum DataKind: String, CaseIterable, Codable {
     case weather
     case exchange
+    case rainNowcast
     case trainInfo
     case railwayCatalog
 
@@ -11,6 +12,7 @@ enum DataKind: String, CaseIterable, Codable {
         switch self {
         case .weather: return 30 * 60
         case .exchange: return 24 * 60 * 60
+        case .rainNowcast: return 10 * 60
         case .trainInfo: return 5 * 60
         case .railwayCatalog: return 30 * 24 * 60 * 60
         }
@@ -20,6 +22,7 @@ enum DataKind: String, CaseIterable, Codable {
         switch self {
         case .weather: return "天気"
         case .exchange: return "為替"
+        case .rainNowcast: return "雨のナウキャスト"
         case .trainInfo: return "運行情報"
         case .railwayCatalog: return "路線・駅の一覧"
         }

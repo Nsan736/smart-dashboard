@@ -41,6 +41,7 @@ final class AppEnvironment {
     let trains: TrainStore
     let tiles: TileDownloader
     let radar: RadarStore
+    let rain: RainNowcastStore
     @ObservationIgnored let cache: DiskCache
     @ObservationIgnored let http: HTTPClient
     @ObservationIgnored let keychain: KeychainStore
@@ -89,6 +90,8 @@ final class AppEnvironment {
         self.tiles = tiles
         let radarLoader = RadarTileLoader(http: http, root: RadarTileLoader.defaultRoot())
         radar = RadarStore(http: http, network: network, loader: radarLoader)
+        rain = RainNowcastStore(http: http, cache: cache, settings: settings, network: network, loader: radarLoader,
+                                onFetched: { fetchLog.mark(.rainNowcast, at: $0) })
         weather = WeatherStore(
             api: OpenMeteoClient(http: http), cache: cache, settings: settings, network: network,
             location: location, placeNames: PlaceNameResolver(onRequest: { [weak usage] in usage?.addGeocodeRequest() }),
@@ -111,9 +114,32 @@ final class AppEnvironment {
         timers.resume()
         tiles.evaluate(isForeground: true)
         await weather.refreshIfStale()
+        await refreshRainIfStale()
         await exchange.refreshIfStale()
         await trains.refreshInfoIfStale()
         await updateCacheSize()
+    }
+
+    /// 天気を取得した地点について、直近1時間の雨(ナウキャスト)を更新する。最短10分間隔。
+    func refreshRainIfStale() async {
+        guard let snapshot = weather.cached?.value, let latitude = snapshot.latitude, let longitude = snapshot.longitude else { return }
+        await rain.refreshIfStale(latitude: latitude, longitude: longitude)
+    }
+
+    func refreshRainManually() async {
+        guard let snapshot = weather.cached?.value, let latitude = snapshot.latitude, let longitude = snapshot.longitude else { return }
+        await rain.refreshManually(latitude: latitude, longitude: longitude)
+    }
+
+    /// 雨の要約。0〜60分はナウキャスト、その先と、ナウキャストが使えないときは予報モデル。
+    func rainOutlook(now: Date = Date()) -> RainOutlook? {
+        guard let snapshot = weather.cached?.value else { return nil }
+        var nowcast: RainNowcast?
+        if let value = rain.cached?.value, let latitude = snapshot.latitude, let longitude = snapshot.longitude,
+           RainNowcastStore.covers(value, latitude: latitude, longitude: longitude) {
+            nowcast = value
+        }
+        return RainOutlook.make(nowcast: nowcast, modelSlots: snapshot.upcomingRain(now: now), now: now)
     }
 
     func clearCache() async {
@@ -121,6 +147,7 @@ final class AppEnvironment {
         fetchLog.reset()
         weather.clearMemory()
         exchange.clearMemory()
+        rain.clearMemory()
         trains.clearCachedInfo()
         let radarLoader = radar.loader
         await Task.detached(priority: .utility) { radarLoader.removeAll() }.value

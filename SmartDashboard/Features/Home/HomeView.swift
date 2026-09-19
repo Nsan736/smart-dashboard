@@ -27,6 +27,7 @@ struct HomeView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     RefreshToolbarButton(isLoading: env.weather.isLoading || env.exchange.isLoading || env.trains.isLoadingInfo) {
                         await env.weather.refreshManually()
+                        await env.refreshRainManually()
                         await env.exchange.refreshIfStale()
                         await env.trains.refreshInfoManually()
                     }
@@ -154,9 +155,19 @@ struct HomeView: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
                 }
-                if let summary = RainSummary.text(slots: snapshot.upcomingRain(now: Date()), now: Date()) {
-                    Label(summary, systemImage: "umbrella")
+                if let outlook = env.rainOutlook() {
+                    Label(outlook.headline, systemImage: "umbrella")
                         .font(.subheadline.weight(.semibold))
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let later = outlook.later {
+                        Text(later).font(.caption).foregroundStyle(.secondary)
+                    }
+                    if let note = outlook.note {
+                        Text(note)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             } else {
                 Text(env.weather.errorMessage ?? "未取得です").foregroundStyle(.secondary)

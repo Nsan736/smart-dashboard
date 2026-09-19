@@ -63,6 +63,18 @@ enum TileMath {
         return TileCoord(z: z, x: min(max(x, 0), limit), y: min(max(y, 0), limit))
     }
 
+    /// 地点を含むタイルと、その中でのピクセル位置(256x256)
+    static func pixel(latitude: Double, longitude: Double, z: Int) -> (tile: TileCoord, x: Int, y: Int) {
+        let n = Double(1 << z)
+        let lat = min(max(latitude, -85.0511), 85.0511) * .pi / 180
+        let fx = (longitude + 180) / 360 * n
+        let fy = (1 - asinh(tan(lat)) / .pi) / 2 * n
+        let coord = Self.tile(latitude: latitude, longitude: longitude, z: z)
+        let px = Int(((fx - fx.rounded(.down)) * 256).rounded(.down))
+        let py = Int(((fy - fy.rounded(.down)) * 256).rounded(.down))
+        return (coord, min(max(px, 0), 255), min(max(py, 0), 255))
+    }
+
     static func count(in bounds: GeoBounds, z: Int) -> Int {
         let a = tile(latitude: bounds.maxLatitude, longitude: bounds.minLongitude, z: z)
         let b = tile(latitude: bounds.minLatitude, longitude: bounds.maxLongitude, z: z)
