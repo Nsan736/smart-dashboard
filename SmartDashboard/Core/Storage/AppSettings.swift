@@ -69,6 +69,28 @@ final class AppSettings {
         cellularLimitEnabled && monthlyCellularBytes >= Int64(cellularLimitMB) * 1_000_000
     }
 
+    /// 電車: 12/30〜1/3 を休日ダイヤとして扱う(初期値はオン)
+    var yearEndHolidayTimetable: Bool {
+        didSet { defaults.set(yearEndHolidayTimetable, forKey: Keys.yearEndHolidayTimetable) }
+    }
+    /// 電車: 「今日のダイヤ」の手動切り替え。設定した日だけ有効。
+    var timetableOverrideDayKey: String? {
+        didSet { defaults.set(timetableOverrideDayKey, forKey: Keys.timetableOverrideDayKey) }
+    }
+    var timetableOverrideType: DayType? {
+        didSet { defaults.set(timetableOverrideType?.rawValue, forKey: Keys.timetableOverrideType) }
+    }
+
+    var dayTypeResolver: DayTypeResolver {
+        DayTypeResolver(yearEndAsHoliday: yearEndHolidayTimetable, overrideDayKey: timetableOverrideDayKey, overrideType: timetableOverrideType)
+    }
+
+    /// 今日のダイヤを手動で切り替える。nilで自動に戻す。
+    func setTimetableOverride(_ type: DayType?, now: Date = Date()) {
+        timetableOverrideType = type
+        timetableOverrideDayKey = type == nil ? nil : DayTypeResolver.dayKey(now)
+    }
+
     static let defaultExchangeCodes = ["USD", "EUR", "GBP", "CNY", "KRW"]
 
     init(defaults: UserDefaults = .standard) {
@@ -86,6 +108,9 @@ final class AppSettings {
         tileAreas = Self.loadJSON([TileArea].self, from: defaults, forKey: Keys.tileAreas) ?? []
         didCreateDefaultTileArea = defaults.bool(forKey: Keys.didCreateDefaultTileArea)
         cellularLimitEnabled = defaults.bool(forKey: Keys.cellularLimitEnabled)
+        yearEndHolidayTimetable = defaults.object(forKey: Keys.yearEndHolidayTimetable) as? Bool ?? true
+        timetableOverrideDayKey = defaults.string(forKey: Keys.timetableOverrideDayKey)
+        timetableOverrideType = defaults.string(forKey: Keys.timetableOverrideType).flatMap(DayType.init(rawValue:))
         cellularLimitMB = defaults.object(forKey: Keys.cellularLimitMB) as? Int ?? 100
     }
 
@@ -120,6 +145,9 @@ final class AppSettings {
         static let tileAreas = "map.tileAreas"
         static let didCreateDefaultTileArea = "map.didCreateDefaultTileArea"
         static let cellularLimitEnabled = "usage.cellularLimitEnabled"
+        static let yearEndHolidayTimetable = "train.yearEndHolidayTimetable"
+        static let timetableOverrideDayKey = "train.timetableOverrideDayKey"
+        static let timetableOverrideType = "train.timetableOverrideType"
         static let cellularLimitMB = "usage.cellularLimitMB"
     }
 }

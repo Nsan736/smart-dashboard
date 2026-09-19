@@ -95,13 +95,15 @@ struct UpcomingDeparture: Equatable, Identifiable {
 enum TimetableCalculator {
     /// 通信なしで、保存した時刻表から次の列車を求める。
     /// 深夜0時過ぎは前日の運行日の時刻表(1440分以降)も対象にする。
-    static func upcoming(in timetable: StoredTimetable, now: Date, count: Int = 2) -> [UpcomingDeparture] {
+    static func upcoming(in timetable: StoredTimetable, now: Date, count: Int = 2,
+                         resolver: DayTypeResolver = DayTypeResolver()) -> [UpcomingDeparture] {
         let calendar = JapaneseHolidays.calendar
         let today = calendar.startOfDay(for: now)
         var result: [UpcomingDeparture] = []
         for dayOffset in [-1, 0, 1] {
             guard let day = calendar.date(byAdding: .day, value: dayOffset, to: today) else { continue }
-            let list = timetable.departures(for: JapaneseHolidays.dayType(of: day))
+            // 日付の判定は正午で行う(日付の境目での取り違えを避ける)
+            let list = timetable.departures(for: resolver.dayType(of: day.addingTimeInterval(12 * 3600)))
             for departure in list {
                 let date = day.addingTimeInterval(TimeInterval(departure.minutes * 60))
                 if date >= now { result.append(UpcomingDeparture(date: date, departure: departure)) }

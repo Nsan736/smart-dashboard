@@ -6,6 +6,37 @@ enum DayType: String, Codable {
     case holiday
 }
 
+/// その日をどのダイヤで扱うかを決める。設定(年末年始)と、その日だけの手動切り替えを反映する。
+struct DayTypeResolver: Equatable {
+    /// 12/30〜1/3 を休日ダイヤとして扱う
+    var yearEndAsHoliday = true
+    /// 手動切り替え。dayKey("yyyy-MM-dd"、日本時間)の日だけ有効で、翌日には自動に戻る。
+    var overrideDayKey: String?
+    var overrideType: DayType?
+
+    func dayType(of date: Date) -> DayType {
+        if let overrideType, let overrideDayKey, overrideDayKey == Self.dayKey(date) { return overrideType }
+        if yearEndAsHoliday, Self.isYearEnd(date) { return .holiday }
+        return JapaneseHolidays.dayType(of: date)
+    }
+
+    /// 手動切り替えが、その日に対して有効か
+    func isOverridden(on date: Date) -> Bool {
+        overrideType != nil && overrideDayKey == Self.dayKey(date)
+    }
+
+    static func isYearEnd(_ date: Date) -> Bool {
+        let c = JapaneseHolidays.calendar.dateComponents([.month, .day], from: date)
+        guard let month = c.month, let day = c.day else { return false }
+        return (month == 12 && day >= 30) || (month == 1 && day <= 3)
+    }
+
+    static func dayKey(_ date: Date) -> String {
+        let c = JapaneseHolidays.calendar.dateComponents([.year, .month, .day], from: date)
+        return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
+    }
+}
+
 /// 祝日の簡易判定(現行の祝日法の規則に基づく。臨時の祝日移動には対応しない)
 enum JapaneseHolidays {
     static let calendar: Calendar = {

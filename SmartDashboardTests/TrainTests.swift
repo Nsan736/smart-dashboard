@@ -116,6 +116,36 @@ final class TimetableTests: XCTestCase {
         XCTAssertEqual(upcoming.last?.date, date(2026, 9, 19, 0, 0).addingTimeInterval(TimeInterval(saturdayFirst.minutes * 60)))
     }
 
+    func testYearEndUsesHolidayTimetable() throws {
+        let timetable = try makeTimetable()
+        // 2026-12-30(水)は、設定がオンなら休日ダイヤ(土休日の 0:09 発がある)、オフなら平日ダイヤ(0:07 発)
+        let lateNight = date(2026, 12, 31, 0, 1)
+        let on = TimetableCalculator.upcoming(in: timetable, now: lateNight, count: 1, resolver: DayTypeResolver(yearEndAsHoliday: true))
+        XCTAssertEqual(on.first?.date, date(2026, 12, 31, 0, 9))
+        let off = TimetableCalculator.upcoming(in: timetable, now: lateNight, count: 1, resolver: DayTypeResolver(yearEndAsHoliday: false))
+        XCTAssertEqual(off.first?.date, date(2026, 12, 31, 0, 7))
+
+        XCTAssertEqual(DayTypeResolver().dayType(of: date(2026, 12, 29, 12, 0)), .weekday)
+        XCTAssertEqual(DayTypeResolver().dayType(of: date(2026, 12, 30, 12, 0)), .holiday)
+        XCTAssertEqual(DayTypeResolver().dayType(of: date(2027, 1, 3, 12, 0)), .holiday)
+        XCTAssertEqual(DayTypeResolver().dayType(of: date(2027, 1, 4, 12, 0)), .weekday)
+    }
+
+    func testManualOverrideIsValidOnlyForThatDay() {
+        let thursday = date(2026, 9, 17, 9, 0)
+        let resolver = DayTypeResolver(yearEndAsHoliday: true, overrideDayKey: DayTypeResolver.dayKey(thursday), overrideType: .holiday)
+        XCTAssertEqual(resolver.dayType(of: thursday), .holiday)
+        XCTAssertTrue(resolver.isOverridden(on: thursday))
+        // 翌日には自動に戻る
+        let friday = date(2026, 9, 18, 9, 0)
+        XCTAssertEqual(resolver.dayType(of: friday), .weekday)
+        XCTAssertFalse(resolver.isOverridden(on: friday))
+        // 土曜を平日ダイヤに切り替える
+        let saturday = date(2026, 9, 19, 9, 0)
+        let toWeekday = DayTypeResolver(overrideDayKey: DayTypeResolver.dayKey(saturday), overrideType: .weekday)
+        XCTAssertEqual(toWeekday.dayType(of: saturday), .weekday)
+    }
+
     func testCalendarSelection() throws {
         let timetable = try makeTimetable()
         XCTAssertEqual(timetable.departures(for: .saturday), timetable.departuresByCalendar["odpt.Calendar:SaturdayHoliday"])

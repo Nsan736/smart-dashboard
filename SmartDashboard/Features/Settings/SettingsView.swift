@@ -58,6 +58,14 @@ struct SettingsView: View {
                     }
                 }
 
+                Section {
+                    Toggle("年末年始(12/30〜1/3)は休日ダイヤ", isOn: $settings.yearEndHolidayTimetable)
+                } header: {
+                    Text("電車のダイヤ")
+                } footer: {
+                    Text("今日だけ切り替えたいときは、電車の画面の「今日のダイヤ」を使ってください。")
+                }
+
                 Section("最終更新") {
                     ForEach(DataKind.allCases, id: \.self) { kind in
                         LabeledContent(kind.label, value: lastFetchedText(kind))

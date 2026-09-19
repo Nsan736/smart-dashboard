@@ -93,7 +93,7 @@ struct HomeView: View {
                             .foregroundStyle(.secondary)
                         if let timetable = store.timetables[station.id] {
                             TimelineView(.periodic(from: .now, by: 1)) { context in
-                                if let next = TimetableCalculator.upcoming(in: timetable, now: context.date, count: 1).first {
+                                if let next = TimetableCalculator.upcoming(in: timetable, now: context.date, count: 1, resolver: env.settings.dayTypeResolver).first {
                                     BigValue(value: NextTrainRow.countdown(to: next.date, now: context.date), size: 34)
                                     Text(NextTrainRow.describe(next)).font(.footnote)
                                 } else {

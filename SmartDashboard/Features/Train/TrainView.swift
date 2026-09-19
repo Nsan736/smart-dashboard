@@ -44,6 +44,8 @@ struct TrainView: View {
                 Section("次の電車") {
                     if store.stations.isEmpty {
                         Text("駅が登録されていません").foregroundStyle(.secondary)
+                    } else {
+                        TodayTimetablePicker()
                     }
                     ForEach(store.stations) { station in
                         NextTrainRow(station: station)
@@ -312,6 +314,40 @@ struct TrainStatusLine: View {
     }
 }
 
+/// 「今日のダイヤ」の手動切り替え。その日だけ有効で、翌日には自動に戻る。
+struct TodayTimetablePicker: View {
+    @Environment(AppEnvironment.self) private var env
+
+    var body: some View {
+        let settings = env.settings
+        let resolver = settings.dayTypeResolver
+        let isManual = resolver.isOverridden(on: Date())
+        var automatic = resolver
+        automatic.overrideType = nil
+        let automaticLabel = NextTrainRow.dayTypeLabel(automatic.dayType(of: Date()))
+        return VStack(alignment: .leading, spacing: 4) {
+            Picker("今日のダイヤ", selection: Binding<String>(
+                get: { isManual ? (resolver.overrideType == .weekday ? "weekday" : "holiday") : "auto" },
+                set: { value in
+                    switch value {
+                    case "weekday": settings.setTimetableOverride(.weekday)
+                    case "holiday": settings.setTimetableOverride(.holiday)
+                    default: settings.setTimetableOverride(nil)
+                    }
+                }
+            )) {
+                Text("自動").tag("auto")
+                Text("平日").tag("weekday")
+                Text("土休日").tag("holiday")
+            }
+            .pickerStyle(.segmented)
+            Text(isManual ? "今日だけ手動で切り替えています。明日には自動に戻ります。" : "今日のダイヤ(自動): \(automaticLabel)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
 /// 保存した時刻表から「あと◯分◯秒」を表示する。通信はしない。
 struct NextTrainRow: View {
     @Environment(AppEnvironment.self) private var env
@@ -341,7 +377,8 @@ struct NextTrainRow: View {
             }
             if let timetable = store.timetables[station.id] {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
-                    let upcoming = TimetableCalculator.upcoming(in: timetable, now: context.date, count: 2)
+                    let upcoming = TimetableCalculator.upcoming(in: timetable, now: context.date, count: 2,
+                                                                resolver: env.settings.dayTypeResolver)
                     if let next = upcoming.first {
                         BigValue(value: Self.countdown(to: next.date, now: context.date), size: 44)
                         Text(Self.describe(next))
@@ -355,7 +392,7 @@ struct NextTrainRow: View {
                         Text("該当する列車がありません").foregroundStyle(.secondary)
                     }
                 }
-                Text("時刻表: \(Formatters.dateTime.string(from: timetable.downloadedAt)) に保存\(timetable.issued.map { "(\($0) 改正)" } ?? "")・\(Self.dayTypeLabel(JapaneseHolidays.dayType(of: Date())))")
+                Text("時刻表: \(Formatters.dateTime.string(from: timetable.downloadedAt)) に保存\(timetable.issued.map { "(\($0) 改正)" } ?? "")・\(Self.dayTypeLabel(env.settings.dayTypeResolver.dayType(of: Date())))")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             } else {
