@@ -35,8 +35,18 @@ struct HomeView: View {
                 }
             }
         }
-        .onAppear { isVisible = true; startSensors() }
-        .onDisappear { isVisible = false; stopSensors() }
+        .onAppear {
+            isVisible = true
+            startSensors()
+            // 遅れの取得は、ホームの電車カードを表示している間だけ
+            env.live.setVisible("home", !env.trains.stations.isEmpty)
+        }
+        .onDisappear {
+            isVisible = false
+            stopSensors()
+            env.live.setVisible("home", false)
+        }
+        .task { await env.live.loadIfNeeded() }
         .onChange(of: scenePhase) { _, phase in
             guard isVisible else { return }
             if phase == .active { startSensors() } else { stopSensors() }
@@ -102,8 +112,15 @@ struct HomeView: View {
                         if let timetable = store.timetables[station.id] {
                             TimelineView(.periodic(from: .now, by: 1)) { context in
                                 if let next = TimetableCalculator.upcoming(in: timetable, now: context.date, count: 1, resolver: env.settings.dayTypeResolver).first {
-                                    BigValue(value: NextTrainRow.countdown(to: next.date, now: context.date), size: 34)
+                                    let live = HomeTrainLine.text(for: station, env: env, now: context.date)
+                                    BigValue(value: NextTrainRow.countdown(to: next.date.addingTimeInterval(live?.delaySeconds ?? 0), now: context.date), size: 34)
                                     Text(NextTrainRow.describe(next)).font(.footnote)
+                                    if let live {
+                                        Text(live.text)
+                                            .font(.footnote.weight(.semibold))
+                                            .foregroundStyle(TrainColors.color(live.tone))
+                                            .fixedSize(horizontal: false, vertical: true)
+                                    }
                                 } else {
                                     Text("該当する列車がありません").foregroundStyle(.secondary)
                                 }
@@ -267,5 +284,26 @@ struct HomeCard<Content: View>: View {
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
+    }
+}
+
+/// ホームの電車カードの1行。「その電車は今◯駅(あと◯駅)」。遅れがあれば補正した値を使う。
+@MainActor
+enum HomeTrainLine {
+    static func text(for station: RegisteredStation, env: AppEnvironment, now: Date) -> (text: String, delaySeconds: TimeInterval, tone: DelaySource.Tone)? {
+        guard let schedule = env.live.schedules[station.railwayID],
+              let index = schedule.stationIDs.firstIndex(of: station.stationID) else { return nil }
+        let line = BoardLine(railwayID: station.railwayID, name: station.railwayName, schedule: schedule,
+                             shape: env.trains.shapes[station.railwayID],
+                             positions: env.live.positions(for: station.railwayID, now: now, includesWaiting: true))
+        guard let approach = TrainPositionCalculator.approaches(to: index, direction: station.directionID,
+                                                                positions: line.positions, now: now, limit: 1).first else { return nil }
+        var text = "その電車は" + TrainBoard.whereaboutsText(approach, in: line)
+        if case .realtime(let seconds) = approach.position.delay, seconds >= 60 {
+            text += "・" + approach.position.delay.label
+        } else if approach.position.delay == .lineDelayed {
+            text += "・" + approach.position.delay.label
+        }
+        return (text, approach.position.delay.seconds, approach.position.delay.tone)
     }
 }
