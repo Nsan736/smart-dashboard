@@ -94,6 +94,7 @@ struct WeatherView: View {
                     BigValue(value: String(format: "%.1f", c.temperature), unit: "°C", size: 60)
                     Text(WeatherCode.label(c.weatherCode))
                         .font(.title3.weight(.semibold))
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             Grid(alignment: .leading, horizontalSpacing: 20, verticalSpacing: 8) {
@@ -121,35 +122,51 @@ struct WeatherView: View {
                 .frame(width: 22)
             VStack(alignment: .leading, spacing: 0) {
                 Text(title).font(.caption).foregroundStyle(.secondary)
-                Text(value).font(.title3.weight(.semibold)).monospacedDigit()
+                Text(value)
+                    .font(.title3.weight(.semibold))
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    /// 横スクロール。1画面にちょうど6時間分が入る幅にし、項目の途中で切れないよう時間単位で止める。
     private func hourlyView(_ snapshot: WeatherSnapshot) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 18) {
-                ForEach(snapshot.upcomingHours(now: Date())) { hour in
-                    VStack(spacing: 6) {
-                        Text(Self.hourText(hour.time, offset: snapshot.utcOffsetSeconds))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Image(systemName: WeatherCode.symbol(hour.weatherCode))
-                            .symbolRenderingMode(.multicolor)
-                            .font(.title2)
-                            .frame(height: 28)
-                        Text(hour.temperature.map { String(format: "%.0f°", $0) } ?? "-")
-                            .font(.headline)
-                            .monospacedDigit()
-                        Text(hour.precipitationProbability.map { String(format: "%.0f%%", $0) } ?? "-")
-                            .font(.caption)
-                            .foregroundStyle(.blue)
+        VStack(alignment: .leading, spacing: 4) {
+            ScrollView(.horizontal, showsIndicators: true) {
+                LazyHStack(spacing: 0) {
+                    ForEach(snapshot.upcomingHours(now: Date())) { hour in
+                        VStack(spacing: 6) {
+                            Text(Self.hourText(hour.time, offset: snapshot.utcOffsetSeconds))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Image(systemName: WeatherCode.symbol(hour.weatherCode))
+                                .symbolRenderingMode(.multicolor)
+                                .font(.title2)
+                                .frame(height: 28)
+                            Text(hour.temperature.map { String(format: "%.0f°", $0) } ?? "-")
+                                .font(.headline)
+                                .monospacedDigit()
+                            Text(hour.precipitationProbability.map { String(format: "%.0f%%", $0) } ?? "-")
+                                .font(.caption)
+                                .foregroundStyle(.blue)
+                        }
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .containerRelativeFrame(.horizontal, count: 6, spacing: 0)
                     }
                 }
+                .scrollTargetLayout()
+                .padding(.bottom, 10)
             }
-            .padding(.vertical, 4)
+            .scrollTargetBehavior(.viewAligned)
+            Label("横にスクロールできます", systemImage: "arrow.left.and.right")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
         }
+        .padding(.vertical, 4)
     }
 
     static func coordinate(of snapshot: WeatherSnapshot) -> CLLocationCoordinate2D? {
@@ -183,14 +200,43 @@ struct WeatherView: View {
         }
     }
 
+    /// 1行に詰め込まず3段にする。天気のラベルは省略しない。
     private func dailyRow(_ day: WeatherSnapshot.Day, offset: Int) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            dailyMainRow(day, offset: offset)
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 8) {
+                Text(Self.dayText(day.date, offset: offset))
+                    .font(.body.weight(.semibold))
+                Image(systemName: WeatherCode.symbol(day.weatherCode))
+                    .symbolRenderingMode(.multicolor)
+                    .frame(width: 28)
+                Spacer(minLength: 4)
+                Text(day.temperatureMax.map { String(format: "%.0f°", $0) } ?? "-")
+                    .foregroundStyle(.red)
+                Text("/").foregroundStyle(.secondary)
+                Text(day.temperatureMin.map { String(format: "%.0f°", $0) } ?? "-")
+                    .foregroundStyle(.blue)
+            }
+            .font(.title3.weight(.semibold))
+            .monospacedDigit()
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            HStack(alignment: .firstTextBaseline) {
+                Text(WeatherCode.label(day.weatherCode))
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 8)
+                Label(day.precipitationProbability.map { String(format: "%.0f%%", $0) } ?? "-", systemImage: "umbrella")
+                    .foregroundStyle(.blue)
+                    .monospacedDigit()
+                    .lineLimit(1)
+            }
+            .font(.subheadline)
             Text(Self.sunText(day, offset: offset))
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
+                .fixedSize(horizontal: false, vertical: true)
         }
+        .padding(.vertical, 2)
     }
 
     static func sunText(_ day: WeatherSnapshot.Day, offset: Int) -> String {
@@ -199,32 +245,6 @@ struct WeatherView: View {
         if let sunset = day.sunset { parts.append("日の入 \(minuteText(sunset, offset: offset))") }
         if let uv = day.uvIndexMax { parts.append(String(format: "UV %.1f", uv)) }
         return parts.joined(separator: "・")
-    }
-
-    private func dailyMainRow(_ day: WeatherSnapshot.Day, offset: Int) -> some View {
-        HStack {
-            Text(Self.dayText(day.date, offset: offset))
-                .frame(width: 84, alignment: .leading)
-            Image(systemName: WeatherCode.symbol(day.weatherCode))
-                .symbolRenderingMode(.multicolor)
-                .frame(width: 30)
-            Text(WeatherCode.label(day.weatherCode))
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-            Spacer()
-            Text(day.precipitationProbability.map { String(format: "%.0f%%", $0) } ?? "-")
-                .foregroundStyle(.blue)
-                .frame(width: 48, alignment: .trailing)
-            Text(day.temperatureMax.map { String(format: "%.0f°", $0) } ?? "-")
-                .foregroundStyle(.red)
-                .frame(width: 40, alignment: .trailing)
-            Text(day.temperatureMin.map { String(format: "%.0f°", $0) } ?? "-")
-                .foregroundStyle(.blue)
-                .frame(width: 40, alignment: .trailing)
-        }
-        .font(.body.weight(.medium))
-        .monospacedDigit()
     }
 
     private static func formatter(_ format: String, offset: Int) -> DateFormatter {

@@ -11,7 +11,7 @@ struct HomeView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 320), spacing: 12)], spacing: 12) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), spacing: 12)], spacing: 12) {
                     timerCard
                     nextTrainCard
                     trainInfoCard
@@ -61,8 +61,8 @@ struct HomeView: View {
                 HomeCard(title: "タイマー", symbol: "timer") {
                     ForEach(running) { timer in
                         HStack {
-                            Text(timer.label).foregroundStyle(.secondary)
-                            Spacer()
+                            Text(timer.label).foregroundStyle(.secondary).lineLimit(2)
+                            Spacer(minLength: 8)
                             BigValue(value: TimeText.countdown(timer.remaining(now: context.date)), size: 34)
                         }
                     }
@@ -116,17 +116,7 @@ struct HomeView: View {
             HomeCard(title: "運行情報", symbol: "exclamationmark.bubble", fetchedAt: store.info?.fetchedAt) {
                 ForEach(store.lines) { line in
                     let item = store.info?.value.first { $0.railwayID == line.railwayID }
-                    HStack {
-                        Text(line.railwayName).font(.headline)
-                        Spacer()
-                        if let item {
-                            Label(item.statusText ?? item.status.label, systemImage: item.status.symbol)
-                                .font(.headline)
-                                .foregroundStyle(TrainInfoRow.color(item.status))
-                        } else {
-                            Text("未取得").foregroundStyle(.secondary)
-                        }
-                    }
+                    TrainStatusLine(name: line.railwayName, item: item)
                 }
             }
         }
@@ -142,12 +132,16 @@ struct HomeView: View {
                         .symbolRenderingMode(.multicolor)
                         .font(.system(size: 40))
                     BigValue(value: String(format: "%.1f", snapshot.current.temperature), unit: "°C", size: 44)
-                    Spacer()
-                    VStack(alignment: .trailing) {
-                        Text(WeatherCode.label(snapshot.current.weatherCode)).font(.headline)
-                        Text(snapshot.placeName).font(.caption).foregroundStyle(.secondary)
-                    }
+                    Spacer(minLength: 4)
+                    Text(WeatherCode.label(snapshot.current.weatherCode))
+                        .font(.headline)
+                        .multilineTextAlignment(.trailing)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
+                Text(snapshot.placeName)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 if let today = snapshot.daily.first {
                     HStack {
                         Text("最高 \(today.temperatureMax.map { String(format: "%.0f°", $0) } ?? "-")").foregroundStyle(.red)
@@ -157,6 +151,8 @@ struct HomeView: View {
                     }
                     .font(.subheadline.weight(.semibold))
                     .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
                 }
                 if let summary = RainSummary.text(slots: snapshot.upcomingRain(now: Date()), now: Date()) {
                     Label(summary, systemImage: "umbrella")
@@ -215,8 +211,9 @@ struct HomeView: View {
             Text(value)
                 .font(.title3.weight(.semibold))
                 .monospacedDigit()
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
+                .lineLimit(2)
+                .minimumScaleFactor(0.7)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }

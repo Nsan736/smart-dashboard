@@ -184,6 +184,8 @@ private struct RemainingTimeText: View {
         Text(finished ? "終了" : TimeText.countdown(remaining))
             .font(.system(size: 44, weight: .bold, design: .rounded))
             .monospacedDigit()
+            .lineLimit(1)
+            .minimumScaleFactor(0.5)
             .foregroundStyle(finished ? Color.red : Color.primary)
     }
 }
@@ -222,13 +224,14 @@ private struct StopwatchView: View {
                 ForEach(store.stopwatch.laps.reversed(), id: \.index) { lap in
                     HStack {
                         Text("ラップ \(lap.index)")
-                        Spacer()
+                        Spacer(minLength: 8)
                         Text(TimeText.stopwatch(lap.lap)).monospacedDigit()
                         Text(TimeText.stopwatch(lap.total))
                             .monospacedDigit()
                             .foregroundStyle(.secondary)
-                            .frame(width: 110, alignment: .trailing)
                     }
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
                 }
             }
             .listStyle(.plain)

@@ -102,7 +102,7 @@ struct SensorsView: View {
                     BigValue(value: motion.pressureHPa.map { String(format: "%.1f", $0) } ?? "-", unit: "hPa", size: 40)
                     Spacer()
                 }
-                LabeledContent("相対高度(表示開始から)", value: motion.relativeAltitude.map { String(format: "%+.1f m", $0) } ?? "-")
+                LabeledContent("相対高度", value: motion.relativeAltitude.map { String(format: "%+.1f m", $0) } ?? "-")
             }
             LabeledContent("GPS高度", value: location.availability.unavailableText
                 ?? location.altitude.map { String(format: "%.0f m", $0) } ?? "-")
@@ -232,7 +232,11 @@ struct SensorsView: View {
     private func smallMetric(_ title: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(title).font(.caption).foregroundStyle(.secondary)
-            Text(value).font(.headline).monospacedDigit()
+            Text(value)
+                .font(.headline)
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }

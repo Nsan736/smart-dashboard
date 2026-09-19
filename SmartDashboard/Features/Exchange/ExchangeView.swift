@@ -52,9 +52,13 @@ struct ExchangeView: View {
         HStack {
             VStack(alignment: .leading) {
                 Text(code).font(.title3.weight(.bold))
-                Text(CurrencyName.japanese(code)).font(.caption).foregroundStyle(.secondary)
+                Text(CurrencyName.japanese(code))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
             }
-            Spacer()
+            .layoutPriority(1)
+            Spacer(minLength: 8)
             if let yen = rates.yenPerUnit(code) {
                 BigValue(value: Self.yenText(yen), unit: "円", size: 34)
             } else {

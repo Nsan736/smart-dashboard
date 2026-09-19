@@ -51,12 +51,19 @@ struct MapSettingsView: View {
                     }
                 }
                 LabeledContent("保存済み", value: "\(Formatters.bytes(tiles.storedBytes)) / \(settings.tileStorageLimitMB) MB")
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
                 LabeledContent("回線", value: env.network.summary)
             }
 
             Section {
                 let nationwide = TileMath.estimate(bounds: .japan, zooms: TileMath.nationwideZooms)
-                LabeledContent("日本全国の広域(ズーム5〜8)", value: Self.estimateText(nationwide))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("日本全国の広域(ズーム5〜8)")
+                    Text(Self.estimateText(nationwide))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 ForEach(settings.tileAreas) { area in
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {

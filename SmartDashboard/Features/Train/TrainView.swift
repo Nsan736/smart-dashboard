@@ -73,17 +73,7 @@ struct TrainInfoRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(line.railwayName).font(.title3.weight(.bold))
-                Spacer()
-                if let item {
-                    Label(item.statusText ?? item.status.label, systemImage: item.status.symbol)
-                        .font(.headline)
-                        .foregroundStyle(Self.color(item.status))
-                } else {
-                    Text("未取得").foregroundStyle(.secondary)
-                }
-            }
+            TrainStatusLine(name: line.railwayName, item: item, nameFont: .title3.weight(.bold))
             if let text = item?.text {
                 Text(text)
                     .font(.subheadline)
@@ -93,12 +83,55 @@ struct TrainInfoRow: View {
         .padding(.vertical, 2)
     }
 
+    static func color(_ status: TrainStatus?) -> Color {
+        guard let status else { return .gray }
+        return color(status)
+    }
+
     static func color(_ status: TrainStatus) -> Color {
         switch status {
         case .normal: return .green
         case .delay: return .orange
         case .suspended: return .red
         case .other: return .blue
+        }
+    }
+}
+
+/// 路線名と運行状況。1行に入りきらない幅や文字サイズでは2段にする(省略しない)。
+struct TrainStatusLine: View {
+    let name: String
+    let item: TrainInfoItem?
+    var nameFont: Font = .headline
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack {
+                nameText
+                Spacer(minLength: 8)
+                statusView
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                nameText
+                statusView
+            }
+        }
+    }
+
+    private var nameText: some View {
+        Text(name)
+            .font(nameFont)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    @ViewBuilder
+    private var statusView: some View {
+        if let item {
+            Label(item.statusText ?? item.status.label, systemImage: item.status.symbol)
+                .font(.headline)
+                .foregroundStyle(TrainInfoRow.color(item.status))
+        } else {
+            Text("未取得").foregroundStyle(.secondary)
         }
     }
 }
