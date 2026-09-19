@@ -56,19 +56,31 @@ iOS向けの個人用「手元ダッシュボード」アプリ。SwiftUI製。A
 
 ## ビルドと検証(GitHub Actions)
 
-開発機はWindowsでXcodeがないため、ビルドとテストの検証はGitHub Actionsの結果で行う。
+開発機はWindowsでXcodeがないため、ビルドとテストの検証はGitHub Actionsで行う。
+ただし Actions は「macOSでしかできないこと」だけに使い、回数を最小にする。
 
-- ランナーは macos-15、Xcodeは明示的に選ぶ(現在 16.4)。XcodeGenはbrewでインストールする
-- テストはiOSシミュレーターで実行する(`-destination 'platform=iOS Simulator,...'`)
-- mainへのpush: ビルドとテストのみ
-- タグ `v*` のpush: `xcodebuild -sdk iphoneos CODE_SIGNING_ALLOWED=NO` で署名なしビルド → `Payload/SmartDashboard.app` をzipして `SmartDashboard.ipa` を作成 → GitHub Releasesへアップロード → `apps.json`(AltStoreソース)を更新してmainに直接コミット
-- ipaのファイル名は固定(`SmartDashboard.ipa`)。`releases/latest/download/SmartDashboard.ipa` でも取得できるようにする
-- ワークフローには `permissions: contents: write` を付ける
-- ビルドが失敗したら `gh run view --log-failed` でログを確認して修正し、通るまで繰り返す
+### ワークフロー
+
+- `.github/workflows/ci.yml`: ビルドとテスト。トリガーは手動実行(workflow_dispatch)と pull_request だけ。mainへのpushでは動かさない
+  - 1つのジョブで、シミュレーターでのテスト(起動は1回)と、実機向けの署名なしコンパイル確認を行う
+  - paths-ignore で、ドキュメント(*.md)、apps.json、scripts などだけの変更では動かさない
+- `.github/workflows/release.yml`: タグ `v*` のpushだけで動く。`xcodebuild -sdk iphoneos CODE_SIGNING_ALLOWED=NO` → `Payload/SmartDashboard.app` をzipして `SmartDashboard.ipa` → GitHub Releases → `apps.json` を更新してmainに直接コミット。テストはしないので、ci が成功したコミットにだけタグを付ける
+- 共通: macos-15、Xcodeは明示的に選ぶ(現在 16.4)。XcodeGenは `HOMEBREW_NO_AUTO_UPDATE=1` でbrewから入れる(入っていれば入れない)。concurrency の cancel-in-progress: true、timeout-minutes: 20。ツール情報の表示や使わない成果物のアップロードなど不要なステップは置かない
+- ipaのファイル名は固定(`SmartDashboard.ipa`)。`releases/latest/download/SmartDashboard.ipa` でも取得できる
+- release.yml には `permissions: contents: write` を付ける(ci.yml は read)
+
+### 実行の回数
+
+- コミットは細かく分けてよいが、push と ci の実行は「段階の区切り」ごとに1回だけにする
+- 実行は手動: `gh workflow run ci.yml --ref main`
+- 実行する前に、Swiftの文法や型の誤り、Info.plist・project.yml の整合性を、コードを読んで自分で確認する
+- 実行する前に `python scripts/check_local.py` を通す(フィクスチャのJSON、YAML、ワークフローのトリガー、apps.json生成、括弧の対応)。macOSが不要な確認をActionsで回さない
+- 失敗したときは `gh run view --log-failed` でログから原因をまとめて特定し、関連する修正を1回で直してから再実行する。1行ずつ直して何度も回さない
+- 段階の報告には、その段階で Actions を何回実行したかを書く
 
 ## 進め方
 
-段階的に進める。各段階でビルドとテストが通ることを確認してからコミットを確定させる。
+段階的に進める。各段階の区切りで1回だけ ci を実行し、ビルドとテストが通ることを確認する。
 
 1. 骨組み(XcodeGen、TabView、設定、キャッシュ層、通信量の計測、ネットワーク状態の監視)とGitHub Actions
 2. 天気と為替
