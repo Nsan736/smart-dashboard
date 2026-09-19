@@ -31,6 +31,12 @@ final class MotionSensors {
         startPedometer()
     }
 
+    /// ホーム用。消費の小さい気圧と歩数だけを動かす。
+    func startLight() {
+        startAltimeter()
+        startPedometer()
+    }
+
     func stop() {
         altimeter.stopRelativeAltitudeUpdates()
         motion.stopDeviceMotionUpdates()
