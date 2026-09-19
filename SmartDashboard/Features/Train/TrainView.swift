@@ -4,7 +4,6 @@ import UIKit
 
 struct TrainView: View {
     @Environment(AppEnvironment.self) private var env
-    @State private var selection: TrainMapSelection?
 
     var body: some View {
         let store = env.trains
@@ -17,17 +16,7 @@ struct TrainView: View {
                         .font(.headline)
                         .fixedSize(horizontal: false, vertical: true)
                     if !store.neededRailways.isEmpty {
-                        TrainMapView(selection: $selection)
-                            .frame(height: 260)
-                            .listRowInsets(EdgeInsets())
-                        TrainMapLegend()
-                        if let selection {
-                            TrainSelectionDetail(selection: selection)
-                        } else {
-                            Text("路線や駅のピンをタップすると、詳しい情報を表示します。")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
+                        TrainLivePanel()
                         if let error = store.shapeError {
                             Label(error, systemImage: "exclamationmark.triangle")
                                 .font(.footnote)
@@ -86,16 +75,31 @@ struct TrainView: View {
             .navigationTitle("電車")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    RefreshToolbarButton(isLoading: store.isLoadingInfo || store.isLoadingShapes) {
+                    RefreshToolbarButton(isLoading: store.isLoadingInfo || store.isLoadingShapes || env.live.isFetchingDelays) {
                         await store.refreshInfoManually()
                         await store.ensureShapes(manual: true)
+                        await env.live.fetchDelaysManually()
                     }
                 }
             }
             .task {
                 await store.refreshInfoIfStale()
                 await store.ensureShapes(manual: false)
+                // 列車ごとの時刻表は、Wi-Fi接続中だけ自動で保存する
+                await env.live.ensureSchedules(manual: false)
+                // 最寄り駅は、タブを開いたときに1回だけ現在地を取って判定する(500m以上動いたときだけ判定し直す)
+                await env.live.updateNearestStation()
             }
+            // 路線や駅を登録・削除したら、路線の形と時刻表を取り直す
+            .onChange(of: store.neededRailways.map(\.railwayID)) { _, _ in
+                Task {
+                    await store.ensureShapes(manual: false)
+                    await env.live.ensureSchedules(manual: false)
+                }
+            }
+            // 遅れの取得は、この画面を表示している間だけ
+            .onAppear { env.live.setVisible("trainTab", true) }
+            .onDisappear { env.live.setVisible("trainTab", false) }
         }
     }
 }
@@ -103,49 +107,6 @@ struct TrainView: View {
 enum TrainMapSelection: Equatable {
     case line(String)
     case station(String)
-}
-
-/// 登録した路線を線で、登録した駅をピンで描く。線の色は運行状況、縁取りは路線本来の色。
-struct TrainMapView: View {
-    @Environment(AppEnvironment.self) private var env
-    @Binding var selection: TrainMapSelection?
-
-    var body: some View {
-        let store = env.trains
-        let items = store.info?.value ?? []
-        let shapes = store.neededRailways.compactMap { store.shapes[$0.railwayID] }.filter(\.isDrawable)
-        let lines = shapes.map { shape -> MapLine in
-            let isInfoLine = store.lines.contains { $0.railwayID == shape.railwayID }
-            let status = isInfoLine ? items.first(where: { $0.railwayID == shape.railwayID })?.status : nil
-            return MapLine(
-                id: shape.railwayID,
-                coordinates: shape.stops.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) },
-                color: TrainMapBuilder.uiColor(status),
-                casingColor: UIColor(hex: shape.colorHex),
-                isEmphasized: status == .delay || status == .suspended
-            )
-        }
-        let markers = TrainMapBuilder.markers(stations: store.stations, shapes: store.shapes)
-        ZStack {
-            MapContainerView(
-                isInteractive: true,
-                showsUserLocation: true,
-                lines: lines,
-                markers: markers,
-                fitKey: (shapes.map(\.railwayID) + markers.map(\.id)).joined(separator: ","),
-                onSelectLine: { selection = .line($0) },
-                onSelectMarker: { selection = .station($0) }
-            )
-            if shapes.isEmpty {
-                Text(store.isLoadingShapes ? "路線の形を取得中" : "路線の形は未取得です。右上の更新ボタンで取得します。")
-                    .font(.footnote)
-                    .padding(8)
-                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
-                    .padding()
-            }
-        }
-    }
-
 }
 
 enum TrainMapBuilder {
@@ -160,6 +121,33 @@ enum TrainMapBuilder {
         }
     }
 
+    /// 駅の点。広域でも駅名を出す主要駅は、登録した駅、最寄り駅、終点、乗換駅(複数の路線に同じ名前がある駅)。
+    static func stationDots(shapes: [RailwayShape], registered: Set<String>, nearestStationID: String?) -> [MapStationDot] {
+        var nameCount: [String: Int] = [:]
+        for shape in shapes {
+            for name in Set(shape.stops.map(\.name)) { nameCount[name, default: 0] += 1 }
+        }
+        var seen = Set<String>()
+        var dots: [MapStationDot] = []
+        for shape in shapes {
+            for (index, stop) in shape.stops.enumerated() where seen.insert(stop.stationID).inserted {
+                let isRegistered = registered.contains(stop.stationID)
+                let isTerminal = index == 0 || index == shape.stops.count - 1
+                let isMajor = isRegistered || isTerminal || stop.stationID == nearestStationID || (nameCount[stop.name] ?? 0) > 1
+                dots.append(MapStationDot(id: stop.stationID, title: stop.name,
+                                          coordinate: CLLocationCoordinate2D(latitude: stop.latitude, longitude: stop.longitude),
+                                          isMajor: isMajor, isRegistered: isRegistered))
+            }
+        }
+        return dots
+    }
+
+    /// 路線図に並べる駅の順。路線の形(odpt:Railway の駅の順)があればそれを使う。
+    static func diagramOrder(for line: BoardLine) -> [String] {
+        if let shape = line.shape, !shape.stops.isEmpty { return shape.stops.map(\.stationID) }
+        return line.schedule.stationIDs
+    }
+
     /// 同じ駅を複数の方面で登録していても、ピンは1つにする
     static func markers(stations: [RegisteredStation], shapes: [String: RailwayShape]) -> [MapMarker] {
         var seen = Set<String>()
@@ -168,33 +156,6 @@ enum TrainMapBuilder {
                   let stop = shapes[station.railwayID]?.stops.first(where: { $0.stationID == station.stationID }) else { return nil }
             return MapMarker(id: station.stationID, title: station.stationName,
                              coordinate: CLLocationCoordinate2D(latitude: stop.latitude, longitude: stop.longitude))
-        }
-    }
-}
-
-struct TrainMapLegend: View {
-    var body: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 12) { entries }
-            VStack(alignment: .leading, spacing: 2) { entries }
-        }
-        .font(.caption)
-        .foregroundStyle(.secondary)
-    }
-
-    @ViewBuilder
-    private var entries: some View {
-        entry("平常", .green)
-        entry("遅延", .yellow)
-        entry("見合わせ・運休", .red)
-        entry("不明", .gray)
-        Text("縁取り=路線の色")
-    }
-
-    private func entry(_ label: String, _ color: Color) -> some View {
-        HStack(spacing: 4) {
-            Capsule().fill(color).frame(width: 16, height: 5)
-            Text(label)
         }
     }
 }
