@@ -38,11 +38,13 @@ final class AppEnvironment {
     let weather: WeatherStore
     let exchange: ExchangeStore
     let timers: TimerStore
+    let trains: TrainStore
     @ObservationIgnored let cache: DiskCache
     @ObservationIgnored let http: HTTPClient
     @ObservationIgnored let keychain: KeychainStore
 
     private(set) var cacheSize: Int64 = 0
+    private(set) var hasODPTToken = false
 
     init() {
         let support = DiskCache.defaultDirectory("SmartDashboard")
@@ -61,7 +63,15 @@ final class AppEnvironment {
         self.fetchLog = fetchLog
         self.cache = cache
         self.http = http
-        keychain = KeychainStore()
+        let keychain = KeychainStore()
+        self.keychain = keychain
+        trains = TrainStore(
+            api: ODPTClient(http: http, tokenProvider: { keychain.string(for: KeychainAccount.odptToken) }),
+            cache: cache,
+            timetableStorage: DiskCache(directory: support.appendingPathComponent("timetables", isDirectory: true)),
+            settings: settings, network: network,
+            hasToken: { !(keychain.string(for: KeychainAccount.odptToken) ?? "").isEmpty },
+            onFetched: { fetchLog.mark($0, at: $1) })
         timers = TimerStore()
         weather = WeatherStore(
             api: OpenMeteoClient(http: http), cache: cache, settings: settings, network: network,
@@ -69,6 +79,7 @@ final class AppEnvironment {
         exchange = ExchangeStore(
             api: ERAPIClient(http: http), cache: cache, settings: settings, network: network,
             onFetched: { fetchLog.mark(.exchange, at: $0) })
+        hasODPTToken = !(keychain.string(for: KeychainAccount.odptToken) ?? "").isEmpty
     }
 
     /// 起動時とフォアグラウンド復帰時に呼ぶ。古くなったデータだけを各Storeが取得する。
@@ -76,6 +87,7 @@ final class AppEnvironment {
         timers.resume()
         await weather.refreshIfStale()
         await exchange.refreshIfStale()
+        await trains.refreshInfoIfStale()
         await updateCacheSize()
     }
 
@@ -84,7 +96,16 @@ final class AppEnvironment {
         fetchLog.reset()
         weather.clearMemory()
         exchange.clearMemory()
+        trains.clearCachedInfo()
         await updateCacheSize()
+    }
+
+    /// トークンはKeychainだけに保存する。空文字なら削除する。
+    @discardableResult
+    func setODPTToken(_ token: String) -> Bool {
+        let ok = keychain.set(token, for: KeychainAccount.odptToken)
+        hasODPTToken = !(keychain.string(for: KeychainAccount.odptToken) ?? "").isEmpty
+        return ok
     }
 
     func updateCacheSize() async {

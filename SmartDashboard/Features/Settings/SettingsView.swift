@@ -30,6 +30,7 @@ struct SettingsView: View {
 
                 Section("登録内容") {
                     NavigationLink("天気の地点") { PlacesEditorView() }
+                    NavigationLink("電車の路線・駅") { TrainRegistrationListView() }
                     NavigationLink("為替の通貨") {
                         CurrencyPickerView(available: env.exchange.cached?.value.availableCodes ?? AppSettings.defaultExchangeCodes)
                     }
@@ -47,7 +48,7 @@ struct SettingsView: View {
                         .autocorrectionDisabled()
                     Button("トークンを保存") {
                         let trimmed = odptToken.trimmingCharacters(in: .whitespacesAndNewlines)
-                        tokenSaved = env.keychain.set(trimmed, for: KeychainAccount.odptToken)
+                        tokenSaved = env.setODPTToken(trimmed)
                     }
                     if tokenSaved {
                         Text(odptToken.isEmpty ? "削除しました" : "Keychainに保存しました")
@@ -83,5 +84,44 @@ struct SettingsView: View {
     private func lastFetchedText(_ kind: DataKind) -> String {
         guard let date = env.fetchLog.lastFetched[kind] else { return "未取得" }
         return "\(Formatters.dateTime.string(from: date)) (\(Formatters.age(of: date)))"
+    }
+}
+
+/// 登録した路線・駅の一覧と削除
+struct TrainRegistrationListView: View {
+    @Environment(AppEnvironment.self) private var env
+
+    var body: some View {
+        let store = env.trains
+        List {
+            Section("運行情報の路線") {
+                if store.lines.isEmpty { Text("まだありません").foregroundStyle(.secondary) }
+                ForEach(store.lines) { line in
+                    Text(line.railwayName)
+                }
+                .onDelete { store.removeLines(at: $0) }
+            }
+            Section("時刻表の駅") {
+                if store.stations.isEmpty { Text("まだありません").foregroundStyle(.secondary) }
+                ForEach(store.stations) { station in
+                    VStack(alignment: .leading) {
+                        Text(station.stationName)
+                        Text("\(station.railwayName)・\(station.directionName)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .onDelete { store.removeStations(at: $0) }
+            }
+            Section {
+                NavigationLink {
+                    OperatorPickerView()
+                } label: {
+                    Label("路線・駅を登録", systemImage: "plus.circle")
+                }
+            }
+        }
+        .navigationTitle("路線・駅")
+        .toolbar { EditButton() }
     }
 }
