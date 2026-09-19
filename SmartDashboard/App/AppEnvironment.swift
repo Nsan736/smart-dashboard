@@ -40,6 +40,7 @@ final class AppEnvironment {
     let timers: TimerStore
     let trains: TrainStore
     let tiles: TileDownloader
+    let radar: RadarStore
     @ObservationIgnored let cache: DiskCache
     @ObservationIgnored let http: HTTPClient
     @ObservationIgnored let keychain: KeychainStore
@@ -79,6 +80,8 @@ final class AppEnvironment {
         self.location = location
         let tiles = TileDownloader(store: TileStore(root: TileStore.defaultRoot()), http: http, settings: settings, network: network)
         self.tiles = tiles
+        let radarLoader = RadarTileLoader(http: http, root: RadarTileLoader.defaultRoot())
+        radar = RadarStore(http: http, network: network, loader: radarLoader)
         weather = WeatherStore(
             api: OpenMeteoClient(http: http), cache: cache, settings: settings, network: network,
             location: location, placeNames: PlaceNameResolver(),
@@ -112,6 +115,8 @@ final class AppEnvironment {
         weather.clearMemory()
         exchange.clearMemory()
         trains.clearCachedInfo()
+        let radarLoader = radar.loader
+        await Task.detached(priority: .utility) { radarLoader.removeAll() }.value
         await updateCacheSize()
     }
 

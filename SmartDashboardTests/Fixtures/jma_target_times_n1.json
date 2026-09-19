@@ -1,0 +1,34 @@
+[
+ {
+  "basetime": "20260919092500",
+  "validtime": "20260919092500",
+  "elements": [
+   "hrpns",
+   "hrpns_nd"
+  ]
+ },
+ {
+  "basetime": "20260919092000",
+  "validtime": "20260919092000",
+  "elements": [
+   "hrpns",
+   "hrpns_nd"
+  ]
+ },
+ {
+  "basetime": "20260919091500",
+  "validtime": "20260919091500",
+  "elements": [
+   "hrpns",
+   "hrpns_nd"
+  ]
+ },
+ {
+  "basetime": "20260919091000",
+  "validtime": "20260919091000",
+  "elements": [
+   "hrpns",
+   "hrpns_nd"
+  ]
+ }
+]

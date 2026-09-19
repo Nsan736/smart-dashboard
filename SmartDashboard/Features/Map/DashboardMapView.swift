@@ -83,6 +83,8 @@ struct DashboardMapView: UIViewRepresentable {
     var pin: CLLocationCoordinate2D?
     var isInteractive = true
     var showsUserLocation = false
+    /// 半透明で重ねる雨雲レーダー
+    var radar: RadarLayer?
     /// 表示範囲が変わったとき(範囲、ズーム)
     var onRegionChange: ((GeoBounds, Int) -> Void)?
 
@@ -131,6 +133,23 @@ struct DashboardMapView: UIViewRepresentable {
             coordinator.scheduleReload(map)
         }
 
+        // 雨雲レーダー。コマが変わったら、新しいものを重ねてから古いものを外す(ちらつきを抑える)。
+        if coordinator.radarOverlay?.frame != radar?.frame {
+            let old = coordinator.radarOverlay
+            if let radar {
+                let overlay = RadarTileOverlay(frame: radar.frame, loader: radar.loader)
+                map.addOverlay(overlay, level: .aboveLabels)
+                coordinator.radarOverlay = overlay
+            } else {
+                coordinator.radarOverlay = nil
+            }
+            if let old {
+                DispatchQueue.main.asyncAfter(deadline: .now() + (radar == nil ? 0 : 0.35)) { [weak map] in
+                    map?.removeOverlay(old)
+                }
+            }
+        }
+
         // 外から中心が変わったとき(現在地の更新など)だけ移動する
         if let center, !isInteractive || coordinator.lastCenter == nil {
             let moved = coordinator.lastCenter.map {
@@ -160,6 +179,7 @@ struct DashboardMapView: UIViewRepresentable {
     final class Coordinator: NSObject, MKMapViewDelegate {
         var mode: MapMode?
         var baseOverlay: MKTileOverlay?
+        var radarOverlay: RadarTileOverlay?
         var tileRevision = 0
         var lastCenter: CLLocationCoordinate2D?
         var onRegionChange: ((GeoBounds, Int) -> Void)?
@@ -180,7 +200,9 @@ struct DashboardMapView: UIViewRepresentable {
 
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
             if let tiles = overlay as? MKTileOverlay {
-                return MKTileOverlayRenderer(tileOverlay: tiles)
+                let renderer = MKTileOverlayRenderer(tileOverlay: tiles)
+                if tiles is RadarTileOverlay { renderer.alpha = 0.65 }
+                return renderer
             }
             return MKOverlayRenderer(overlay: overlay)
         }
@@ -206,6 +228,7 @@ struct MapContainerView: View {
     var pin: CLLocationCoordinate2D?
     var isInteractive = true
     var showsUserLocation = false
+    var radar: RadarLayer?
 
     static let gsiURL = URL(string: "https://maps.gsi.go.jp/development/ichiran.html")!
 
@@ -220,6 +243,7 @@ struct MapContainerView: View {
             pin: pin,
             isInteractive: isInteractive,
             showsUserLocation: showsUserLocation,
+            radar: radar,
             onRegionChange: { bounds, zoom in
                 // Wi-Fi接続中に Apple Maps で見た範囲を保存する
                 guard mode == .apple, isInteractive else { return }
