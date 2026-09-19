@@ -28,6 +28,13 @@ struct SettingsView: View {
                     Text("このアプリが受信したヘッダーと本文の合計です。")
                 }
 
+                Section("登録内容") {
+                    NavigationLink("天気の地点") { PlacesEditorView() }
+                    NavigationLink("為替の通貨") {
+                        CurrencyPickerView(available: env.exchange.cached?.value.availableCodes ?? AppSettings.defaultExchangeCodes)
+                    }
+                }
+
                 Section("最終更新") {
                     ForEach(DataKind.allCases, id: \.self) { kind in
                         LabeledContent(kind.label, value: lastFetchedText(kind))
@@ -74,7 +81,7 @@ struct SettingsView: View {
     }
 
     private func lastFetchedText(_ kind: DataKind) -> String {
-        guard let date = env.lastFetched[kind] else { return "未取得" }
+        guard let date = env.fetchLog.lastFetched[kind] else { return "未取得" }
         return "\(Formatters.dateTime.string(from: date)) (\(Formatters.age(of: date)))"
     }
 }
