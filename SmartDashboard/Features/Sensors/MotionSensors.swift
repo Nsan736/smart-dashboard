@@ -20,6 +20,10 @@ final class MotionSensors {
     private(set) var pedometerAvailability: SensorAvailability = .unknown
     private(set) var stepsToday: Int?
     private(set) var walkingDistanceToday: Double?
+    /// 現在のペース(秒/m)と歩調(歩/秒)。歩いている間だけ値が入る。
+    private(set) var currentPace: Double?
+    private(set) var currentCadence: Double?
+    private(set) var lastPedometerUpdate: Date?
 
     @ObservationIgnored private let altimeter = CMAltimeter()
     @ObservationIgnored private let motion = CMMotionManager()
@@ -97,23 +101,78 @@ final class MotionSensors {
         return (-pitch, roll)
     }
 
+    /// 歩数は継続的に受け取る。CMPedometer の更新は歩いたときに数秒おきにまとめて届き、
+    /// 止まっている間は届かないので、最初の値だけは問い合わせて表示する。
     private func startPedometer() {
         guard CMPedometer.isStepCountingAvailable() else {
             pedometerAvailability = .unsupported
             return
         }
         let startOfDay = Calendar.current.startOfDay(for: Date())
-        pedometer.startUpdates(from: startOfDay) { [weak self] data, error in
-            Task { @MainActor in
-                guard let self else { return }
-                if let data {
-                    self.pedometerAvailability = .available
-                    self.stepsToday = data.numberOfSteps.intValue
-                    self.walkingDistanceToday = data.distance?.doubleValue
-                } else if error != nil {
-                    self.pedometerAvailability = Self.isDenied ? .denied : .unsupported
-                }
-            }
+        pedometer.stopUpdates()
+        pedometer.queryPedometerData(from: startOfDay, to: Date()) { [weak self] data, error in
+            let snapshot = data.map { PedometerSnapshot($0) }
+            let failed = error != nil
+            Task { @MainActor in self?.applyPedometer(snapshot, failed: failed, isLiveUpdate: false) }
         }
+        pedometer.startUpdates(from: startOfDay) { [weak self] data, error in
+            let snapshot = data.map { PedometerSnapshot($0) }
+            let failed = error != nil
+            Task { @MainActor in self?.applyPedometer(snapshot, failed: failed, isLiveUpdate: true) }
+        }
+    }
+
+    /// コールバックは任意のスレッドで呼ばれるので、状態の更新は必ず MainActor で行う
+    private func applyPedometer(_ snapshot: PedometerSnapshot?, failed: Bool, isLiveUpdate: Bool) {
+        guard let snapshot else {
+            if failed { pedometerAvailability = Self.isDenied ? .denied : .unsupported }
+            return
+        }
+        pedometerAvailability = .available
+        // 問い合わせの結果が、あとから届いた新しい更新を上書きしないようにする
+        if !isLiveUpdate, let current = stepsToday, current > snapshot.steps { return }
+        stepsToday = snapshot.steps
+        walkingDistanceToday = snapshot.distance
+        if isLiveUpdate {
+            currentPace = snapshot.pace
+            currentCadence = snapshot.cadence
+            lastPedometerUpdate = Date()
+        }
+    }
+}
+
+/// CMPedometerData から必要な値だけを取り出したもの(スレッドをまたいで渡せるようにする)
+struct PedometerSnapshot: Sendable, Equatable {
+    var steps: Int
+    var distance: Double?
+    /// 現在のペース(秒/m)
+    var pace: Double?
+    /// 現在の歩調(歩/秒)
+    var cadence: Double?
+
+    init(steps: Int, distance: Double?, pace: Double?, cadence: Double?) {
+        self.steps = steps
+        self.distance = distance
+        self.pace = pace
+        self.cadence = cadence
+    }
+
+    init(_ data: CMPedometerData) {
+        self.init(steps: data.numberOfSteps.intValue, distance: data.distance?.doubleValue,
+                  pace: data.currentPace?.doubleValue, cadence: data.currentCadence?.doubleValue)
+    }
+
+    /// 「8分20秒/km」
+    static func paceText(secondsPerMeter: Double?) -> String? {
+        guard let secondsPerMeter, secondsPerMeter > 0, secondsPerMeter.isFinite else { return nil }
+        let perKm = Int((secondsPerMeter * 1000).rounded())
+        guard perKm < 3600 else { return nil }
+        return "\(perKm / 60)分\(String(format: "%02d", perKm % 60))秒/km"
+    }
+
+    /// 「112歩/分」
+    static func cadenceText(stepsPerSecond: Double?) -> String? {
+        guard let stepsPerSecond, stepsPerSecond > 0, stepsPerSecond.isFinite else { return nil }
+        return "\(Int((stepsPerSecond * 60).rounded()))歩/分"
     }
 }
