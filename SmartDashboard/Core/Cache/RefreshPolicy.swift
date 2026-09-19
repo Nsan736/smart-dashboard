@@ -6,6 +6,7 @@ enum DataKind: String, CaseIterable, Codable {
     case exchange
     case rainNowcast
     case trainInfo
+    case trainDelay
     case railwayCatalog
 
     var minimumInterval: TimeInterval {
@@ -14,6 +15,7 @@ enum DataKind: String, CaseIterable, Codable {
         case .exchange: return 24 * 60 * 60
         case .rainNowcast: return 10 * 60
         case .trainInfo: return 5 * 60
+        case .trainDelay: return 2 * 60
         case .railwayCatalog: return 30 * 24 * 60 * 60
         }
     }
@@ -24,6 +26,7 @@ enum DataKind: String, CaseIterable, Codable {
         case .exchange: return "為替"
         case .rainNowcast: return "雨のナウキャスト"
         case .trainInfo: return "運行情報"
+        case .trainDelay: return "列車の遅れ"
         case .railwayCatalog: return "路線・駅の一覧"
         }
     }
@@ -57,6 +60,11 @@ struct RefreshPolicy {
         if wifiOnly && isMobile { return .blockedByWiFiOnly }
         if cellularLimitReached && isMobile { return .blockedByCellularLimit }
         return .refresh
+    }
+
+    /// 列車の遅れの最短の取得間隔。Wi-Fiで2分、モバイル通信で5分。
+    static func trainDelayInterval(network: NetworkStatus) -> TimeInterval {
+        (network.isExpensive || !network.isWiFi) ? 5 * 60 : 2 * 60
     }
 
     func manualDecision(network: NetworkStatus) -> RefreshDecision {

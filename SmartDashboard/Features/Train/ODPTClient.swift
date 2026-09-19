@@ -21,6 +21,10 @@ protocol ODPTAPI: Sendable {
     func stationTimetables(stationID: String, directionID: String, op: TrainOperator) async throws -> [ODPTStationTimetable]
     func railDirections(endpoint: ODPTEndpoint) async throws -> [ODPTRailDirection]
     func trainTypes(of op: TrainOperator) async throws -> [ODPTTrainType]
+    /// 列車ごとの時刻表。1回の応答は1000件で打ち切られるので、カレンダー(と必要なら方面)で分けて取得する。
+    func trainTimetables(railwayID: String, calendarID: String, directionID: String?, op: TrainOperator) async throws -> [ODPTTrainTimetable]
+    /// 列車のリアルタイム情報。登録した路線だけに絞る(カンマ区切りでOR指定)。
+    func trains(op: TrainOperator, railwayIDs: [String]) async throws -> [ODPTTrain]
 }
 
 struct ODPTClient: ODPTAPI {
@@ -59,6 +63,17 @@ struct ODPTClient: ODPTAPI {
 
     func trainTypes(of op: TrainOperator) async throws -> [ODPTTrainType] {
         try await get("odpt:TrainType", [("odpt:operator", op.id)], op.endpoint, op.name)
+    }
+
+    func trainTimetables(railwayID: String, calendarID: String, directionID: String?, op: TrainOperator) async throws -> [ODPTTrainTimetable] {
+        var query = [("odpt:railway", railwayID), ("odpt:calendar", calendarID)]
+        if let directionID { query.append(("odpt:railDirection", directionID)) }
+        return try await get("odpt:TrainTimetable", query, op.endpoint, op.name)
+    }
+
+    func trains(op: TrainOperator, railwayIDs: [String]) async throws -> [ODPTTrain] {
+        guard !railwayIDs.isEmpty else { return [] }
+        return try await get("odpt:Train", [("odpt:railway", railwayIDs.joined(separator: ","))], op.endpoint, op.name)
     }
 
     private func get<T: Decodable>(_ type: String, _ query: [(String, String)], _ endpoint: ODPTEndpoint, _ name: String) async throws -> [T] {

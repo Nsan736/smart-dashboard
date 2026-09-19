@@ -160,6 +160,63 @@ struct ODPTStationTimetable: Decodable {
     }
 }
 
+/// 列車ごとの時刻表 (odpt:TrainTimetable)
+struct ODPTTrainTimetable: Decodable {
+    struct Object: Decodable {
+        let arrivalTime: String?
+        let departureTime: String?
+        let arrivalStation: String?
+        let departureStation: String?
+
+        enum CodingKeys: String, CodingKey {
+            case arrivalTime = "odpt:arrivalTime"
+            case departureTime = "odpt:departureTime"
+            case arrivalStation = "odpt:arrivalStation"
+            case departureStation = "odpt:departureStation"
+        }
+    }
+
+    let sameAs: String
+    let trainNumber: String
+    let calendar: String?
+    let railDirection: String?
+    let trainType: String?
+    let destinationStation: [String]?
+    let objects: [Object]
+
+    enum CodingKeys: String, CodingKey {
+        case sameAs = "owl:sameAs"
+        case trainNumber = "odpt:trainNumber"
+        case calendar = "odpt:calendar"
+        case railDirection = "odpt:railDirection"
+        case trainType = "odpt:trainType"
+        case destinationStation = "odpt:destinationStation"
+        case objects = "odpt:trainTimetableObject"
+    }
+}
+
+/// 列車のリアルタイム情報 (odpt:Train)。使うのは遅れだけ。
+/// 在線位置の項目(odpt:fromStation / odpt:toStation)は、位置の計算に使わない方針なので読み込まない。
+struct ODPTTrain: Decodable {
+    let trainNumber: String
+    let railway: String
+    let railDirection: String?
+    /// 遅れ(秒)。事業者や路線によっては項目がない。
+    let delay: Double?
+    /// データの生成時刻と有効期限 (ISO 8601)
+    let date: String?
+    let valid: String?
+
+    enum CodingKeys: String, CodingKey {
+        case trainNumber = "odpt:trainNumber"
+        case railway = "odpt:railway"
+        case railDirection = "odpt:railDirection"
+        case delay = "odpt:delay"
+        case date = "dc:date"
+        case valid = "dct:valid"
+    }
+}
+
 enum ODPTID {
     /// "odpt.Station:Keisei.Oshiage.Aoto" -> "Aoto"。名前が引けないときの代替表示。
     static func tail(_ id: String) -> String {
