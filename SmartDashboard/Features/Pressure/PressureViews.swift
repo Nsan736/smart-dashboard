@@ -190,12 +190,12 @@ struct PressureSection: View {
             NavigationLink {
                 PressureDetailView()
             } label: {
-                Label("詳細(過去約90日〜7日先)", systemImage: "chart.xyaxis.line")
+                Label("詳細(16日先までの予報)", systemImage: "chart.xyaxis.line")
             }
         } header: {
             Text("気圧の変化(過去24時間〜今後24時間)")
         } footer: {
-            Text("気圧計で実測した時間帯は実測、それ以外(アプリを閉じていた間と未来)は予報(Open-Meteo)です。実測は、アプリを開いている間に5分に1回記録し、100日分を保存します。")
+            Text("気圧計で実測した時間帯は実測、それ以外(アプリを閉じていた間と未来)は予報(Open-Meteo)です。実測は、アプリを開いている間に5分に1回記録し、7日分を保存します。")
         }
     }
 }

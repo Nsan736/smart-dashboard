@@ -5,7 +5,7 @@ import SwiftUI
 enum PressureSpan: String, CaseIterable, Identifiable {
     case day
     case week
-    case month
+    case all
 
     var id: String { rawValue }
 
@@ -13,57 +13,62 @@ enum PressureSpan: String, CaseIterable, Identifiable {
         switch self {
         case .day: return "1日"
         case .week: return "1週間"
-        case .month: return "1か月"
+        case .all: return "全体"
         }
     }
 
+    /// 画面に収める時間の長さ。「全体」は過去4日〜16日先。
     var seconds: TimeInterval {
         switch self {
         case .day: return 24 * 3600
         case .week: return 7 * 24 * 3600
-        case .month: return 30 * 24 * 3600
+        case .all: return PressureDetailData.past + PressureDetailData.future
         }
     }
 
-    /// 間引きの間隔。1日表示は、表示中の付近だけ5分ごと(それ以外は1時間ごと)にする。
+    /// 間引きの間隔。1日表示は間引かない(実測は5分ごと)。
     var step: TimeInterval {
         switch self {
-        case .day: return 5 * 60
+        case .day: return 0
         case .week: return 30 * 60
-        case .month: return 3600
+        case .all: return 3600
         }
     }
 }
 
 /// 表示用のデータの組み立て(View の外に置いてテストできるようにする)
 enum PressureDetailData {
-    static let past: TimeInterval = 100 * 24 * 3600
-    static let future: TimeInterval = 7 * 24 * 3600
+    /// 過去は直近4日分、予報は16日先(Open-Meteo の上限)まで
+    static let past: TimeInterval = 4 * 24 * 3600
+    static let future: TimeInterval = 16 * 24 * 3600
+    /// 開いたときに「今」を置く位置(左から25%)。右にスクロールすると先の予報が見られる。
+    static let nowPosition = 0.25
 
-    /// 表示する点。1日表示では、center の前後 1.5 日だけを細かくし、それ以外は1時間ごとにする。
-    static func displayed(full: [PressurePoint], hourly: [PressurePoint], span: PressureSpan, center: Date) -> [PressurePoint] {
-        switch span {
-        case .month:
-            return hourly
-        case .week:
-            return PressureThinning.thin(full, step: span.step)
-        case .day:
-            let from = center.addingTimeInterval(-1.5 * span.seconds)
-            let to = center.addingTimeInterval(1.5 * span.seconds)
-            let fine = full.filter { $0.time >= from && $0.time <= to }
-            guard let first = fine.first, let last = fine.last else { return hourly }
-            return hourly.filter { $0.time < first.time } + fine + hourly.filter { $0.time > last.time }
-        }
+    /// 表示する点。幅に応じて間引く。
+    static func displayed(full: [PressurePoint], span: PressureSpan) -> [PressurePoint] {
+        PressureThinning.thin(full, step: span.step)
     }
 
-    /// 開いたときのスクロール位置(表示の左端)。「今」が画面の右寄り(左から75%)に来るようにする。
+    /// 横軸の範囲
+    static func domain(now: Date) -> ClosedRange<Date> {
+        now.addingTimeInterval(-past)...now.addingTimeInterval(future)
+    }
+
+    /// スクロール位置(表示の左端)を、横軸の範囲に収める
+    static func clamped(_ scroll: Date, span: PressureSpan, now: Date) -> Date {
+        let range = domain(now: now)
+        let latest = range.upperBound.addingTimeInterval(-span.seconds)
+        return min(max(scroll, range.lowerBound), max(latest, range.lowerBound))
+    }
+
+    /// 開いたときのスクロール位置。「今」が画面の左寄り(左から25%)に来るようにする。
     static func initialScroll(now: Date, span: PressureSpan) -> Date {
-        now.addingTimeInterval(-0.75 * span.seconds)
+        clamped(now.addingTimeInterval(-nowPosition * span.seconds), span: span, now: now)
     }
 
     /// 表示の幅を切り替えたときに、画面の中央の時刻を保つ
-    static func scroll(keepingCenterOf current: Date, from old: PressureSpan, to new: PressureSpan) -> Date {
-        current.addingTimeInterval(old.seconds / 2 - new.seconds / 2)
+    static func scroll(keepingCenterOf current: Date, from old: PressureSpan, to new: PressureSpan, now: Date) -> Date {
+        clamped(current.addingTimeInterval(old.seconds / 2 - new.seconds / 2), span: new, now: now)
     }
 
     /// 日付の区切り(日本時間の0時)
@@ -79,11 +84,11 @@ enum PressureDetailData {
         return result
     }
 
-    /// 日付のラベルを付ける日。1か月表示では月曜と1日だけ。
+    /// 日付のラベルを付ける日。全体表示では込み合うので、月曜と木曜だけ。
     static func labeledDays(_ days: [Date], span: PressureSpan) -> [Date] {
-        guard span == .month else { return days }
+        guard span == .all else { return days }
         let calendar = JapaneseHolidays.calendar
-        return days.filter { calendar.component(.weekday, from: $0) == 2 || calendar.component(.day, from: $0) == 1 }
+        return days.filter { [2, 5].contains(calendar.component(.weekday, from: $0)) }
     }
 
     static func fiveSteps(in domain: ClosedRange<Double>) -> [Double] {
@@ -107,7 +112,6 @@ struct PressureDetailView: View {
     @State private var displayed: [PressurePoint] = []
     @State private var drops: [DateInterval] = []
     @State private var correction = 0.0
-    @State private var fineCenter = Date.distantPast
     @State private var didSetInitialScroll = false
     /// 保存容量(スクロールのたびに数え直さないよう、データが変わったときだけ求める)
     @State private var storage: (history: Int64, measured: Int64) = (0, 0)
@@ -122,22 +126,26 @@ struct PressureDetailView: View {
                 if displayed.count > 1 {
                     chart
                         .frame(height: 280)
+                    // グラフの外(この行や下の一覧)をタップしたら、表示中の値を消す
                     selectionText
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                        .onTapGesture { selectedDate = nil }
                 } else {
                     Text("気圧のデータがまだありません").foregroundStyle(.secondary)
                 }
             } footer: {
-                Text("実線は過去、点線は予報です。薄いオレンジは、3時間で\(String(format: "%.1f", env.settings.pressureAlertDrop))hPa以上下がっている時間帯、緑の線は標準気圧(1013hPa)です。長押ししてなぞると、その時刻の値を表示します。")
+                Text("実線は過去、点線は予報です。薄いオレンジは、3時間で\(String(format: "%.1f", env.settings.pressureAlertDrop))hPa以上下がっている時間帯、緑の線は標準気圧(1013hPa)です。グラフをタップすると、その時刻の値を表示します。")
             }
-            backfillSection
+            statusSection
             statsSection
             Section {
-                LabeledContent("予報モデルの履歴", value: Formatters.bytes(storage.history))
+                LabeledContent("予報モデルの値", value: Formatters.bytes(storage.history))
                 LabeledContent("実測の記録", value: Formatters.bytes(storage.measured))
             } header: {
                 Text("保存容量")
             } footer: {
-                Text("実測がある時間帯は実測、それ以外は予報モデルの値(Open-Meteo)です。どちらも100日分を保存し、古いものは削除します。気象データ: Open-Meteo.com (CC BY 4.0)")
+                Text("実測がある時間帯は実測、それ以外は予報モデルの値(Open-Meteo)です。過去は直近4日分を表示し、どちらも7日分を保存して、古いものは削除します。予報は16日先までで、この画面を開いたときだけ取得します(最短3時間ごと)。気象データ: Open-Meteo.com (CC BY 4.0)")
             }
         }
         .navigationTitle("気圧の変化")
@@ -145,20 +153,19 @@ struct PressureDetailView: View {
         .task {
             rebuild()
             guard let snapshot = env.weather.cached?.value, let latitude = snapshot.latitude, let longitude = snapshot.longitude else { return }
-            await env.pressureHistory.backfillIfNeeded(latitude: latitude, longitude: longitude)
             await env.pressureHistory.refreshOutlookIfStale(latitude: latitude, longitude: longitude)
         }
         .onChange(of: env.pressureHistory.history) { _, _ in rebuild() }
         .onChange(of: env.pressure.samples.count) { _, _ in rebuild() }
         .onChange(of: env.settings.pressureAlertDrop) { _, _ in rebuild() }
         .onChange(of: span) { old, new in
-            scrollX = PressureDetailData.scroll(keepingCenterOf: scrollX, from: old, to: new)
-            updateDisplayed(force: true)
+            selectedDate = nil
+            scrollX = PressureDetailData.scroll(keepingCenterOf: scrollX, from: old, to: new, now: now)
+            displayed = PressureDetailData.displayed(full: full, span: new)
         }
-        .onChange(of: scrollX) { _, _ in updateDisplayed(force: false) }
     }
 
-    /// 100日分の系列を作り直す(データが変わったときだけ)
+    /// 過去4日〜16日先の系列を作り直す(データが変わったときだけ)
     private func rebuild() {
         now = Date()
         let series = PressureSeries.make(measured: env.pressure.samples, forecast: env.pressureHistory.forecastPoints, now: now,
@@ -172,24 +179,10 @@ struct PressureDetailView: View {
             scrollX = PressureDetailData.initialScroll(now: now, span: span)
         }
         storage = (env.pressureHistory.storageBytes, env.pressure.storageBytes())
-        updateDisplayed(force: true)
+        displayed = PressureDetailData.displayed(full: full, span: span)
     }
 
-    /// 1日表示では、表示位置が半日以上動いたときだけ、細かい区間を作り直す
-    private func updateDisplayed(force: Bool) {
-        let center = scrollX.addingTimeInterval(span.seconds / 2)
-        if !force {
-            guard span == .day, abs(center.timeIntervalSince(fineCenter)) > span.seconds / 2 else { return }
-        }
-        fineCenter = center
-        displayed = PressureDetailData.displayed(full: full, hourly: hourly, span: span, center: center)
-    }
-
-    private var xDomain: ClosedRange<Date> {
-        let start = displayed.first?.time ?? now.addingTimeInterval(-span.seconds)
-        let end = max(displayed.last?.time ?? now, now.addingTimeInterval(span.seconds * 0.25))
-        return start...end
-    }
+    private var xDomain: ClosedRange<Date> { PressureDetailData.domain(now: now) }
 
     private var chart: some View {
         let yDomain = PressureDetailData.yDomain(hourly)
@@ -237,6 +230,13 @@ struct PressureDetailView: View {
         .chartXVisibleDomain(length: span.seconds)
         .chartScrollPosition(x: $scrollX)
         .chartXSelection(value: $selectedDate)
+        // 値の表示はタップだけ。指を動かしたときは、常に横スクロールになる(長押しでなぞる標準の操作は置き換える)。
+        // タップは、指をほとんど動かさずに離したときだけ成立するので、スクロールの途中では値を表示しない。
+        .chartGesture { proxy in
+            SpatialTapGesture().onEnded { value in
+                proxy.selectXValue(at: value.location.x)
+            }
+        }
         .chartXAxis {
             AxisMarks(values: threeHours) { _ in
                 AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5)).foregroundStyle(Color.secondary.opacity(0.3))
@@ -312,36 +312,36 @@ struct PressureDetailView: View {
                 }
             }
         } else {
-            Text("グラフを長押ししてなぞると、その時刻の気圧、実測か予報か、前3時間の変化を表示します")
+            Text("グラフをタップすると、その時刻の気圧、実測か予報か、前3時間の変化を表示します")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
 
+    /// 取得中・失敗の表示と、手動での更新
     @ViewBuilder
-    private var backfillSection: some View {
+    private var statusSection: some View {
         let store = env.pressureHistory
-        if store.needsBackfill(now: now) || store.isLoading || store.errorMessage != nil {
-            Section {
-                if store.isLoading {
-                    HStack {
-                        ProgressView()
-                        Text("取得中…").foregroundStyle(.secondary)
-                    }
-                } else if store.needsBackfill(now: now) {
-                    Text("過去の気圧(約100日分)は未取得です。Wi-Fi接続中は自動で取得します。モバイル通信では、下のボタンで取得できます。")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                    Button("過去の気圧を取得する(約10KB)") {
-                        guard let snapshot = env.weather.cached?.value, let latitude = snapshot.latitude, let longitude = snapshot.longitude else { return }
-                        Task { await store.backfillIfNeeded(latitude: latitude, longitude: longitude, manual: true) }
-                    }
-                    .disabled(env.weather.cached?.value.latitude == nil)
+        Section {
+            if store.isLoading {
+                HStack {
+                    ProgressView()
+                    Text("取得中…").foregroundStyle(.secondary)
                 }
-                if let error = store.errorMessage {
-                    Label(error, systemImage: "exclamationmark.triangle").font(.footnote).foregroundStyle(.red)
+            } else {
+                Button("予報を更新する(約2KB)") {
+                    guard let snapshot = env.weather.cached?.value, let latitude = snapshot.latitude, let longitude = snapshot.longitude else { return }
+                    Task { await store.refreshOutlook(latitude: latitude, longitude: longitude) }
                 }
+                .disabled(env.weather.cached?.value.latitude == nil)
+            }
+            if let error = store.errorMessage {
+                Label(error, systemImage: "exclamationmark.triangle").font(.footnote).foregroundStyle(.red)
+            }
+        } footer: {
+            TimelineView(.periodic(from: .now, by: 60)) { context in
+                Text("16日先までの予報: " + Formatters.ageLabel(store.outlookFetchedAt, now: context.date))
             }
         }
     }
@@ -356,6 +356,8 @@ struct PressureDetailView: View {
                     HStack { statValues(stats) }
                     VStack(alignment: .leading, spacing: 6) { statValues(stats) }
                 }
+                .contentShape(Rectangle())
+                .onTapGesture { selectedDate = nil }
             }
             Section("1日ごとの最高・最低") {
                 ForEach(stats.days) { day in
@@ -367,6 +369,8 @@ struct PressureDetailView: View {
                             .lineLimit(1)
                             .minimumScaleFactor(0.7)
                     }
+                    .contentShape(Rectangle())
+                    .onTapGesture { selectedDate = nil }
                 }
             }
         }
