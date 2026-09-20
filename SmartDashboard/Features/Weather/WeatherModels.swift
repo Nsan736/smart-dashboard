@@ -154,6 +154,12 @@ struct WeatherSnapshot: Codable, Equatable {
         return array[index]
     }
 
+    /// 今のアプリが必要とする項目がそろっているか。古い形式のキャッシュ(1時間値に気圧がない)なら false で、
+    /// 更新間隔に関係なく取り直す。
+    var hasRequiredFields: Bool {
+        hourly.contains { $0.pressure != nil }
+    }
+
     /// 現在時刻以降の15分値(最大2時間分)
     func upcomingRain(now: Date) -> [RainSlot] {
         Array((rain ?? []).filter { $0.time.addingTimeInterval(15 * 60) > now }.prefix(8))

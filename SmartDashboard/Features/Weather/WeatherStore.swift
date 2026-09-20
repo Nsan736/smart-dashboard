@@ -19,6 +19,8 @@ final class WeatherStore {
     @ObservationIgnored private let onCurrentLocation: @MainActor (Double, Double) -> Void
     @ObservationIgnored private let onFetched: @MainActor (Date) -> Void
     @ObservationIgnored private var loadTask: Task<Void, Never>?
+    /// 天気を取得したとき(気圧の履歴への追記に使う)
+    @ObservationIgnored var onSnapshot: (@MainActor (WeatherSnapshot) -> Void)?
 
     private static let cacheKey = "weather"
 
@@ -61,14 +63,20 @@ final class WeatherStore {
     func refreshIfStale() async {
         await loadCacheIfNeeded()
         let sameSource = cached?.value.sourceID == currentSourceID
+        // キャッシュが古い形式で必要な項目が欠けているときは、更新間隔に関係なく取り直す
+        let isUsable = sameSource && Self.isUsable(cached?.value)
         let decision = settings.refreshPolicy.autoDecision(
             kind: .weather,
-            fetchedAt: sameSource ? cached?.fetchedAt : nil,
+            fetchedAt: isUsable ? cached?.fetchedAt : nil,
             now: Date(),
             network: network.status
         )
         autoRefreshNote = decision.note
         if decision == .refresh { await fetch() }
+    }
+
+    nonisolated static func isUsable(_ snapshot: WeatherSnapshot?) -> Bool {
+        snapshot?.hasRequiredFields ?? false
     }
 
     func refreshManually() async {
@@ -112,6 +120,7 @@ final class WeatherStore {
             cached = CachedValue(value: snapshot, fetchedAt: now)
             try? await cache.save(snapshot, key: Self.cacheKey, fetchedAt: now)
             onFetched(now)
+            onSnapshot?(snapshot)
             autoRefreshNote = nil
         } catch {
             errorMessage = error.localizedDescription
