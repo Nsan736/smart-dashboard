@@ -20,14 +20,27 @@ struct MapLine {
     }
 }
 
+/// ピンの見た目
+enum MapMarkerStyle: String {
+    /// 駅(電車のアイコン)
+    case station
+    /// 登録した地点など(ピンのアイコン)
+    case place
+    /// 震源(赤い×印)
+    case epicenter
+    /// 現在地など(青い点)
+    case dot
+}
+
 /// 地図に立てるピン(駅など)
 struct MapMarker {
     let id: String
     let title: String
     let coordinate: CLLocationCoordinate2D
+    var style: MapMarkerStyle = .station
 
     var signature: String {
-        "\(id)|\(title)|\(coordinate.latitude)|\(coordinate.longitude)"
+        "\(id)|\(title)|\(coordinate.latitude)|\(coordinate.longitude)|\(style.rawValue)"
     }
 }
 
@@ -43,6 +56,7 @@ final class RouteOverlay: MKPolyline {
 
 final class StationAnnotation: MKPointAnnotation {
     var markerID = ""
+    var style: MapMarkerStyle = .station
 }
 
 extension UIColor {

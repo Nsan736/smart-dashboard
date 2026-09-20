@@ -374,6 +374,7 @@ struct DashboardMapView: UIViewRepresentable {
             for marker in markers {
                 let annotation = StationAnnotation()
                 annotation.markerID = marker.id
+                annotation.style = marker.style
                 annotation.title = marker.title
                 annotation.coordinate = marker.coordinate
                 map.addAnnotation(annotation)
@@ -395,13 +396,27 @@ struct DashboardMapView: UIViewRepresentable {
                 view.apply(station, showsName: MapStationRule.showsName(zoom: currentZoom, isMajor: station.isMajor))
                 return view
             }
-            guard annotation is StationAnnotation else { return nil }
+            guard let marker = annotation as? StationAnnotation else { return nil }
             let identifier = "station"
             let view = (mapView.dequeueReusableAnnotationView(withIdentifier: identifier) as? MKMarkerAnnotationView)
                 ?? MKMarkerAnnotationView(annotation: annotation, reuseIdentifier: identifier)
             view.annotation = annotation
-            view.glyphImage = UIImage(systemName: "tram.fill")
-            view.markerTintColor = .systemIndigo
+            view.glyphText = nil
+            switch marker.style {
+            case .station:
+                view.glyphImage = UIImage(systemName: "tram.fill")
+                view.markerTintColor = .systemIndigo
+            case .place:
+                view.glyphImage = UIImage(systemName: "mappin")
+                view.markerTintColor = .systemOrange
+            case .epicenter:
+                view.glyphImage = UIImage(systemName: "xmark")
+                view.markerTintColor = .systemRed
+            case .dot:
+                view.glyphImage = UIImage(systemName: "circle.fill")
+                view.markerTintColor = .systemBlue
+            }
+            view.titleVisibility = .visible
             view.displayPriority = .required
             view.canShowCallout = false
             return view

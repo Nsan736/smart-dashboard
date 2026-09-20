@@ -273,7 +273,7 @@ struct WaypointMapPicker: View {
         MapContainerView(center: center, spanMeters: 3000, isInteractive: true, showsUserLocation: true,
                          markers: store.waypoints.map {
                              MapMarker(id: $0.id.uuidString, title: $0.name,
-                                       coordinate: CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude))
+                                       coordinate: CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude), style: .place)
                          },
                          onLongPress: { coordinate in
                              picked = Waypoint(name: "", latitude: coordinate.latitude, longitude: coordinate.longitude,
