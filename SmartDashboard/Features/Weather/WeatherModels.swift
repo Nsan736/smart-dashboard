@@ -19,6 +19,8 @@ struct OpenMeteoResponse: Decodable {
         let temperature_2m: [Double?]
         let precipitation_probability: [Double?]
         let weather_code: [Int?]
+        /// 気圧のグラフ用。古いフィクスチャにはない。
+        let surface_pressure: [Double?]?
     }
 
     struct Daily: Decodable {
@@ -65,6 +67,8 @@ struct WeatherSnapshot: Codable, Equatable {
         var temperature: Double?
         var precipitationProbability: Double?
         var weatherCode: Int?
+        /// 地表の気圧(hPa)。古いキャッシュにはない。
+        var pressure: Double?
         var id: Date { time }
     }
 
@@ -121,7 +125,8 @@ struct WeatherSnapshot: Codable, Equatable {
                 time: Date(timeIntervalSince1970: t),
                 temperature: r.hourly.temperature_2m[safe: i] ?? nil,
                 precipitationProbability: r.hourly.precipitation_probability[safe: i] ?? nil,
-                weatherCode: r.hourly.weather_code[safe: i] ?? nil
+                weatherCode: r.hourly.weather_code[safe: i] ?? nil,
+                pressure: Self.value(r.hourly.surface_pressure, i)
             )
         }
         daily = r.daily.time.enumerated().map { i, t in

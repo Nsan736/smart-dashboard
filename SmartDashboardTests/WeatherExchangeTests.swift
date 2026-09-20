@@ -72,7 +72,8 @@ final class OpenMeteoDecodingTests: XCTestCase {
         XCTAssertEqual(query["daily"], "temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code,sunrise,sunset,uv_index_max")
         XCTAssertEqual(query["forecast_hours"], "24")
         XCTAssertEqual(query["timeformat"], "unixtime")
-        XCTAssertEqual(query["hourly"], "temperature_2m,precipitation_probability,weather_code")
+        XCTAssertEqual(query["hourly"], "temperature_2m,precipitation_probability,weather_code,surface_pressure")
+        XCTAssertEqual(query["past_hours"], "24")
     }
 
     func testOldCacheWithoutNewFieldsStillDecodes() throws {
