@@ -29,7 +29,7 @@ struct SettingsView: View {
                 } header: {
                     Text("受信データ量")
                 } footer: {
-                    Text("このアプリが受信したヘッダーと本文の合計を、通信1回ごとに回線を判定して記録しています。テザリングなど従量制の回線はモバイル通信に含めます。Apple Maps の地図と地名の取得はiOSが通信するため、ここには含まれません。")
+                    Text("このアプリが受信したヘッダーと本文の合計を、通信1回ごとに回線を判定して記録しています。テザリングなど従量制の回線はモバイル通信に含めます。Apple Maps の地図、地名の取得、スコープの周辺の施設の検索と経路の取得(MapKit)は、iOSが通信するため、ここには含まれません。")
                 }
 
                 Section {
@@ -237,7 +237,7 @@ struct UsageBreakdownView: View {
             Section {
                 LabeledContent("地名の取得", value: "\(env.usage.geocodeRequestsThisMonth) 回")
             } footer: {
-                Text("地名(CLGeocoder)と Apple Maps の通信はiOSが行うため、アプリからは受信量を計測できません。地名は500m以上移動したときだけ取得するので、回数だけを記録しています。")
+                Text("地名(CLGeocoder)、Apple Maps、スコープの周辺の施設の検索(MKLocalSearch)と経路の取得(MKDirections)の通信はiOSが行うため、アプリからは受信量を計測できません。地名は500m以上移動したときだけ取得するので、回数だけを記録しています。")
             }
         }
         .navigationTitle("機能別の内訳")
@@ -301,9 +301,9 @@ struct AlertSettingsSections: View {
                 Text("気圧の低下を目立たせる：3時間で−\(String(format: "%.1f", settings.pressureAlertDrop))hPa以上")
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Toggle("ウェイポイントで、向いている方角を表示", isOn: $settings.waypointShowsHeading)
+            Toggle("スコープで、向いている方角を表示", isOn: $settings.waypointShowsHeading)
         } header: {
-            Text("地震・気圧・ウェイポイント")
+            Text("地震・気圧・スコープ")
         }
 
         Section {

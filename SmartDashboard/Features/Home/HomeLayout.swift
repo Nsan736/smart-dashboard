@@ -13,6 +13,7 @@ enum HomeCardKind: String, Codable, CaseIterable, Identifiable {
     case warnings
     case quakes
     case pressure
+    /// スコープ(以前の名前はウェイポイント。保存済みの設定を引き継ぐため、値は変えない)
     case waypoint
 
     var id: String { rawValue }
@@ -30,7 +31,7 @@ enum HomeCardKind: String, Codable, CaseIterable, Identifiable {
         case .warnings: return "警報・注意報"
         case .quakes: return "地震"
         case .pressure: return "気圧"
-        case .waypoint: return "ウェイポイント"
+        case .waypoint: return "スコープ"
         }
     }
 
@@ -47,7 +48,7 @@ enum HomeCardKind: String, Codable, CaseIterable, Identifiable {
         case .warnings: return "exclamationmark.triangle"
         case .quakes: return "waveform.path.ecg"
         case .pressure: return "barometer"
-        case .waypoint: return "mappin.and.ellipse"
+        case .waypoint: return "scope"
         }
     }
 

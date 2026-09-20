@@ -112,7 +112,15 @@ final class AppSettings {
     var tabOrder: [AppTab] {
         didSet { defaults.set(tabOrder.map(\.rawValue), forKey: Keys.tabOrder) }
     }
-    /// ウェイポイント: 今向いている方角(例: 北東 45°)を表示する(初期値はオフ)
+    /// スコープの「周辺」: 探す範囲(m)。初期値は500、最大2000。
+    var nearbyRadius: Int {
+        didSet { defaults.set(nearbyRadius, forKey: Keys.nearbyRadius) }
+    }
+    /// スコープの「周辺」: カテゴリの並び順
+    var nearbyCategories: [NearbyCategory] {
+        didSet { defaults.set(nearbyCategories.map(\.rawValue), forKey: Keys.nearbyCategories) }
+    }
+    /// スコープ: 今向いている方角(例: 北東 45°)を表示する(初期値はオフ)
     var waypointShowsHeading: Bool {
         didSet { defaults.set(waypointShowsHeading, forKey: Keys.waypointShowsHeading) }
     }
@@ -149,6 +157,8 @@ final class AppSettings {
         pressureAlertDrop = defaults.object(forKey: Keys.pressureAlertDrop) as? Double ?? 4
         backgroundPressureEnabled = defaults.bool(forKey: Keys.backgroundPressureEnabled)
         waypointShowsHeading = defaults.bool(forKey: Keys.waypointShowsHeading)
+        nearbyRadius = NearbyRadius.clamped(defaults.object(forKey: Keys.nearbyRadius) as? Int ?? NearbyRadius.initial)
+        nearbyCategories = NearbyCategory.normalizedOrder(defaults.stringArray(forKey: Keys.nearbyCategories))
         tabOrder = TabOrder.decode(defaults.stringArray(forKey: Keys.tabOrder))
         yearEndHolidayTimetable = defaults.object(forKey: Keys.yearEndHolidayTimetable) as? Bool ?? true
         timetableOverrideDayKey = defaults.string(forKey: Keys.timetableOverrideDayKey)
@@ -194,6 +204,8 @@ final class AppSettings {
         static let pressureAlertDrop = "pressure.alertDrop"
         static let backgroundPressureEnabled = "pressure.backgroundEnabled"
         static let waypointShowsHeading = "waypoint.showsHeading"
+        static let nearbyRadius = "scope.nearbyRadius"
+        static let nearbyCategories = "scope.nearbyCategories"
         static let tabOrder = "tabs.order"
         static let yearEndHolidayTimetable = "train.yearEndHolidayTimetable"
         static let timetableOverrideDayKey = "train.timetableOverrideDayKey"

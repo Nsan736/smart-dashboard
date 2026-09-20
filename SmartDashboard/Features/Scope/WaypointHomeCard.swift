@@ -9,9 +9,9 @@ struct WaypointHomeCard: View {
         let store = env.waypoints
         let featured = store.featured()
         NavigationLink {
-            WaypointSightView(mode: .compass, selectedID: featured?.waypoint.id)
+            ScopeSightView(mode: .compass, source: .places(selectedID: featured?.waypoint.id))
         } label: {
-            HomeCard(title: "ウェイポイント", symbol: "mappin.and.ellipse") {
+            HomeCard(title: "スコープ", symbol: "scope") {
                 if let featured {
                     HStack(spacing: 10) {
                         Circle().fill(WaypointPalette.color(featured.waypoint.colorIndex)).frame(width: 18, height: 18)
@@ -34,7 +34,7 @@ struct WaypointHomeCard: View {
                         }
                     }
                 } else if store.waypoints.isEmpty {
-                    Text("地点が登録されていません(「ウェイポイント」のタブで登録)")
+                    Text("地点が登録されていません(「スコープ」のタブの「地点」で登録)")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)

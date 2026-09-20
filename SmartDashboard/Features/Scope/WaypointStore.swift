@@ -1,7 +1,7 @@
 import Foundation
 import Observation
 
-/// ウェイポイントの保存。端末の中だけで完結し、通信はしない。
+/// スコープの「地点」の保存(ファイル名と型の名前は、以前のウェイポイントのまま。保存済みのデータを引き継ぐため)。端末の中だけで完結し、通信はしない。
 @MainActor
 @Observable
 final class WaypointStore {

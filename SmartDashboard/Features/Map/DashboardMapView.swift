@@ -102,7 +102,7 @@ struct DashboardMapView: UIViewRepresentable {
     var onSelectTrain: ((String) -> Void)?
     /// この値が変わったら、現在地へ移動する
     var recenterKey = 0
-    /// 地図を長押しした位置(ウェイポイントの登録用)
+    /// 地図を長押しした位置(スコープの地点の登録用)
     var onLongPress: ((CLLocationCoordinate2D) -> Void)?
     /// 表示範囲が変わったとき(範囲、ズーム)
     var onRegionChange: ((GeoBounds, Int) -> Void)?

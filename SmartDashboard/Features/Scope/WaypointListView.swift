@@ -1,9 +1,10 @@
 import CoreLocation
 import SwiftUI
 
-/// ウェイポイントの一覧と登録
+/// スコープの「地点」。登録した地点の一覧と登録。
 struct WaypointListView: View {
     @Environment(AppEnvironment.self) private var env
+    @Binding private var section: ScopeSection
     @State private var editing: Waypoint?
     @State private var isAddingNew = false
     @State private var pendingDelete: Waypoint?
@@ -11,18 +12,22 @@ struct WaypointListView: View {
     @State private var message: String?
     @State private var editMode: EditMode = .inactive
 
+    init(section: Binding<ScopeSection>) {
+        _section = section
+    }
+
     var body: some View {
         let store = env.waypoints
-        NavigationStack {
+        Group {
             List {
                 Section {
                     NavigationLink {
-                        WaypointSightView(mode: .camera, selectedID: nil)
+                        ScopeSightView(mode: .camera, source: .places(selectedID: nil))
                     } label: {
                         Label("カメラで見る", systemImage: "camera.viewfinder")
                     }
                     NavigationLink {
-                        WaypointSightView(mode: .compass, selectedID: nil)
+                        ScopeSightView(mode: .compass, source: .places(selectedID: nil))
                     } label: {
                         Label("コンパスで見る", systemImage: "safari")
                     }
@@ -75,7 +80,6 @@ struct WaypointListView: View {
                     }
                 }
             }
-            .navigationTitle("ウェイポイント")
             .environment(\.editMode, $editMode)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -126,6 +130,14 @@ struct WaypointListView: View {
             }
             Spacer(minLength: 4)
             if editMode != .active {
+                Button {
+                    env.route.setDestination(ScopeDestination(name: waypoint.name, latitude: waypoint.latitude, longitude: waypoint.longitude))
+                    section = .route
+                } label: {
+                    Image(systemName: "arrow.triangle.turn.up.right.diamond")
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("ここへの経路")
                 Button {
                     store.togglePin(id: waypoint.id)
                 } label: {

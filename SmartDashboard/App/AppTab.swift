@@ -4,6 +4,7 @@ import SwiftUI
 enum AppTab: String, CaseIterable, Identifiable, Codable {
     case home
     case weather
+    /// スコープ(以前の名前はウェイポイント。保存済みの並びを引き継ぐため、値は変えない)
     case waypoint
     case train
     case exchange
@@ -17,7 +18,7 @@ enum AppTab: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .home: return "ホーム"
         case .weather: return "天気"
-        case .waypoint: return "ウェイポイント"
+        case .waypoint: return "スコープ"
         case .train: return "電車"
         case .exchange: return "為替"
         case .sensors: return "センサー"
@@ -30,7 +31,7 @@ enum AppTab: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .home: return "square.grid.2x2"
         case .weather: return "cloud.sun"
-        case .waypoint: return "mappin.and.ellipse"
+        case .waypoint: return "scope"
         case .train: return "tram"
         case .exchange: return "yensign.circle"
         case .sensors: return "gauge.with.dots.needle.33percent"

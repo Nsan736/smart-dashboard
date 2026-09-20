@@ -50,6 +50,9 @@ final class AppEnvironment {
     let pressure: PressureRecorder
     let pressureHistory: PressureHistoryStore
     let waypoints: WaypointStore
+    /// スコープの「周辺」と「経路」(どちらも MapKit が通信する)
+    let nearby = NearbyStore()
+    let route = RouteStore()
     /// 背面カメラ。セッションの設定を使い回すため、アプリ全体で1つ。
     let camera = CameraController()
     let keeper: BackgroundKeeper

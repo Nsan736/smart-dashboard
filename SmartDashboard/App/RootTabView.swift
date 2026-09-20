@@ -19,7 +19,7 @@ struct RootTabView: View {
         switch tab {
         case .home: HomeView()
         case .weather: WeatherView()
-        case .waypoint: WaypointListView()
+        case .waypoint: ScopeView()
         case .train: TrainView()
         case .exchange: ExchangeView()
         case .sensors: SensorsView()
