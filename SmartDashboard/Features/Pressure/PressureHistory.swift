@@ -1,6 +1,6 @@
 import Foundation
 
-/// 端末に保存する、予報モデルの気圧(過去約100日〜7日先、1時間ごと)。1地点の分だけを持つ。
+/// 端末に保存する、予報モデルの気圧(過去7日〜16日先、1時間ごと)。1地点の分だけを持つ。
 struct PressureHistory: Codable, Equatable {
     struct Point: Codable, Equatable {
         var time: Date
@@ -11,20 +11,21 @@ struct PressureHistory: Codable, Equatable {
     var longitude: Double
     /// 時刻の昇順。同じ時刻は1つだけ。
     var points: [Point]
-    /// 過去の分をまとめて取得した時刻。nil なら未取得。
+    /// 以前の版(100日分をまとめて取得していた頃)の項目。読み込みのためだけに残す。
     var backfilledAt: Date?
 
-    static let retention: TimeInterval = 100 * 24 * 3600
+    /// 表示は過去4日分。余裕を持たせて7日分を残す。
+    static let retention: TimeInterval = 7 * 24 * 3600
     /// これ以上離れた地点に変わったら、保存した分を捨てて取り直す(気圧は標高で大きく変わるため、別の地点の値とはつなげない)
     static let relocationDistanceKm = 50.0
-    /// 通常の更新(天気の更新と、7日先までの予報の取得)で埋められる空白の上限
-    static let maxIncrementalGap: TimeInterval = 7 * 24 * 3600
+    /// 保存がないとき(初回と、地点が大きく変わったとき)に取る過去の時間数。表示する4日分。
+    static let initialPastHours = 96
 
     static func empty(latitude: Double, longitude: Double) -> PressureHistory {
         PressureHistory(latitude: latitude, longitude: longitude, points: [], backfilledAt: nil)
     }
 
-    /// 新しく取得した値を足す。同じ時刻は新しい値で置き換え、100日より古いものは捨てる(未来の分は残す)。
+    /// 新しく取得した値を足す。同じ時刻は新しい値で置き換え、7日より古いものは捨てる(未来の分は残す)。
     func merged(with new: [Point], now: Date) -> PressureHistory {
         var byTime: [Date: Double] = [:]
         byTime.reserveCapacity(points.count + new.count)
@@ -46,16 +47,23 @@ struct PressureHistory: Codable, Equatable {
         lastPastTime(now: now).map { now.timeIntervalSince($0) }
     }
 
-    /// 足りない分だけを取るための past_hours(24〜168)
+    /// 足りない分だけを取るための past_hours(24〜168)。
+    /// 表示する過去4日分の中で、一番古い空白(1時間値が1.5時間以上あいている所)から現在までを取る。
+    /// 途中に空白がある場合(数日開かなかったあとに、天気の更新で直近24時間だけが埋まった場合など)も埋められる。
     func neededPastHours(now: Date) -> Int {
-        guard let gap = gap(now: now) else { return 24 }
-        return min(max(Int(gap / 3600) + 2, 24), 168)
-    }
-
-    /// 過去の分をまとめて取り直す必要があるか(未取得、または空白が7日を超えた)
-    func needsBackfill(now: Date) -> Bool {
-        guard backfilledAt != nil, let gap = gap(now: now) else { return true }
-        return gap > Self.maxIncrementalGap
+        let from = now.addingTimeInterval(-Double(Self.initialPastHours) * 3600)
+        let times = points.map(\.time).filter { $0 >= from && $0 <= now }
+        var previous = from
+        var gapStart: Date?
+        for time in times + [now] {
+            if time.timeIntervalSince(previous) > 1.5 * 3600 {
+                gapStart = previous
+                break
+            }
+            previous = time
+        }
+        guard let gapStart else { return 24 }
+        return min(max(Int(now.timeIntervalSince(gapStart) / 3600) + 2, 24), 168)
     }
 
     func isFar(latitude: Double, longitude: Double) -> Bool {
@@ -93,8 +101,8 @@ struct OpenMeteoPressureResponse: Decodable {
 }
 
 enum PressureRequests {
-    private static func base(_ host: String, latitude: Double, longitude: Double) -> URLComponents {
-        var c = URLComponents(string: "https://\(host)/v1/forecast")!
+    private static func base(latitude: Double, longitude: Double) -> URLComponents {
+        var c = URLComponents(string: "https://api.open-meteo.com/v1/forecast")!
         c.queryItems = [
             URLQueryItem(name: "latitude", value: String(format: "%.2f", latitude)),
             URLQueryItem(name: "longitude", value: String(format: "%.2f", longitude)),
@@ -105,24 +113,14 @@ enum PressureRequests {
         return c
     }
 
-    /// 過去100日分。Forecast API の past_days=92 は古い約19日分が欠損(null)で返る(2026-09-20に確認)ので、
-    /// 同じ変数を欠損なしで返す Historical Forecast API を使う。
-    static func backfillURL(latitude: Double, longitude: Double, now: Date) -> URL {
-        var c = base("historical-forecast-api.open-meteo.com", latitude: latitude, longitude: longitude)
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(identifier: "GMT")
-        formatter.dateFormat = "yyyy-MM-dd"
-        c.queryItems?.append(URLQueryItem(name: "start_date", value: formatter.string(from: now.addingTimeInterval(-99 * 24 * 3600))))
-        c.queryItems?.append(URLQueryItem(name: "end_date", value: formatter.string(from: now)))
-        return c.url!
-    }
+    /// Open-Meteo で取れる予報の上限(16日 = 384時間。2026-09-20に確認。末尾の約11時間は null で返る)
+    static let forecastHours = 384
 
-    /// 足りない過去の分(24〜168時間)と、7日先までの予報
+    /// 足りない過去の分(24〜168時間)と、16日先までの予報
     static func outlookURL(latitude: Double, longitude: Double, pastHours: Int) -> URL {
-        var c = base("api.open-meteo.com", latitude: latitude, longitude: longitude)
+        var c = base(latitude: latitude, longitude: longitude)
         c.queryItems?.append(URLQueryItem(name: "past_hours", value: String(pastHours)))
-        c.queryItems?.append(URLQueryItem(name: "forecast_hours", value: "168"))
+        c.queryItems?.append(URLQueryItem(name: "forecast_hours", value: String(forecastHours)))
         return c.url!
     }
 }

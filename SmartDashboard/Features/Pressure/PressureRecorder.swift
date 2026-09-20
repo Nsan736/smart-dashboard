@@ -4,7 +4,7 @@ import Foundation
 import Observation
 import UIKit
 
-/// 気圧の実測を5分に1回記録し、100日分だけ保存する。1日ごとのファイルに分け、記録のたびに書くのは当日の分だけにする。アプリを開いている間(と、バックグラウンドで記録する設定のとき)に動く。
+/// 気圧の実測を5分に1回記録し、7日分だけ保存する。1日ごとのファイルに分け、記録のたびに書くのは当日の分だけにする。アプリを開いている間(と、バックグラウンドで記録する設定のとき)に動く。
 @MainActor
 @Observable
 final class PressureRecorder {
@@ -83,7 +83,7 @@ final class PressureRecorder {
         latestHPa = hPa
         guard PressureLog.shouldRecord(last: samples.last?.time, now: now) else { return }
         samples.append(PressureSample(time: now, hPa: hPa, inBackground: isInBackground))
-        // 100日を超えた分は、日付が変わったときにファイルごと消す
+        // 保存期間を超えた分は、日付が変わったときにファイルごと消す
         let today = PressureSampleCodec.dayIndex(now)
         if let first = samples.first, now.timeIntervalSince(first.time) > PressureLog.retention {
             let oldestDay = PressureSampleCodec.dayIndex(now.addingTimeInterval(-PressureLog.retention))

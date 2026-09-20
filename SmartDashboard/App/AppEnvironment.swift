@@ -141,11 +141,9 @@ final class AppEnvironment {
             api: ERAPIClient(http: http), cache: cache, settings: settings, network: network,
             onFetched: { fetchLog.mark(.exchange, at: $0) })
         hasODPTToken = !(keychain.string(for: KeychainAccount.odptToken) ?? "").isEmpty
-        // 天気を取得するたびに、気圧の1時間値を履歴に追記する。過去の分のまとめての取得は、Wi-Fiのときだけ自動。
+        // 天気を取得するたびに、気圧の1時間値(過去24時間〜今後24時間)を追記する。通信は増えない。
         weather.onSnapshot = { [weak pressureHistory] snapshot in
             pressureHistory?.ingest(snapshot)
-            guard let latitude = snapshot.latitude, let longitude = snapshot.longitude else { return }
-            Task { await pressureHistory?.backfillIfNeeded(latitude: latitude, longitude: longitude) }
         }
     }
 
@@ -156,10 +154,6 @@ final class AppEnvironment {
         // ホームで非表示にしたカードのデータは取得しない(各タブを開いたときは、そのタブが取得する)
         let layout = settings.homeLayout
         if layout.needsWeather { await weather.refreshIfStale() } else { await weather.loadCacheIfNeeded() }
-        // モバイル通信で見送った過去の気圧の取得を、Wi-Fiにつながったときに行う
-        if layout.shows(.pressure), let snapshot = weather.cached?.value, let latitude = snapshot.latitude, let longitude = snapshot.longitude {
-            await pressureHistory.backfillIfNeeded(latitude: latitude, longitude: longitude)
-        }
         if layout.needsRain { await refreshRainIfStale() }
         if layout.needsWarnings { await refreshWarningsIfStale() }
         if layout.needsQuakes { await quakes.refreshIfStale() } else { await quakes.loadCacheIfNeeded() }

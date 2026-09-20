@@ -33,7 +33,7 @@ enum DataKind: String, CaseIterable, Codable {
         case .rainNowcast: return "雨のナウキャスト"
         case .warning: return "警報・注意報"
         case .quake: return "地震情報"
-        case .pressureHistory: return "気圧の履歴・7日先の予報"
+        case .pressureHistory: return "気圧の予報(16日先まで)"
         case .trainInfo: return "運行情報"
         case .trainDelay: return "列車の遅れ"
         case .railwayCatalog: return "路線・駅の一覧"

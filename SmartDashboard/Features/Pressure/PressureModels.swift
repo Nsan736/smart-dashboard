@@ -14,10 +14,10 @@ struct PressureForecastPoint: Equatable {
     var hPa: Double
 }
 
-/// 実測の記録のルール。5分に1回記録し、100日分だけ残す。
+/// 実測の記録のルール。5分に1回記録し、7日分だけ残す(表示は過去4日分)。
 enum PressureLog {
     static let interval: TimeInterval = 5 * 60
-    static let retention: TimeInterval = 100 * 24 * 3600
+    static let retention: TimeInterval = 7 * 24 * 3600
 
     static func shouldRecord(last: Date?, now: Date) -> Bool {
         guard let last else { return true }
@@ -59,7 +59,7 @@ struct PressureSeries: Equatable {
     /// - 実測がない時間帯(アプリを閉じていた間と未来)は予報で埋める
     /// - 境目で段差にならないよう、予報の全体に「直近の実測 − 同じ時刻の予報」を足す
     ///   (予報は地表の気圧で、端末のある高さとの差はほぼ一定なので、全体を同じ量だけずらす)
-    /// past / future で期間を広げられる(詳細画面は過去100日〜7日先)。
+    /// past / future で期間を広げられる(詳細画面は過去4日〜16日先)。
     static func make(measured: [PressureSample], forecast: [PressureForecastPoint], now: Date,
                      past: TimeInterval = window, future: TimeInterval = window) -> PressureSeries {
         let from = now.addingTimeInterval(-past)
@@ -81,7 +81,7 @@ struct PressureSeries: Equatable {
         return PressureSeries(points: points, correction: correction, hasMeasured: !samples.isEmpty)
     }
 
-    /// 昇順の時刻の中に、time から gapTolerance 以内のものがあるか(二分探索。実測は100日分で数万件になる)
+    /// 昇順の時刻の中に、time から gapTolerance 以内のものがあるか(二分探索)
     static func hasSample(near time: Date, in sortedTimes: [Date]) -> Bool {
         var low = 0
         var high = sortedTimes.count
