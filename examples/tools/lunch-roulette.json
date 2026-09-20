@@ -1,0 +1,12 @@
+{
+  "format": 1,
+  "id": "lunch-roulette",
+  "name": "ランチのルーレット",
+  "description": "今日の昼ごはんを決めます",
+  "icon": "fork.knife",
+  "category": "play",
+  "keywords": ["らんち", "昼ごはん", "ひるごはん", "lunch"],
+  "type": "list",
+  "mode": "roulette",
+  "items": ["ラーメン", "カレー", "定食", "そば・うどん", "パスタ", "ハンバーガー", "寿司", "中華", "コンビニ"]
+}

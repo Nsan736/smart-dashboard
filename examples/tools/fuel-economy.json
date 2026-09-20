@@ -1,0 +1,24 @@
+{
+  "format": 1,
+  "id": "fuel-economy",
+  "name": "燃費計算",
+  "description": "走った距離と給油量から、燃費とガソリン代を計算します",
+  "icon": "fuelpump",
+  "category": "calc",
+  "keywords": ["ねんぴ", "ガソリン", "給油", "fuel"],
+  "type": "calc",
+  "inputs": [
+    { "id": "distance", "label": "走った距離", "type": "number", "unit": "km", "default": 400 },
+    { "id": "fuel", "label": "給油量", "type": "number", "unit": "L", "default": 30 },
+    { "id": "price", "label": "単価", "type": "number", "unit": "円/L", "default": 170 },
+    { "id": "people", "label": "割る人数", "type": "choice", "options": [
+      { "label": "1人", "value": 1 }, { "label": "2人", "value": 2 }, { "label": "3人", "value": 3 }, { "label": "4人", "value": 4 }
+    ] }
+  ],
+  "outputs": [
+    { "label": "燃費", "formula": "if(fuel > 0, distance / fuel, 0)", "decimals": 1, "unit": "km/L" },
+    { "label": "ガソリン代", "formula": "round(fuel * price)", "unit": "円" },
+    { "label": "1kmあたり", "formula": "if(distance > 0, fuel * price / distance, 0)", "decimals": 1, "unit": "円" },
+    { "label": "1人あたり", "formula": "ceil(fuel * price / people / 10) * 10", "unit": "円" }
+  ]
+}
