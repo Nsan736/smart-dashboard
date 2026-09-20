@@ -88,6 +88,8 @@ struct DashboardMapView: UIViewRepresentable {
     /// 路線などの線と、駅などのピン
     var lines: [MapLine] = []
     var markers: [MapMarker] = []
+    /// 観測点ごとの震度(1枚の重ね描きで描く)
+    var intensityDots: [MapIntensityDot] = []
     /// この値が変わったとき、線とピンの全体が入るように表示範囲を合わせる
     var fitKey: String?
     /// 表示範囲を合わせる対象の線。nilならすべての線。
@@ -180,6 +182,7 @@ struct DashboardMapView: UIViewRepresentable {
         coordinator.onSelectTrain = onSelectTrain
         coordinator.updateRoutes(lines, on: map)
         coordinator.updateMarkers(markers, on: map)
+        coordinator.updateIntensityDots(intensityDots, on: map)
         coordinator.updateStationDots(stationDots, on: map)
         coordinator.updateTrains(trains, on: map)
         coordinator.recenterIfNeeded(key: recenterKey, on: map)
@@ -364,6 +367,18 @@ struct DashboardMapView: UIViewRepresentable {
             blinkTimer = nil
         }
 
+        // MARK: 観測点ごとの震度
+
+        private var intensitySignature = ""
+
+        func updateIntensityDots(_ dots: [MapIntensityDot], on map: MKMapView) {
+            let signature = IntensityDotsOverlay.signature(dots)
+            guard signature != intensitySignature else { return }
+            intensitySignature = signature
+            map.removeOverlays(map.overlays.filter { $0 is IntensityDotsOverlay })
+            if !dots.isEmpty { map.addOverlay(IntensityDotsOverlay(dots: dots), level: .aboveLabels) }
+        }
+
         // MARK: ピン
 
         func updateMarkers(_ markers: [MapMarker], on map: MKMapView) {
@@ -519,6 +534,9 @@ struct DashboardMapView: UIViewRepresentable {
                 routeRenderers[ObjectIdentifier(route)] = renderer
                 return renderer
             }
+            if let dots = overlay as? IntensityDotsOverlay {
+                return IntensityDotsRenderer(overlay: dots)
+            }
             if let tiles = overlay as? MKTileOverlay {
                 let renderer = MKTileOverlayRenderer(tileOverlay: tiles)
                 if tiles is RadarTileOverlay { renderer.alpha = 0.65 }
@@ -555,6 +573,7 @@ struct MapContainerView: View {
     var radar: RadarLayer?
     var lines: [MapLine] = []
     var markers: [MapMarker] = []
+    var intensityDots: [MapIntensityDot] = []
     var fitKey: String?
     var fitLineIDs: Set<String>?
     var onSelectLine: ((String) -> Void)?
@@ -581,6 +600,7 @@ struct MapContainerView: View {
             radar: radar,
             lines: lines,
             markers: markers,
+            intensityDots: intensityDots,
             fitKey: fitKey,
             fitLineIDs: fitLineIDs,
             onSelectLine: onSelectLine,

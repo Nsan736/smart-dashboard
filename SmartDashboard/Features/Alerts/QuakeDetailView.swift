@@ -1,21 +1,33 @@
 import CoreLocation
 import SwiftUI
+import UIKit
 
 /// 震度の色。気象庁の震度の配色に合わせる。一覧、ホームのカード、詳細画面で同じ色を使う。
 enum SeismicScaleStyle {
-    static func background(_ scale: Int) -> Color {
+    /// 色の成分(0〜1)。SwiftUI の色と、地図の重ね描き(UIKit)の色を、同じ値から作る。
+    static func rgb(_ scale: Int) -> (red: Double, green: Double, blue: Double)? {
         switch scale {
-        case 10: return Color(red: 0.95, green: 0.95, blue: 1.0)
-        case 20: return Color(red: 0.0, green: 0.67, blue: 1.0)
-        case 30: return Color(red: 0.0, green: 0.25, blue: 1.0)
-        case 40: return Color(red: 0.98, green: 0.90, blue: 0.59)
-        case 45, 46: return Color(red: 1.0, green: 0.90, blue: 0.0)
-        case 50: return Color(red: 1.0, green: 0.60, blue: 0.0)
-        case 55: return Color(red: 1.0, green: 0.16, blue: 0.0)
-        case 60: return Color(red: 0.65, green: 0.0, blue: 0.13)
-        case 70: return Color(red: 0.71, green: 0.0, blue: 0.41)
-        default: return Color(.systemGray4)
+        case 10: return (0.95, 0.95, 1.0)
+        case 20: return (0.0, 0.67, 1.0)
+        case 30: return (0.0, 0.25, 1.0)
+        case 40: return (0.98, 0.90, 0.59)
+        case 45, 46: return (1.0, 0.90, 0.0)
+        case 50: return (1.0, 0.60, 0.0)
+        case 55: return (1.0, 0.16, 0.0)
+        case 60: return (0.65, 0.0, 0.13)
+        case 70: return (0.71, 0.0, 0.41)
+        default: return nil
         }
+    }
+
+    static func background(_ scale: Int) -> Color {
+        guard let rgb = rgb(scale) else { return Color(.systemGray4) }
+        return Color(red: rgb.red, green: rgb.green, blue: rgb.blue)
+    }
+
+    static func uiColor(_ scale: Int) -> UIColor {
+        guard let rgb = rgb(scale) else { return .systemGray4 }
+        return UIColor(red: CGFloat(rgb.red), green: CGFloat(rgb.green), blue: CGFloat(rgb.blue), alpha: 1)
     }
 
     static func foreground(_ scale: Int) -> Color {
@@ -169,13 +181,30 @@ struct QuakeDetailView: View {
             let markers = [MapMarker(id: "epicenter", title: "\(QuakeList.magnitudeText(quake.magnitude)) \(QuakeList.depthText(quake.depth))",
                                      coordinate: epicenter, style: .epicenter)]
                 + (here.map { [MapMarker(id: "here", title: "現在地", coordinate: $0, style: .dot)] } ?? [])
+            // 観測点ごとの震度。観測点名で位置を対応付け、1枚の重ね描きで描く
+            let table = IntensityStationTable.bundled
+            let result = QuakeMapDots.make(points: quake.points ?? [], table: table)
             Section {
-                MapContainerView(center: epicenter, spanMeters: 400_000, isInteractive: true, markers: markers,
+                MapContainerView(center: epicenter, spanMeters: 400_000, isInteractive: true, markers: markers, intensityDots: result.dots,
                                  fitKey: here == nil ? nil : "quake-\(quake.time.timeIntervalSince1970)")
-                    .frame(height: 260)
+                    .frame(height: 300)
                     .listRowInsets(EdgeInsets())
+                if !result.dots.isEmpty {
+                    // 凡例
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 64), spacing: 6, alignment: .leading)], alignment: .leading, spacing: 6) {
+                        ForEach(QuakeMapDots.legendScales(result.dots), id: \.self) { QuakeScaleBadge(scale: $0) }
+                    }
+                }
             } footer: {
-                Text("赤い×印が震源、青い点が現在地です。")
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("赤い×印が震源、青い点が現在地、色の付いた丸が観測点ごとの震度です(震度の大きい点を上に描いています)。")
+                    if !result.unmatched.isEmpty {
+                        Text("位置が分からない観測点 \(result.unmatched.count)地点は、地図には出していません(下の一覧には出ています)。")
+                    }
+                    if !table.fetched.isEmpty {
+                        Text("観測点の位置: 気象庁の震度観測点の一覧(\(table.fetched)取得)から、名前と位置だけを抜き出して加工したものです。")
+                    }
+                }
             }
         }
     }
