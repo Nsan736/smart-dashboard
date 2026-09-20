@@ -6,6 +6,9 @@ struct GeocodedPlace: Codable, Equatable {
     var latitude: Double
     var longitude: Double
     var name: String
+    /// 都道府県名と市区町村名(警報の地域を決めるのに使う)。古い記録にはない。
+    var prefecture: String?
+    var municipality: String?
 }
 
 /// 現在地の地名を求める。500m以上移動したときだけCLGeocoderに問い合わせる。
@@ -28,8 +31,14 @@ final class PlaceNameResolver {
 
     /// キャッシュにあれば通信しない。取得できなければnil。
     func name(latitude: Double, longitude: Double) async -> String? {
-        if let hit = Self.nearest(in: entries, latitude: latitude, longitude: longitude, within: Self.reuseDistance) {
-            return hit.name
+        await place(latitude: latitude, longitude: longitude)?.name
+    }
+
+    /// 地名に加えて、都道府県名と市区町村名も返す。500m以内で取得済みならキャッシュを使う。
+    func place(latitude: Double, longitude: Double) async -> GeocodedPlace? {
+        if let hit = Self.nearest(in: entries, latitude: latitude, longitude: longitude, within: Self.reuseDistance),
+           hit.prefecture != nil {
+            return hit
         }
         let location = CLLocation(latitude: latitude, longitude: longitude)
         onRequest()
@@ -38,10 +47,14 @@ final class PlaceNameResolver {
                                          subLocality: placemark.subLocality, fallback: placemark.name) else {
             return nil
         }
-        entries.append(GeocodedPlace(latitude: latitude, longitude: longitude, name: name))
+        // 都道府県名のない古い記録は置き換える
+        entries.removeAll { $0.prefecture == nil && CLLocation(latitude: $0.latitude, longitude: $0.longitude).distance(from: location) < Self.reuseDistance }
+        let place = GeocodedPlace(latitude: latitude, longitude: longitude, name: name,
+                                  prefecture: placemark.administrativeArea ?? "", municipality: placemark.locality)
+        entries.append(place)
         if entries.count > Self.maxEntries { entries.removeFirst(entries.count - Self.maxEntries) }
         if let data = try? JSONEncoder().encode(entries) { defaults.set(data, forKey: Self.key) }
-        return name
+        return place
     }
 
     func clear() {
