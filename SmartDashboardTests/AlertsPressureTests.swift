@@ -163,8 +163,9 @@ final class PressureTests: XCTestCase {
         XCTAssertTrue(PressureLog.shouldRecord(last: nil, now: now))
         XCTAssertFalse(PressureLog.shouldRecord(last: now.addingTimeInterval(-299), now: now))
         XCTAssertTrue(PressureLog.shouldRecord(last: now.addingTimeInterval(-300), now: now))
-        let samples = [PressureSample(time: now.addingTimeInterval(-49 * 3600), hPa: 1000),
-                       PressureSample(time: now.addingTimeInterval(-47 * 3600), hPa: 1001)]
+        // 実測は100日分を残す
+        let samples = [PressureSample(time: now.addingTimeInterval(-101 * 24 * 3600), hPa: 1000),
+                       PressureSample(time: now.addingTimeInterval(-99 * 24 * 3600), hPa: 1001)]
         XCTAssertEqual(PressureLog.trimmed(samples, now: now).map(\.hPa), [1001])
     }
 

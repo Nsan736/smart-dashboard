@@ -4,7 +4,7 @@ import Foundation
 import Observation
 import UIKit
 
-/// 気圧の実測を5分に1回記録し、48時間分だけ保存する。アプリを開いている間(と、バックグラウンドで記録する設定のとき)に動く。
+/// 気圧の実測を5分に1回記録し、100日分だけ保存する。1日ごとのファイルに分け、記録のたびに書くのは当日の分だけにする。アプリを開いている間(と、バックグラウンドで記録する設定のとき)に動く。
 @MainActor
 @Observable
 final class PressureRecorder {
@@ -15,14 +15,41 @@ final class PressureRecorder {
     @ObservationIgnored var isInBackground = false
 
     @ObservationIgnored private let altimeter = CMAltimeter()
-    @ObservationIgnored private let fileURL: URL
+    @ObservationIgnored private let directory: URL
     @ObservationIgnored private var isRunning = false
 
-    init(fileURL: URL) {
-        self.fileURL = fileURL
-        if let data = try? Data(contentsOf: fileURL), let saved = try? Self.decoder.decode([PressureSample].self, from: data) {
-            samples = PressureLog.trimmed(saved, now: Date())
+    /// legacyFileURL は、1つのファイルに48時間分を保存していた頃の記録(あれば引き継いで消す)
+    init(directory: URL, legacyFileURL: URL? = nil) {
+        self.directory = directory
+        let manager = FileManager.default
+        try? manager.createDirectory(at: directory, withIntermediateDirectories: true)
+        let now = Date()
+        let oldestDay = PressureSampleCodec.dayIndex(now.addingTimeInterval(-PressureLog.retention))
+        var loaded: [PressureSample] = []
+        for url in (try? manager.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? [] {
+            guard let day = Int(url.deletingPathExtension().lastPathComponent) else { continue }
+            if day < oldestDay {
+                try? manager.removeItem(at: url)
+            } else if let data = try? Data(contentsOf: url) {
+                loaded.append(contentsOf: PressureSampleCodec.decode(data))
+            }
         }
+        if let legacyFileURL, let data = try? Data(contentsOf: legacyFileURL) {
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .secondsSince1970
+            loaded.append(contentsOf: (try? decoder.decode([PressureSample].self, from: data)) ?? [])
+            try? manager.removeItem(at: legacyFileURL)
+            samples = PressureLog.trimmed(loaded, now: now).sorted { $0.time < $1.time }
+            for day in Set(samples.map { PressureSampleCodec.dayIndex($0.time) }) { save(day: day) }
+        } else {
+            samples = PressureLog.trimmed(loaded, now: now).sorted { $0.time < $1.time }
+        }
+    }
+
+    private func save(day: Int) {
+        let daySamples = samples.filter { PressureSampleCodec.dayIndex($0.time) == day }
+        let url = directory.appendingPathComponent("\(day).json")
+        try? PressureSampleCodec.encode(daySamples).write(to: url, options: .atomic)
     }
 
     func start() {
@@ -56,26 +83,44 @@ final class PressureRecorder {
         latestHPa = hPa
         guard PressureLog.shouldRecord(last: samples.last?.time, now: now) else { return }
         samples.append(PressureSample(time: now, hPa: hPa, inBackground: isInBackground))
-        samples = PressureLog.trimmed(samples, now: now)
-        if let data = try? Self.encoder.encode(samples) { try? data.write(to: fileURL, options: .atomic) }
+        // 100日を超えた分は、日付が変わったときにファイルごと消す
+        let today = PressureSampleCodec.dayIndex(now)
+        if let first = samples.first, now.timeIntervalSince(first.time) > PressureLog.retention {
+            let oldestDay = PressureSampleCodec.dayIndex(now.addingTimeInterval(-PressureLog.retention))
+            samples = PressureLog.trimmed(samples, now: now)
+            for url in (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? [] {
+                if let day = Int(url.deletingPathExtension().lastPathComponent), day < oldestDay {
+                    try? FileManager.default.removeItem(at: url)
+                }
+            }
+        }
+        save(day: today)
     }
 
-    func removeAll() {
-        samples = []
-        try? FileManager.default.removeItem(at: fileURL)
+    /// 保存に使っている容量(バイト)
+    func storageBytes() -> Int64 {
+        let urls = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.fileSizeKey])) ?? []
+        return urls.reduce(0) { $0 + Int64((try? $1.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) }
+    }
+}
+
+/// 実測の記録のファイル形式。1日(UTC)ごとに1ファイルで、中身は [[時刻(秒), hPa, バックグラウンドなら1], ...]。
+enum PressureSampleCodec {
+    static func dayIndex(_ time: Date) -> Int {
+        Int((time.timeIntervalSince1970 / 86400).rounded(.down))
     }
 
-    private static let encoder: JSONEncoder = {
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .secondsSince1970
-        return encoder
-    }()
+    static func encode(_ samples: [PressureSample]) -> Data {
+        let rows = samples.map { [($0.time.timeIntervalSince1970).rounded(), ($0.hPa * 100).rounded() / 100, $0.inBackground ? 1 : 0] }
+        return (try? JSONEncoder().encode(rows)) ?? Data("[]".utf8)
+    }
 
-    private static let decoder: JSONDecoder = {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .secondsSince1970
-        return decoder
-    }()
+    static func decode(_ data: Data) -> [PressureSample] {
+        let rows = (try? JSONDecoder().decode([[Double]].self, from: data)) ?? []
+        return rows.compactMap { row in
+            row.count >= 2 ? PressureSample(time: Date(timeIntervalSince1970: row[0]), hPa: row[1], inBackground: row.count > 2 && row[2] == 1) : nil
+        }
+    }
 }
 
 /// 無音のオーディオをループ再生して、アプリをバックグラウンドでも動かしておく(気圧の記録用のオプション)。
