@@ -48,6 +48,7 @@ final class AppEnvironment {
     let warnings: WarningStore
     let quakes: QuakeStore
     let pressure: PressureRecorder
+    let pressureHistory: PressureHistoryStore
     let keeper: BackgroundKeeper
     @ObservationIgnored let cache: DiskCache
     @ObservationIgnored let http: HTTPClient
@@ -112,8 +113,13 @@ final class AppEnvironment {
                                 onFetched: { fetchLog.mark(.warning, at: $0) })
         quakes = QuakeStore(http: http, cache: cache, settings: settings, network: network,
                             onFetched: { fetchLog.mark(.quake, at: $0) })
-        let recorder = PressureRecorder(fileURL: support.appendingPathComponent("pressure-log.json"))
+        let recorder = PressureRecorder(directory: support.appendingPathComponent("pressure", isDirectory: true),
+                                        legacyFileURL: support.appendingPathComponent("pressure-log.json"))
         pressure = recorder
+        let pressureHistory = PressureHistoryStore(http: http, fileURL: support.appendingPathComponent("pressure-history.json"),
+                                                   settings: settings, network: network,
+                                                   onFetched: { fetchLog.mark(.pressureHistory, at: $0) })
+        self.pressureHistory = pressureHistory
         let keeper = BackgroundKeeper(settings: settings)
         self.keeper = keeper
         keeper.onStateChange = { [weak recorder] state in
@@ -135,6 +141,12 @@ final class AppEnvironment {
             api: ERAPIClient(http: http), cache: cache, settings: settings, network: network,
             onFetched: { fetchLog.mark(.exchange, at: $0) })
         hasODPTToken = !(keychain.string(for: KeychainAccount.odptToken) ?? "").isEmpty
+        // 天気を取得するたびに、気圧の1時間値を履歴に追記する。過去の分のまとめての取得は、Wi-Fiのときだけ自動。
+        weather.onSnapshot = { [weak pressureHistory] snapshot in
+            pressureHistory?.ingest(snapshot)
+            guard let latitude = snapshot.latitude, let longitude = snapshot.longitude else { return }
+            Task { await pressureHistory?.backfillIfNeeded(latitude: latitude, longitude: longitude) }
+        }
     }
 
     /// 起動時とフォアグラウンド復帰時に呼ぶ。古くなったデータだけを各Storeが取得する。
@@ -144,6 +156,10 @@ final class AppEnvironment {
         // ホームで非表示にしたカードのデータは取得しない(各タブを開いたときは、そのタブが取得する)
         let layout = settings.homeLayout
         if layout.needsWeather { await weather.refreshIfStale() } else { await weather.loadCacheIfNeeded() }
+        // モバイル通信で見送った過去の気圧の取得を、Wi-Fiにつながったときに行う
+        if layout.shows(.pressure), let snapshot = weather.cached?.value, let latitude = snapshot.latitude, let longitude = snapshot.longitude {
+            await pressureHistory.backfillIfNeeded(latitude: latitude, longitude: longitude)
+        }
         if layout.needsRain { await refreshRainIfStale() }
         if layout.needsWarnings { await refreshWarningsIfStale() }
         if layout.needsQuakes { await quakes.refreshIfStale() } else { await quakes.loadCacheIfNeeded() }
@@ -175,7 +191,9 @@ final class AppEnvironment {
 
     /// 気圧のグラフ用の予報(Open-Meteo の1時間値)
     var pressureForecast: [PressureForecastPoint] {
-        (weather.cached?.value.hourly ?? []).compactMap { hour in
+        let saved = pressureHistory.forecastPoints
+        if !saved.isEmpty { return saved }
+        return (weather.cached?.value.hourly ?? []).compactMap { hour in
             hour.pressure.map { PressureForecastPoint(time: hour.time, hPa: $0) }
         }
     }
