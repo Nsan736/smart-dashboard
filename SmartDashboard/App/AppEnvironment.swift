@@ -50,6 +50,8 @@ final class AppEnvironment {
     let pressure: PressureRecorder
     let pressureHistory: PressureHistoryStore
     let waypoints: WaypointStore
+    /// 背面カメラ。セッションの設定を使い回すため、アプリ全体で1つ。
+    let camera = CameraController()
     let keeper: BackgroundKeeper
     @ObservationIgnored let cache: DiskCache
     @ObservationIgnored let http: HTTPClient

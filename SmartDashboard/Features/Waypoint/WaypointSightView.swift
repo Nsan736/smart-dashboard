@@ -13,7 +13,6 @@ struct WaypointSightView: View {
     /// 表示する地点。nil なら全部。
     @State private var selectedID: UUID?
     @State private var tracker = WaypointTracker()
-    @State private var camera = CameraController()
     @State private var isVisible = false
 
     init(mode: WaypointSightMode, selectedID: UUID?) {
@@ -24,8 +23,10 @@ struct WaypointSightView: View {
     var body: some View {
         @Bindable var settings = env.settings
         let targets = currentTargets
+        let camera = env.camera
         ZStack {
-            if mode == .camera, camera.state == .running {
+            // 映像を待たずに、画面(印、精度の表示)は先に出す
+            if mode == .camera, camera.state != .denied, camera.state != .unavailable {
                 cameraLayer(targets)
             } else {
                 compassLayer(targets)
@@ -78,7 +79,9 @@ struct WaypointSightView: View {
 
     /// カメラ・GPS・モーションは、この画面を表示している間だけ動かす。表示中は画面を消さない。
     private func startAll() {
+        let camera = env.camera
         ScreenAwake.set("waypoint", true)
+        // 位置とモーションは、カメラの準備を待たずに始める(カメラの設定と開始は専用のキューで進む)
         tracker.start(includesMotion: mode == .camera)
         if mode == .camera {
             Task {
@@ -94,7 +97,7 @@ struct WaypointSightView: View {
     private func stopAll() {
         ScreenAwake.set("waypoint", false)
         tracker.stop()
-        camera.stop()
+        env.camera.stop()
     }
 
     // MARK: - カメラ越しの表示
@@ -103,7 +106,20 @@ struct WaypointSightView: View {
         GeometryReader { geometry in
             let size = geometry.size
             ZStack {
-                CameraPreviewView(session: camera.session)
+                Color.black
+                CameraPreviewView(session: env.camera.session)
+                if env.camera.state != .running {
+                    VStack {
+                        Spacer()
+                        Text("カメラを起動中…")
+                            .font(.footnote)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(Color.white.opacity(0.15), in: Capsule())
+                            .padding(.bottom, 12)
+                    }
+                }
                 if size.width > size.height {
                     Text("縦向きで使ってください")
                         .font(.headline)
@@ -111,7 +127,7 @@ struct WaypointSightView: View {
                         .background(.thinMaterial, in: Capsule())
                 } else if let attitude = tracker.attitude {
                     WaypointOverlay(targets: targets, attitude: attitude,
-                                    tangents: WaypointProjection.tangents(fieldOfView: camera.fieldOfView, videoAspect: camera.videoAspect, viewSize: size))
+                                    tangents: WaypointProjection.tangents(fieldOfView: env.camera.fieldOfView, videoAspect: env.camera.videoAspect, viewSize: size))
                     if env.settings.waypointShowsHeading {
                         VStack {
                             Text("\(WaypointMath.compassPoint(attitude.azimuth)) \(Int(attitude.azimuth.rounded()))°")
@@ -135,11 +151,9 @@ struct WaypointSightView: View {
     private func compassLayer(_ targets: [WaypointTarget]) -> some View {
         ScrollView {
             VStack(spacing: 12) {
-                if mode == .camera, camera.state == .idle {
-                    ProgressView("カメラを準備中…")
-                } else if camera.state == .denied {
+                if env.camera.state == .denied {
                     note("カメラが許可されていないため、コンパス表示にしています。設定アプリでカメラを許可すると、カメラ越しに表示できます。")
-                } else if camera.state == .unavailable {
+                } else if env.camera.state == .unavailable {
                     note("この環境ではカメラを使えないため、コンパス表示にしています。")
                 }
                 if let heading = tracker.compassHeading {

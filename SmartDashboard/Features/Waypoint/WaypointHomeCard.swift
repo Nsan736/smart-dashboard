@@ -34,7 +34,7 @@ struct WaypointHomeCard: View {
                         }
                     }
                 } else if store.waypoints.isEmpty {
-                    Text("地点が登録されていません(「その他」→「ウェイポイント」で登録)")
+                    Text("地点が登録されていません(「ウェイポイント」のタブで登録)")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)

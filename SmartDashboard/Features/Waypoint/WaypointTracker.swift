@@ -174,12 +174,101 @@ final class WaypointTracker: NSObject, CLLocationManagerDelegate {
     nonisolated func locationManagerShouldDisplayHeadingCalibration(_ manager: CLLocationManager) -> Bool { true }
 }
 
+/// カメラの起動にかかった時間の内訳(開発者向けの表示用)
+struct CameraStartTiming: Equatable {
+    /// 許可の確認(初回は、許可のダイアログに答えるまでの時間を含む)
+    var authorization: TimeInterval
+    /// デバイスの選択と、セッションの設定。2回目以降は使い回すので 0。
+    var configuration: TimeInterval
+    /// startRunning() が戻るまで(映像が流れ始めるまで)
+    var startRunning: TimeInterval
+    /// 設定を使い回したか
+    var reusedConfiguration: Bool
+
+    var total: TimeInterval { authorization + configuration + startRunning }
+
+    static func milliseconds(_ seconds: TimeInterval) -> String {
+        "\(Int((seconds * 1000).rounded()))ms"
+    }
+
+    var text: String {
+        "合計 \(Self.milliseconds(total))(許可の確認 \(Self.milliseconds(authorization))、設定 "
+            + (reusedConfiguration ? "使い回し" : Self.milliseconds(configuration))
+            + "、映像の開始 \(Self.milliseconds(startRunning)))"
+    }
+}
+
+/// AVCaptureSession を専用のキューで扱う。設定と startRunning() / stopRunning() は時間がかかるので、メインスレッドでは呼ばない。
+/// セッションは一度設定したら使い回す(画面を開くたびに作り直さない)。
+final class CameraWorker: @unchecked Sendable {
+    struct Configuration: Sendable {
+        var fieldOfView: Double
+        var videoAspect: Double
+        var seconds: TimeInterval
+        var reused: Bool
+    }
+
+    let session = AVCaptureSession()
+    private let queue = DispatchQueue(label: "waypoint.camera", qos: .userInitiated)
+    /// queue の中でだけ読み書きする
+    private var configuration: Configuration?
+
+    /// 設定(初回だけ)をして、映像を始める。設定できなければ nil。
+    func start() async -> (configuration: Configuration, startSeconds: TimeInterval)? {
+        await withCheckedContinuation { continuation in
+            queue.async {
+                let began = Date()
+                guard var configuration = self.configureIfNeeded() else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                configuration.seconds = configuration.reused ? 0 : Date().timeIntervalSince(began)
+                let startBegan = Date()
+                if !self.session.isRunning { self.session.startRunning() }
+                continuation.resume(returning: (configuration, Date().timeIntervalSince(startBegan)))
+            }
+        }
+    }
+
+    /// 閉じる操作を待たせないよう、結果は待たない
+    func stop() {
+        queue.async {
+            if self.session.isRunning { self.session.stopRunning() }
+        }
+    }
+
+    private func configureIfNeeded() -> Configuration? {
+        if var configuration {
+            configuration.reused = true
+            return configuration
+        }
+        guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
+              let input = try? AVCaptureDeviceInput(device: device), session.canAddInput(input) else { return nil }
+        session.beginConfiguration()
+        // 重ねて見るだけなので、軽い解像度にする
+        if session.canSetSessionPreset(.hd1280x720) { session.sessionPreset = .hd1280x720 }
+        session.addInput(input)
+        session.commitConfiguration()
+        let format = device.activeFormat
+        let dimensions = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
+        var result = Configuration(fieldOfView: 60, videoAspect: 16.0 / 9.0, seconds: 0, reused: false)
+        if format.videoFieldOfView > 0 { result.fieldOfView = Double(format.videoFieldOfView) }
+        if dimensions.width > 0, dimensions.height > 0 {
+            result.videoAspect = Double(max(dimensions.width, dimensions.height)) / Double(min(dimensions.width, dimensions.height))
+        }
+        configuration = result
+        return result
+    }
+}
+
 /// 背面カメラの映像。許可がないときや、カメラが使えない環境では、その状態だけを返す(クラッシュさせない)。
+/// アプリ全体で1つ(AppEnvironment)を使い回す。
 @MainActor
 @Observable
 final class CameraController {
     enum State: Equatable {
         case idle
+        case starting
         case running
         case denied
         case unavailable
@@ -189,55 +278,54 @@ final class CameraController {
     /// 映像の長辺の画角(度)と、長辺÷短辺
     private(set) var fieldOfView = 60.0
     private(set) var videoAspect = 16.0 / 9.0
+    /// 直近の起動にかかった時間(開発者向け)
+    private(set) var lastTiming: CameraStartTiming?
 
-    @ObservationIgnored let session = AVCaptureSession()
-    @ObservationIgnored private let queue = DispatchQueue(label: "waypoint.camera")
-    @ObservationIgnored private var isConfigured = false
+    @ObservationIgnored private let worker = CameraWorker()
+    /// start() と stop() が入れ違いになったときに、古い結果を捨てるための番号
+    @ObservationIgnored private var generation = 0
+
+    var session: AVCaptureSession { worker.session }
 
     func start() async {
+        guard state != .starting, state != .running else { return }
+        generation += 1
+        let current = generation
+        state = .starting
+        let began = Date()
         switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .authorized: break
         case .notDetermined:
             guard await AVCaptureDevice.requestAccess(for: .video) else {
-                state = .denied
+                if current == generation { state = .denied }
                 return
             }
         default:
             state = .denied
             return
         }
-        guard configureIfNeeded() else {
-            state = .unavailable
+        let authorization = Date().timeIntervalSince(began)
+        guard current == generation else { return }
+        guard let result = await worker.start() else {
+            if current == generation { state = .unavailable }
             return
         }
-        let session = session
-        queue.async { if !session.isRunning { session.startRunning() } }
+        guard current == generation else {
+            // 待っている間に画面が閉じられた
+            worker.stop()
+            return
+        }
+        fieldOfView = result.configuration.fieldOfView
+        videoAspect = result.configuration.videoAspect
+        lastTiming = CameraStartTiming(authorization: authorization, configuration: result.configuration.seconds,
+                                       startRunning: result.startSeconds, reusedConfiguration: result.configuration.reused)
         state = .running
     }
 
     func stop() {
-        let session = session
-        queue.async { if session.isRunning { session.stopRunning() } }
-        if state == .running { state = .idle }
-    }
-
-    private func configureIfNeeded() -> Bool {
-        if isConfigured { return true }
-        guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
-              let input = try? AVCaptureDeviceInput(device: device), session.canAddInput(input) else { return false }
-        session.beginConfiguration()
-        // 重ねて見るだけなので、軽い解像度にする
-        if session.canSetSessionPreset(.hd1280x720) { session.sessionPreset = .hd1280x720 }
-        session.addInput(input)
-        session.commitConfiguration()
-        let format = device.activeFormat
-        let dimensions = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
-        if format.videoFieldOfView > 0 { fieldOfView = Double(format.videoFieldOfView) }
-        if dimensions.width > 0, dimensions.height > 0 {
-            videoAspect = Double(max(dimensions.width, dimensions.height)) / Double(min(dimensions.width, dimensions.height))
-        }
-        isConfigured = true
-        return true
+        generation += 1
+        worker.stop()
+        if state == .running || state == .starting { state = .idle }
     }
 }
 
