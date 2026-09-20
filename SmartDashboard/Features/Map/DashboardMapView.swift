@@ -100,6 +100,8 @@ struct DashboardMapView: UIViewRepresentable {
     var onSelectTrain: ((String) -> Void)?
     /// この値が変わったら、現在地へ移動する
     var recenterKey = 0
+    /// 地図を長押しした位置(ウェイポイントの登録用)
+    var onLongPress: ((CLLocationCoordinate2D) -> Void)?
     /// 表示範囲が変わったとき(範囲、ズーム)
     var onRegionChange: ((GeoBounds, Int) -> Void)?
 
@@ -116,6 +118,9 @@ struct DashboardMapView: UIViewRepresentable {
         tap.cancelsTouchesInView = false
         tap.delegate = context.coordinator
         map.addGestureRecognizer(tap)
+        let longPress = UILongPressGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleLongPress(_:)))
+        longPress.minimumPressDuration = 0.5
+        map.addGestureRecognizer(longPress)
         if let center {
             map.setRegion(MKCoordinateRegion(center: center, latitudinalMeters: spanMeters, longitudinalMeters: spanMeters), animated: false)
             context.coordinator.lastCenter = center
@@ -132,6 +137,7 @@ struct DashboardMapView: UIViewRepresentable {
         coordinator.onRegionChange = onRegionChange
         coordinator.onSelectLine = onSelectLine
         coordinator.onSelectMarker = onSelectMarker
+        coordinator.onLongPress = onLongPress
         map.isScrollEnabled = isInteractive
         map.isZoomEnabled = isInteractive
         map.showsUserLocation = showsUserLocation
@@ -434,6 +440,13 @@ struct DashboardMapView: UIViewRepresentable {
 
         // MARK: 線のタップ
 
+        var onLongPress: ((CLLocationCoordinate2D) -> Void)?
+
+        @objc func handleLongPress(_ recognizer: UILongPressGestureRecognizer) {
+            guard recognizer.state == .began, let map = recognizer.view as? MKMapView else { return }
+            onLongPress?(map.convert(recognizer.location(in: map), toCoordinateFrom: map))
+        }
+
         @objc func handleTap(_ recognizer: UITapGestureRecognizer) {
             guard recognizer.state == .ended, let map = recognizer.view as? MKMapView else { return }
             let point = recognizer.location(in: map)
@@ -535,6 +548,7 @@ struct MapContainerView: View {
     var stationDots: [MapStationDot] = []
     var onSelectTrain: ((String) -> Void)?
     var recenterKey = 0
+    var onLongPress: ((CLLocationCoordinate2D) -> Void)?
 
     static let gsiURL = URL(string: "https://maps.gsi.go.jp/development/ichiran.html")!
 
@@ -560,6 +574,7 @@ struct MapContainerView: View {
             stationDots: stationDots,
             onSelectTrain: onSelectTrain,
             recenterKey: recenterKey,
+            onLongPress: onLongPress,
             onRegionChange: { bounds, zoom in
                 // Wi-Fi接続中に Apple Maps で見た範囲を保存する
                 guard mode == .apple, isInteractive else { return }
