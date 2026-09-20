@@ -1,27 +1,31 @@
 import SwiftUI
 
 struct RootTabView: View {
+    @Environment(AppEnvironment.self) private var env
+
     var body: some View {
+        // 先頭の4つがタブバーに並び、残りはiOSの「その他」に入る。並びは設定で変えられる。
         TabView {
-            HomeView()
-                .tabItem { Label("ホーム", systemImage: "square.grid.2x2") }
-            WeatherView()
-                .tabItem { Label("天気", systemImage: "cloud.sun") }
-            ExchangeView()
-                .tabItem { Label("為替", systemImage: "yensign.circle") }
-            TrainView()
-                .tabItem { Label("電車", systemImage: "tram") }
-            SensorsView()
-                .tabItem { Label("センサー", systemImage: "gauge.with.dots.needle.33percent") }
-            TimerTabView()
-                .tabItem { Label("タイマー", systemImage: "timer") }
-            SettingsView()
-                .tabItem { Label("設定", systemImage: "gearshape") }
-            // タブが6つ以上あるので、iOSの「その他」の中に入る
-            WaypointListView()
-                .tabItem { Label("ウェイポイント", systemImage: "mappin.and.ellipse") }
+            ForEach(env.settings.tabOrder) { tab in
+                content(tab)
+                    .tabItem { Label(tab.title, systemImage: tab.symbol) }
+            }
         }
         .background(KeyboardTapDismissInstaller())
+    }
+
+    @ViewBuilder
+    private func content(_ tab: AppTab) -> some View {
+        switch tab {
+        case .home: HomeView()
+        case .weather: WeatherView()
+        case .waypoint: WaypointListView()
+        case .train: TrainView()
+        case .exchange: ExchangeView()
+        case .sensors: SensorsView()
+        case .timer: TimerTabView()
+        case .settings: SettingsView()
+        }
     }
 }
 

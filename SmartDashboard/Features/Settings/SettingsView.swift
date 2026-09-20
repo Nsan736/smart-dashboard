@@ -51,6 +51,7 @@ struct SettingsView: View {
                 }
 
                 Section("登録内容") {
+                    NavigationLink("タブの並び順") { TabOrderEditor() }
                     NavigationLink("天気の地点") { PlacesEditorView() }
                     NavigationLink("地図(表示と保存)") { MapSettingsView() }
                     NavigationLink("電車の路線・駅") { TrainRegistrationListView() }
@@ -106,6 +107,12 @@ struct SettingsView: View {
 
                 Section {
                     NavigationLink("運行情報の直近のレスポンス") { TrainInfoCaptureView() }
+                    LabeledContent("カメラの起動時間") {
+                        Text(env.camera.lastTiming?.text ?? "未計測(「カメラで見る」を開くと計測します)")
+                            .font(.footnote)
+                            .multilineTextAlignment(.trailing)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 } header: {
                     Text("開発者向け")
                 } footer: {

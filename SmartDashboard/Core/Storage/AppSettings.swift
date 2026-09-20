@@ -108,6 +108,10 @@ final class AppSettings {
     var pressureAlertDrop: Double {
         didSet { defaults.set(pressureAlertDrop, forKey: Keys.pressureAlertDrop) }
     }
+    /// タブの並び順。先頭の4つがタブバーに並び、残りは「その他」に入る。
+    var tabOrder: [AppTab] {
+        didSet { defaults.set(tabOrder.map(\.rawValue), forKey: Keys.tabOrder) }
+    }
     /// ウェイポイント: 今向いている方角(例: 北東 45°)を表示する(初期値はオフ)
     var waypointShowsHeading: Bool {
         didSet { defaults.set(waypointShowsHeading, forKey: Keys.waypointShowsHeading) }
@@ -145,6 +149,7 @@ final class AppSettings {
         pressureAlertDrop = defaults.object(forKey: Keys.pressureAlertDrop) as? Double ?? 4
         backgroundPressureEnabled = defaults.bool(forKey: Keys.backgroundPressureEnabled)
         waypointShowsHeading = defaults.bool(forKey: Keys.waypointShowsHeading)
+        tabOrder = TabOrder.decode(defaults.stringArray(forKey: Keys.tabOrder))
         yearEndHolidayTimetable = defaults.object(forKey: Keys.yearEndHolidayTimetable) as? Bool ?? true
         timetableOverrideDayKey = defaults.string(forKey: Keys.timetableOverrideDayKey)
         timetableOverrideType = defaults.string(forKey: Keys.timetableOverrideType).flatMap(DayType.init(rawValue:))
@@ -189,6 +194,7 @@ final class AppSettings {
         static let pressureAlertDrop = "pressure.alertDrop"
         static let backgroundPressureEnabled = "pressure.backgroundEnabled"
         static let waypointShowsHeading = "waypoint.showsHeading"
+        static let tabOrder = "tabs.order"
         static let yearEndHolidayTimetable = "train.yearEndHolidayTimetable"
         static let timetableOverrideDayKey = "train.timetableOverrideDayKey"
         static let timetableOverrideType = "train.timetableOverrideType"
