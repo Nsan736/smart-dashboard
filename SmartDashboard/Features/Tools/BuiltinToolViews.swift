@@ -235,19 +235,12 @@ struct ListPickerView: View {
     @State private var remaining: [String] = []
     @State private var order: [String] = []
     @State private var history: [String] = []
-    @State private var spinning = false
 
     var body: some View {
         Section {
             switch mode {
             case .roulette:
-                Text(result ?? "—")
-                    .font(.system(size: 34, weight: .bold, design: .rounded))
-                    .frame(maxWidth: .infinity, minHeight: 70)
-                    .multilineTextAlignment(.center)
-                    .opacity(spinning ? 0.5 : 1)
-                Button(spinning ? "回しています…" : "回す") { spin() }
-                    .disabled(items.isEmpty || spinning)
+                RouletteSpinner(items: items) { history.insert($0, at: 0) }
             case .lottery:
                 Text(result ?? "—")
                     .font(.system(size: 34, weight: .bold, design: .rounded))
@@ -285,21 +278,6 @@ struct ListPickerView: View {
             }
         }
     }
-
-    /// 少しの間、候補を切り替えてから止める
-    private func spin() {
-        spinning = true
-        Task { @MainActor in
-            for step in 0..<12 {
-                result = items.randomElement()
-                try? await Task.sleep(nanoseconds: UInt64(40_000_000 + step * 12_000_000))
-            }
-            let final = items.randomElement()
-            result = final
-            if let final { history.insert(final, at: 0) }
-            spinning = false
-        }
-    }
 }
 
 struct RouletteToolView: View {
@@ -323,62 +301,6 @@ struct RouletteToolView: View {
             }
         }
         .keyboardDismissable()
-    }
-}
-
-struct DiceToolView: View {
-    @State private var count = 2
-    @State private var sides = 6
-    @State private var rolls: [Int] = []
-
-    var body: some View {
-        Form {
-            Section {
-                Stepper("個数: \(count)", value: $count, in: 1...20)
-                Picker("面の数", selection: $sides) {
-                    ForEach([4, 6, 8, 10, 12, 20, 100], id: \.self) { Text("\($0)面").tag($0) }
-                }
-                Button("振る") { rolls = (0..<count).map { _ in Int.random(in: 1...sides) } }
-            }
-            if !rolls.isEmpty {
-                Section("結果") {
-                    Text(rolls.map(String.init).joined(separator: "  "))
-                        .font(.system(size: 30, weight: .bold, design: .rounded))
-                        .monospacedDigit()
-                    ToolResultRow(title: "合計", value: String(rolls.reduce(0, +)))
-                }
-            }
-        }
-    }
-}
-
-struct CoinToolView: View {
-    @State private var result: Bool?
-    @State private var heads = 0
-    @State private var tails = 0
-
-    var body: some View {
-        Form {
-            Section {
-                Text(result.map { $0 ? "表" : "裏" } ?? "—")
-                    .font(.system(size: 64, weight: .bold, design: .rounded))
-                    .frame(maxWidth: .infinity, minHeight: 110)
-                Button("投げる") {
-                    let value = Bool.random()
-                    result = value
-                    if value { heads += 1 } else { tails += 1 }
-                }
-            }
-            Section("これまで") {
-                ToolResultRow(title: "表", value: "\(heads)回")
-                ToolResultRow(title: "裏", value: "\(tails)回")
-                Button("リセット") {
-                    heads = 0
-                    tails = 0
-                    result = nil
-                }
-            }
-        }
     }
 }
 
@@ -421,98 +343,6 @@ struct OrderToolView: View {
             }
         }
         .keyboardDismissable()
-    }
-}
-
-struct TournamentToolView: View {
-    @AppStorage("tools.tournament.players") private var playersText = ""
-    @AppStorage("tools.tournament.state") private var stateData = Data()
-    @State private var tournament: Tournament?
-    @State private var shuffles = false
-
-    var body: some View {
-        Form {
-            if let tournament {
-                if let champion = tournament.champion {
-                    Section {
-                        Label("優勝: \(champion)", systemImage: "trophy.fill").font(.title3.weight(.bold)).foregroundStyle(.orange)
-                    }
-                }
-                ForEach(tournament.rounds.indices, id: \.self) { round in
-                    Section(roundTitle(round, total: tournament.rounds.count)) {
-                        ForEach(tournament.rounds[round]) { match in
-                            matchRow(match)
-                        }
-                    }
-                }
-                Section {
-                    Button("作り直す", role: .destructive) {
-                        self.tournament = nil
-                        stateData = Data()
-                    }
-                }
-            } else {
-                Section {
-                    Toggle("組み合わせをシャッフルする", isOn: $shuffles)
-                    Button("組み合わせを作る") {
-                        var players = Shuffler.names(from: playersText)
-                        if shuffles { players.shuffle() }
-                        tournament = Tournament(players: players)
-                        save()
-                    }
-                    .disabled(!(2...64).contains(Shuffler.names(from: playersText).count))
-                } footer: {
-                    Text("2〜64人。シャッフルしないときは、上に書いた人ほど強いシードになり、人数が半端なときは上の人から不戦勝になります。勝者の名前をタップすると、次の試合へ進みます。")
-                }
-                Section("参加者(1行に1人。上から順にシード)") {
-                    TextEditor(text: $playersText).frame(minHeight: 160)
-                }
-            }
-        }
-        .keyboardDismissable()
-        .onAppear {
-            if tournament == nil, !stateData.isEmpty { tournament = try? JSONDecoder().decode(Tournament.self, from: stateData) }
-        }
-    }
-
-    private func roundTitle(_ round: Int, total: Int) -> String {
-        if round == total - 1 { return "決勝" }
-        if round == total - 2 { return "準決勝" }
-        return "\(round + 1)回戦"
-    }
-
-    private func save() {
-        stateData = (try? JSONEncoder().encode(tournament)) ?? Data()
-    }
-
-    @ViewBuilder
-    private func matchRow(_ match: Tournament.Match) -> some View {
-        if match.isBye {
-            Text("\(match.first ?? match.second ?? "")(不戦勝)").foregroundStyle(.secondary)
-        } else {
-            HStack(spacing: 8) {
-                playerButton(match.first, in: match)
-                Text("対").font(.caption).foregroundStyle(.secondary)
-                playerButton(match.second, in: match)
-            }
-        }
-    }
-
-    private func playerButton(_ name: String?, in match: Tournament.Match) -> some View {
-        Button {
-            guard let name else { return }
-            tournament?.setWinner(round: match.round, index: match.index, name: match.winner == name ? nil : name)
-            save()
-        } label: {
-            Text(name ?? "未定")
-                .fontWeight(match.winner != nil && match.winner == name ? .bold : .regular)
-                .foregroundStyle(name == nil ? Color.secondary : (match.winner == name ? Color.orange : Color.primary))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 6)
-                .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 8))
-        }
-        .buttonStyle(.plain)
-        .disabled(name == nil || match.first == nil || match.second == nil)
     }
 }
 
