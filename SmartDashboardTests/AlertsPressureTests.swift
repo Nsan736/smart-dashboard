@@ -238,7 +238,7 @@ final class HomeLayoutTests: XCTestCase {
     func testInitialOrderKeepsExistingCardsFirst() {
         let layout = HomeLayout.initial
         XCTAssertEqual(layout.order.prefix(8), [.timer, .nextTrain, .trainInfo, .weather, .rain, .exchange, .speed, .sensors])
-        XCTAssertEqual(layout.order.suffix(4), [.warnings, .quakes, .pressure, .waypoint])
+        XCTAssertEqual(layout.order.suffix(5), [.warnings, .quakes, .pressure, .waypoint, .tools])
         // ウェイポイントのカードは、初期状態では非表示
         XCTAssertEqual(layout.hidden, [.waypoint])
         XCTAssertEqual(layout.visible, layout.order.filter { $0 != .waypoint })

@@ -1,0 +1,19 @@
+{
+  "format": 1,
+  "id": "days-until",
+  "name": "あと何日",
+  "description": "2つの日付の間の日数と、週の数を出します",
+  "icon": "calendar.badge.clock",
+  "category": "time",
+  "keywords": ["かうんとだうん", "締め切り", "記念日"],
+  "type": "calc",
+  "inputs": [
+    { "id": "start", "label": "開始", "type": "date" },
+    { "id": "goal", "label": "目標の日", "type": "date" }
+  ],
+  "outputs": [
+    { "label": "日数", "formula": "days(start, goal)", "style": "days" },
+    { "label": "週", "formula": "floor(days(start, goal) / 7)", "unit": "週" },
+    { "label": "余りの日", "formula": "mod(days(start, goal), 7)", "style": "days" }
+  ]
+}

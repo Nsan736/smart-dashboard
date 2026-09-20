@@ -6,7 +6,7 @@ final class TabOrderTests: XCTestCase {
     func testInitialOrderPutsWaypointInTheBar() {
         // 初期の並びは「ホーム/天気/ウェイポイント/電車/その他」。為替は「その他」の中
         XCTAssertEqual(TabOrder.barTabs(TabOrder.initial), [.home, .weather, .waypoint, .train])
-        XCTAssertEqual(TabOrder.moreTabs(TabOrder.initial), [.exchange, .sensors, .timer, .settings])
+        XCTAssertEqual(TabOrder.moreTabs(TabOrder.initial), [.exchange, .sensors, .tools, .settings])
         XCTAssertTrue(TabOrder.isInMore(.exchange, order: TabOrder.initial))
         XCTAssertFalse(TabOrder.isInMore(.waypoint, order: TabOrder.initial))
         // 保存がなければ(これまでの利用者のアップデート直後も)初期の並び
@@ -14,13 +14,13 @@ final class TabOrderTests: XCTestCase {
     }
 
     func testDecodeDropsUnknownAndAppendsMissing() {
-        let order = TabOrder.decode(["timer", "removedTab", "home", "timer"])
-        XCTAssertEqual(order.prefix(2), [.timer, .home])
+        let order = TabOrder.decode(["sensors", "removedTab", "home", "sensors"])
+        XCTAssertEqual(order.prefix(2), [.sensors, .home])
         XCTAssertEqual(order.count, AppTab.allCases.count)
         XCTAssertEqual(Set(order), Set(AppTab.allCases))
         // 足りないタブは、初期の並びの順で末尾に足す
-        XCTAssertEqual(Array(order.dropFirst(2)), [.weather, .waypoint, .train, .exchange, .sensors, .settings])
-        XCTAssertEqual(TabOrder.barTabs(order), [.timer, .home, .weather, .waypoint])
+        XCTAssertEqual(Array(order.dropFirst(2)), [.weather, .waypoint, .train, .exchange, .tools, .settings])
+        XCTAssertEqual(TabOrder.barTabs(order), [.sensors, .home, .weather, .waypoint])
         XCTAssertTrue(TabOrder.isInMore(.train, order: order))
         XCTAssertEqual(TabOrder.decode([]), TabOrder.initial)
     }
