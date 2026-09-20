@@ -79,6 +79,11 @@ struct ToolScreen: View {
             case .kanaConvert: KanaConvertToolView()
             case .password: PasswordToolView()
             case .flashlight: FlashlightToolView()
+            case .timeCalc: TimeCalcToolView()
+            case .worldClock: WorldClockToolView()
+            case .amida: AmidaToolView()
+            case .scoreboard: ScoreboardToolView()
+            case .metronome: MetronomeToolView()
             }
         }
     }

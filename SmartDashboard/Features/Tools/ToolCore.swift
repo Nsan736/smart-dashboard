@@ -44,6 +44,11 @@ enum BuiltinTool: String, CaseIterable {
     case kanaConvert
     case password
     case flashlight
+    case timeCalc
+    case worldClock
+    case amida
+    case scoreboard
+    case metronome
 }
 
 /// 小ツールの1件(内蔵でも、JSONで読み込んだものでも、同じ形で扱う)
@@ -109,6 +114,11 @@ enum BuiltinTools {
         ToolDescriptor(.kanaConvert, name: "文字の変換", summary: "全角・半角・ひらがな・カタカナ", symbol: "textformat.alt", category: .text, keywords: ["kana", "ぜんかく", "はんかく", "ひらがな", "カタカナ", "変換"]),
         ToolDescriptor(.password, name: "パスワード・乱数", summary: "文字の種類と長さを選んで作る", symbol: "key", category: .text, keywords: ["password", "ぱすわーど", "乱数", "ランダム", "random"]),
         ToolDescriptor(.flashlight, name: "懐中電灯", summary: "ライトを点け、明るさを調整", symbol: "flashlight.on.fill", category: .measure, keywords: ["light", "らいと", "ライト", "かいちゅうでんとう", "torch"]),
+        ToolDescriptor(.timeCalc, name: "時間計算", summary: "時間の合計、時刻に足す・引く、2つの時刻の間", symbol: "clock.arrow.2.circlepath", category: .time, keywords: ["time", "じかん", "勤務時間", "合計", "何時間", "足し算"]),
+        ToolDescriptor(.worldClock, name: "世界時計", summary: "各地の時刻と、日本との時差", symbol: "globe", category: .time, keywords: ["world", "clock", "時差", "じさ", "タイムゾーン", "海外", "夏時間"]),
+        ToolDescriptor(.amida, name: "あみだくじ", summary: "名前をタップして道をたどる", symbol: "square.grid.3x3.middle.filled", category: .play, keywords: ["amida", "アミダ", "くじ", "抽選", "当たり"]),
+        ToolDescriptor(.scoreboard, name: "スコアボード", summary: "2〜4チームの点とセット数", symbol: "sportscourt", category: .play, keywords: ["score", "すこあ", "得点", "点数", "試合", "セット"]),
+        ToolDescriptor(.metronome, name: "メトロノーム", summary: "テンポと拍子を決めて鳴らす", symbol: "metronome", category: .measure, keywords: ["metronome", "めとろのーむ", "テンポ", "BPM", "リズム", "拍子"]),
     ]
 }
 
