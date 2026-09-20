@@ -31,6 +31,8 @@ targets:
           - UIInterfaceOrientationLandscapeRight
         NSLocationWhenInUseUsageDescription: 現在地の天気の取得と、速度・高度の表示に位置情報を使います。
         NSMotionUsageDescription: 歩数、気圧、傾きの表示にモーションデータを使います。
+        UIBackgroundModes:
+          - audio
         NSMicrophoneUsageDescription: 周囲の騒音レベルの目安を表示するためにマイクを使います。録音データは保存しません。
     settings:
       base:
