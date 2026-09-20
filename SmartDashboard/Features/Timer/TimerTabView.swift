@@ -1,12 +1,18 @@
 import SwiftUI
 
+/// タイマーとストップウォッチ。小ツールの中から開く(NavigationStack は、呼び出す側が持つ)。
 struct TimerTabView: View {
     @Environment(AppEnvironment.self) private var env
-    @State private var mode = 0
+    @State private var mode: Int
+
+    /// 0 = タイマー、1 = ストップウォッチ
+    init(initialMode: Int = 0) {
+        _mode = State(initialValue: initialMode)
+    }
 
     var body: some View {
         @Bindable var store = env.timers
-        NavigationStack {
+        Group {
             VStack(spacing: 0) {
                 Picker("種類", selection: $mode) {
                     Text("タイマー").tag(0)
@@ -20,8 +26,6 @@ struct TimerTabView: View {
                     StopwatchView()
                 }
             }
-            .navigationTitle("タイマー")
-            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Toggle(isOn: $store.keepAwake) {

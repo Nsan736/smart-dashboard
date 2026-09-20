@@ -23,7 +23,7 @@ struct RootTabView: View {
         case .train: TrainView()
         case .exchange: ExchangeView()
         case .sensors: SensorsView()
-        case .timer: TimerTabView()
+        case .tools: ToolsView()
         case .settings: SettingsView()
         }
     }

@@ -9,7 +9,8 @@ enum AppTab: String, CaseIterable, Identifiable, Codable {
     case train
     case exchange
     case sensors
-    case timer
+    /// 小ツール(タイマーとストップウォッチは、この中に移した)
+    case tools
     case settings
 
     var id: String { rawValue }
@@ -22,7 +23,7 @@ enum AppTab: String, CaseIterable, Identifiable, Codable {
         case .train: return "電車"
         case .exchange: return "為替"
         case .sensors: return "センサー"
-        case .timer: return "タイマー"
+        case .tools: return "小ツール"
         case .settings: return "設定"
         }
     }
@@ -35,7 +36,7 @@ enum AppTab: String, CaseIterable, Identifiable, Codable {
         case .train: return "tram"
         case .exchange: return "yensign.circle"
         case .sensors: return "gauge.with.dots.needle.33percent"
-        case .timer: return "timer"
+        case .tools: return "wrench.and.screwdriver"
         case .settings: return "gearshape"
         }
     }
@@ -59,7 +60,8 @@ enum TabOrder {
     /// 保存データ(rawValue の配列)から復元する。保存がなければ初期の並び。
     static func decode(_ stored: [String]?) -> [AppTab] {
         guard let stored else { return initial }
-        return normalized(stored.compactMap(AppTab.init(rawValue:)))
+        // 以前の「タイマー」のタブは、同じ位置で「小ツール」に置き換える
+        return normalized(stored.map { $0 == "timer" ? AppTab.tools.rawValue : $0 }.compactMap(AppTab.init(rawValue:)))
     }
 
     /// タブバーに並ぶタブ

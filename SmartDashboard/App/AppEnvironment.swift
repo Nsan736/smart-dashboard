@@ -50,6 +50,8 @@ final class AppEnvironment {
     let pressure: PressureRecorder
     let pressureHistory: PressureHistoryStore
     let waypoints: WaypointStore
+    /// 小ツール(お気に入り、最近使った、JSONで読み込んだツール)
+    let tools: ToolLibrary
     /// スコープの「周辺」と「経路」(どちらも MapKit が通信する)
     let nearby = NearbyStore()
     let route = RouteStore()
@@ -127,6 +129,7 @@ final class AppEnvironment {
                                                    onFetched: { fetchLog.mark(.pressureHistory, at: $0) })
         self.pressureHistory = pressureHistory
         waypoints = WaypointStore(fileURL: support.appendingPathComponent("waypoints.json"))
+        tools = ToolLibrary(fileURL: support.appendingPathComponent("custom-tools.json"))
         let keeper = BackgroundKeeper(settings: settings)
         self.keeper = keeper
         keeper.onStateChange = { [weak recorder] state in

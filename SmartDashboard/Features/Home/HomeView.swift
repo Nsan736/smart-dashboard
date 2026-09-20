@@ -81,6 +81,7 @@ struct HomeView: View {
         case .quakes: QuakeHomeCard()
         case .pressure: PressureHomeCard()
         case .waypoint: WaypointHomeCard()
+        case .tools: ToolsHomeCard()
         }
     }
 

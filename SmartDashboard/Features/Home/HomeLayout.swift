@@ -15,6 +15,8 @@ enum HomeCardKind: String, Codable, CaseIterable, Identifiable {
     case pressure
     /// スコープ(以前の名前はウェイポイント。保存済みの設定を引き継ぐため、値は変えない)
     case waypoint
+    /// お気に入りの小ツール(お気に入りがなければ、何も出さない)
+    case tools
 
     var id: String { rawValue }
 
@@ -32,6 +34,7 @@ enum HomeCardKind: String, Codable, CaseIterable, Identifiable {
         case .quakes: return "地震"
         case .pressure: return "気圧"
         case .waypoint: return "スコープ"
+        case .tools: return "小ツール"
         }
     }
 
@@ -49,6 +52,7 @@ enum HomeCardKind: String, Codable, CaseIterable, Identifiable {
         case .quakes: return "waveform.path.ecg"
         case .pressure: return "barometer"
         case .waypoint: return "scope"
+        case .tools: return "wrench.and.screwdriver"
         }
     }
 
@@ -59,6 +63,7 @@ enum HomeCardKind: String, Codable, CaseIterable, Identifiable {
         case .nextTrain, .trainInfo: return "路線・駅を登録しているときだけ表示"
         case .speed: return "表示中は高精度のGPSを使います"
         case .waypoint: return "一番近い地点か、ピン留めした地点を表示(測位はしません)"
+        case .tools: return "お気に入りのツールがあるときだけ表示"
         default: return nil
         }
     }
