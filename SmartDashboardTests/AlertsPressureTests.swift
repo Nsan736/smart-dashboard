@@ -238,8 +238,10 @@ final class HomeLayoutTests: XCTestCase {
     func testInitialOrderKeepsExistingCardsFirst() {
         let layout = HomeLayout.initial
         XCTAssertEqual(layout.order.prefix(8), [.timer, .nextTrain, .trainInfo, .weather, .rain, .exchange, .speed, .sensors])
-        XCTAssertEqual(layout.order.suffix(3), [.warnings, .quakes, .pressure])
-        XCTAssertEqual(layout.visible, layout.order)
+        XCTAssertEqual(layout.order.suffix(4), [.warnings, .quakes, .pressure, .waypoint])
+        // ウェイポイントのカードは、初期状態では非表示
+        XCTAssertEqual(layout.hidden, [.waypoint])
+        XCTAssertEqual(layout.visible, layout.order.filter { $0 != .waypoint })
     }
 
     func testNewCardsAreAppendedAndUnknownOnesDropped() {
@@ -248,7 +250,8 @@ final class HomeLayoutTests: XCTestCase {
         XCTAssertEqual(layout.order.prefix(2), [.exchange, .weather])
         XCTAssertEqual(layout.order.count, HomeCardKind.allCases.count)
         XCTAssertEqual(Set(layout.order), Set(HomeCardKind.allCases))
-        XCTAssertEqual(layout.hidden, [.weather])
+        // あとから増えたカードのうち、初期状態で非表示のもの(ウェイポイント)は、非表示で足される
+        XCTAssertEqual(layout.hidden, [.weather, .waypoint])
         XCTAssertFalse(layout.visible.contains(.weather))
         XCTAssertEqual(HomeLayout.decode(nil), .initial)
         XCTAssertEqual(HomeLayout.decode(Data("broken".utf8)), .initial)
@@ -277,9 +280,9 @@ final class HomeLayoutTests: XCTestCase {
         defaults.set(false, forKey: "home.showsSpeed")
         let settings = AppSettings(defaults: defaults)
         // 以前「ホームで速度を表示する」をオフにしていたら、速度のカードを非表示で引き継ぐ
-        XCTAssertEqual(settings.homeLayout.hidden, [.speed])
+        XCTAssertEqual(settings.homeLayout.hidden, [.speed, .waypoint])
         settings.homeLayout.hidden.insert(.quakes)
-        XCTAssertEqual(AppSettings(defaults: defaults).homeLayout.hidden, [.speed, .quakes])
+        XCTAssertEqual(AppSettings(defaults: defaults).homeLayout.hidden, [.speed, .quakes, .waypoint])
         XCTAssertEqual(settings.quakeMinimumScale, 30)
         XCTAssertEqual(settings.pressureAlertDrop, 4)
         XCTAssertFalse(settings.backgroundPressureEnabled)
