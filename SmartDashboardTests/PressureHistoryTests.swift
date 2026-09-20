@@ -174,49 +174,80 @@ final class PressureHistoryTests: XCTestCase {
         XCTAssertFalse(PressureSeries.hasSample(near: now, in: [now.addingTimeInterval(-1900), now.addingTimeInterval(1900)]))
     }
 
-    func testDetailRangeAndScroll() {
-        let domain = PressureDetailData.domain(now: now)
-        XCTAssertEqual(domain.lowerBound, now.addingTimeInterval(-4 * 24 * 3600))
-        XCTAssertEqual(domain.upperBound, now.addingTimeInterval(16 * 24 * 3600))
-        XCTAssertEqual(PressureSpan.all.seconds, 20 * 24 * 3600)
+    func testDetailRange() {
+        // 表示する範囲は、4日前の0時から21日間(16日後の24時まで)。日本時間の日付の区切りにそろえる
+        let range = PressureDetailData.range(now: now)
+        XCTAssertEqual(range.duration, 21 * 24 * 3600)
+        XCTAssertEqual(range.start, JapaneseHolidays.calendar.startOfDay(for: now.addingTimeInterval(-4 * 24 * 3600)))
+        XCTAssertLessThanOrEqual(range.start, now.addingTimeInterval(-4 * 24 * 3600))
+        XCTAssertGreaterThanOrEqual(range.end, now.addingTimeInterval(16 * 24 * 3600))
+        XCTAssertEqual(PressureDetailData.dayStarts(from: range.start, to: range.end).count, 21)
         XCTAssertEqual(PressureSpan.allCases.map(\.label), ["1日", "1週間", "全体"])
-        // 開いたときは「今」が左から25%の位置
-        let week = PressureDetailData.initialScroll(now: now, span: .week)
-        XCTAssertEqual(now.timeIntervalSince(week), 0.25 * 7 * 24 * 3600, accuracy: 1)
-        XCTAssertEqual(now.timeIntervalSince(PressureDetailData.initialScroll(now: now, span: .day)), 6 * 3600, accuracy: 1)
-        // 全体表示は、範囲の左端から(スクロールしない)
-        XCTAssertEqual(PressureDetailData.initialScroll(now: now, span: .all), domain.lowerBound)
-        // 幅を変えても中央の時刻は同じ。範囲の外には出ない
-        let day = PressureDetailData.scroll(keepingCenterOf: week, from: .week, to: .day, now: now)
-        XCTAssertEqual(day.addingTimeInterval(12 * 3600), week.addingTimeInterval(3.5 * 24 * 3600))
-        XCTAssertEqual(PressureDetailData.scroll(keepingCenterOf: week, from: .week, to: .all, now: now), domain.lowerBound)
-        let end = PressureDetailData.clamped(now.addingTimeInterval(30 * 24 * 3600), span: .week, now: now)
-        XCTAssertEqual(end, domain.upperBound.addingTimeInterval(-7 * 24 * 3600))
-        XCTAssertEqual(PressureDetailData.clamped(now.addingTimeInterval(-30 * 24 * 3600), span: .day, now: now), domain.lowerBound)
+        XCTAssertEqual(PressureDetailData.nowPosition, 0.25)
+        // グラフ全体の幅: 1日表示は画面21枚分、1週間表示は3枚分、全体表示は1枚(スクロールなし)
+        XCTAssertEqual(PressureDetailData.contentWidth(viewWidth: 300, span: .day), 6300, accuracy: 0.01)
+        XCTAssertEqual(PressureDetailData.contentWidth(viewWidth: 300, span: .week), 900, accuracy: 0.01)
+        XCTAssertEqual(PressureDetailData.contentWidth(viewWidth: 300, span: .all), 300, accuracy: 0.01)
+        // 横の位置と時刻の相互変換(タップした位置 → 時刻)
+        let x = PressureDetailData.x(of: now, in: range, contentWidth: 900)
+        XCTAssertEqual(PressureDetailData.time(atX: x, in: range, contentWidth: 900).timeIntervalSince(now), 0, accuracy: 1)
+        XCTAssertEqual(PressureDetailData.time(atX: 0, in: range, contentWidth: 900), range.start)
     }
 
-    func testDetailDataThinsByRange() {
-        // 過去4日分の5分ごとの実測と、16日先までの1時間ごとの予報
-        let measured = stride(from: -4.0 * 24 * 12, through: 0, by: 1).map { chartPoint($0 / 12, 1000, .measured) }
+    func testTilesUseHourlyPointsAndFineOnlyInDayMode() throws {
+        let range = PressureDetailData.range(now: now)
+        // 過去は5分ごとの実測、未来は1時間ごとの予報
+        let measured = stride(from: range.start.timeIntervalSince(now), through: 0, by: 300).map {
+            PressurePoint(time: now.addingTimeInterval($0), hPa: 1000, source: .measured)
+        }
         let forecast = stride(from: 1.0, through: 16 * 24, by: 1).map { chartPoint($0, 1000) }
         let full = measured + forecast
-        // 1日表示は間引かない。1週間は30分ごと、全体は1時間ごと
-        XCTAssertEqual(PressureDetailData.displayed(full: full, span: .day), full)
-        let week = PressureDetailData.displayed(full: full, span: .week)
-        let all = PressureDetailData.displayed(full: full, span: .all)
-        XCTAssertLessThan(week.count, 4 * 48 + 16 * 24 + 3)
-        XCTAssertGreaterThan(week.count, all.count)
-        XCTAssertLessThan(all.count, 20 * 24 + 3)
-        XCTAssertEqual(all, all.sorted { $0.time < $1.time })
-        // 予報の点は、間引いても時刻も数も変わらない
-        XCTAssertEqual(all.filter { $0.source == .forecast }, forecast)
-        XCTAssertEqual(PressureDetailData.fiveSteps(in: 995...1016), [995, 1000, 1005, 1010, 1015])
-        let days = PressureDetailData.dayStarts(from: now, to: now.addingTimeInterval(3 * 24 * 3600))
-        XCTAssertEqual(days.count, 4)
+        let hourly = PressureThinning.thin(full, step: 3600)
+        // 1時間ごとが基本(約20日で500点前後)
+        XCTAssertLessThan(hourly.count, 21 * 24 + 2)
+        let drops = [DateInterval(start: range.start.addingTimeInterval(20 * 3600), end: range.start.addingTimeInterval(30 * 3600))]
+
+        // 全体表示は1区画
+        let all = PressureDetailData.tiles(full: full, hourly: hourly, drops: drops, span: .all, now: now)
+        XCTAssertEqual(all.count, 1)
+        XCTAssertEqual(all[0].days.count, 21)
+        XCTAssertEqual(all[0].points.count, hourly.count)
+
+        // 1週間表示は1日ごとの21区画で、点は1時間ごと(前後の1点を含めて最大27点)
+        let week = PressureDetailData.tiles(full: full, hourly: hourly, drops: drops, span: .week, now: now)
+        XCTAssertEqual(week.count, 21)
+        XCTAssertTrue(week.allSatisfy { $0.points.count <= 27 && $0.days.count == 1 })
+        XCTAssertEqual(week[0].start, range.start)
+        XCTAssertEqual(week[20].end, range.end)
+        // 急な低下の区間は、日付をまたぐと区画ごとに切り分ける
+        XCTAssertEqual(week[0].drops, [DateInterval(start: range.start.addingTimeInterval(20 * 3600), end: range.start.addingTimeInterval(24 * 3600))])
+        XCTAssertEqual(week[1].drops, [DateInterval(start: range.start.addingTimeInterval(24 * 3600), end: range.start.addingTimeInterval(30 * 3600))])
+        XCTAssertTrue(week[2].drops.isEmpty)
+
+        // 1日表示だけ、実測のある日の区画が細かい(5分ごと)。未来の区画は1時間ごとのまま
+        let day = PressureDetailData.tiles(full: full, hourly: hourly, drops: drops, span: .day, now: now)
+        XCTAssertEqual(day.count, 21)
+        XCTAssertGreaterThan(day[1].points.count, 280)
+        XCTAssertLessThanOrEqual(day[20].points.count, 27)
+        // 隣の区画と線がつながるよう、前後の1点を含める
+        XCTAssertLessThan(try XCTUnwrap(day[1].points.first).time, day[1].start)
+        XCTAssertGreaterThan(try XCTUnwrap(day[1].points.last).time, day[1].end)
+        XCTAssertTrue(PressureDetailData.slice(hourly, from: range.end.addingTimeInterval(3600), to: range.end.addingTimeInterval(7200)).isEmpty)
+    }
+
+    func testDayLabelsFitInOneDayWidth() {
+        let calendar = JapaneseHolidays.calendar
+        let saturday = calendar.date(from: DateComponents(year: 2026, month: 9, day: 19))!
+        let firstOfMonth = calendar.date(from: DateComponents(year: 2026, month: 10, day: 1))!
+        XCTAssertEqual(PressureDetailData.dayLabel(saturday, span: .day), "9/19(土)")
+        XCTAssertEqual(PressureDetailData.dayLabel(saturday, span: .week), "19(土)")
+        XCTAssertEqual(PressureDetailData.dayLabel(firstOfMonth, span: .week), "10/1(木)")
+        XCTAssertEqual(PressureDetailData.dayLabel(saturday, span: .all), "9/19")
         // 全体表示のラベルは月曜と木曜だけ
-        let twenty = PressureDetailData.dayStarts(from: now, to: now.addingTimeInterval(19.5 * 24 * 3600))
-        XCTAssertLessThanOrEqual(PressureDetailData.labeledDays(twenty, span: .all).count, 6)
-        XCTAssertEqual(PressureDetailData.labeledDays(twenty, span: .week), twenty)
+        XCTAssertFalse(PressureDetailData.showsLabel(saturday, span: .all))
+        XCTAssertTrue(PressureDetailData.showsLabel(firstOfMonth, span: .all))
+        XCTAssertTrue(PressureDetailData.showsLabel(saturday, span: .week))
+        XCTAssertEqual(PressureDetailData.fiveSteps(in: 995...1016), [995, 1000, 1005, 1010, 1015])
     }
 
     func testOldWeatherCacheIsRefetched() throws {
