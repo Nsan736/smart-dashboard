@@ -45,6 +45,10 @@ final class AppEnvironment {
     let live: TrainLiveStore
     /// 電車タブの表示の状態。地図と路線図で共有する。
     let trainDisplay: TrainDisplayState
+    let warnings: WarningStore
+    let quakes: QuakeStore
+    let pressure: PressureRecorder
+    let keeper: BackgroundKeeper
     @ObservationIgnored let cache: DiskCache
     @ObservationIgnored let http: HTTPClient
     @ObservationIgnored let keychain: KeychainStore
@@ -103,9 +107,22 @@ final class AppEnvironment {
         radar = RadarStore(http: http, network: network, loader: radarLoader)
         rain = RainNowcastStore(http: http, cache: cache, settings: settings, network: network, loader: radarLoader,
                                 onFetched: { fetchLog.mark(.rainNowcast, at: $0) })
+        let placeNames = PlaceNameResolver(onRequest: { [weak usage] in usage?.addGeocodeRequest() })
+        warnings = WarningStore(http: http, cache: cache, settings: settings, network: network, placeNames: placeNames,
+                                onFetched: { fetchLog.mark(.warning, at: $0) })
+        quakes = QuakeStore(http: http, cache: cache, settings: settings, network: network,
+                            onFetched: { fetchLog.mark(.quake, at: $0) })
+        let recorder = PressureRecorder(fileURL: support.appendingPathComponent("pressure-log.json"))
+        pressure = recorder
+        let keeper = BackgroundKeeper(settings: settings)
+        self.keeper = keeper
+        keeper.onStateChange = { [weak recorder] state in
+            // バックグラウンドで止まったら、気圧計も止める
+            if state != .running, recorder?.isInBackground == true { recorder?.stop() }
+        }
         weather = WeatherStore(
             api: OpenMeteoClient(http: http), cache: cache, settings: settings, network: network,
-            location: location, placeNames: PlaceNameResolver(onRequest: { [weak usage] in usage?.addGeocodeRequest() }),
+            location: location, placeNames: placeNames,
             onCurrentLocation: { latitude, longitude in
                 // 地図を保存する最初の登録エリア(現在地から半径20km)を一度だけ作る
                 guard !settings.didCreateDefaultTileArea, settings.tileAreas.isEmpty else { return }
@@ -124,10 +141,14 @@ final class AppEnvironment {
     func refreshStaleData() async {
         timers.resume()
         tiles.evaluate(isForeground: true)
-        await weather.refreshIfStale()
-        await refreshRainIfStale()
-        await exchange.refreshIfStale()
-        await trains.refreshInfoIfStale()
+        // ホームで非表示にしたカードのデータは取得しない(各タブを開いたときは、そのタブが取得する)
+        let layout = settings.homeLayout
+        if layout.needsWeather { await weather.refreshIfStale() } else { await weather.loadCacheIfNeeded() }
+        if layout.needsRain { await refreshRainIfStale() }
+        if layout.needsWarnings { await refreshWarningsIfStale() }
+        if layout.needsQuakes { await quakes.refreshIfStale() } else { await quakes.loadCacheIfNeeded() }
+        if layout.needsExchange { await exchange.refreshIfStale() }
+        if layout.needsTrainInfo { await trains.refreshInfoIfStale() }
         await updateCacheSize()
     }
 
@@ -135,6 +156,44 @@ final class AppEnvironment {
     func refreshRainIfStale() async {
         guard let snapshot = weather.cached?.value, let latitude = snapshot.latitude, let longitude = snapshot.longitude else { return }
         await rain.refreshIfStale(latitude: latitude, longitude: longitude)
+    }
+
+    /// 天気を取得した地点の市区町村について、警報・注意報を更新する。最短10分間隔。
+    func refreshWarningsIfStale() async {
+        await warnings.loadCacheIfNeeded()
+        guard let snapshot = weather.cached?.value, let latitude = snapshot.latitude, let longitude = snapshot.longitude else { return }
+        await warnings.refreshIfStale(latitude: latitude, longitude: longitude)
+    }
+
+    func refreshWarningsManually() async {
+        guard let snapshot = weather.cached?.value, let latitude = snapshot.latitude, let longitude = snapshot.longitude else { return }
+        await warnings.refreshManually(latitude: latitude, longitude: longitude)
+    }
+
+    /// 現在地(天気を取得した地点)の都道府県名。地震の「この都道府県の震度」に使う。地名のキャッシュから読むだけで通信しない。
+    var currentPrefecture: String? { warnings.cached?.value.area.prefecture }
+
+    /// 気圧のグラフ用の予報(Open-Meteo の1時間値)
+    var pressureForecast: [PressureForecastPoint] {
+        (weather.cached?.value.hourly ?? []).compactMap { hour in
+            hour.pressure.map { PressureForecastPoint(time: hour.time, hPa: $0) }
+        }
+    }
+
+    /// フォアグラウンドに入ったとき。気圧の記録を始め、バックグラウンドの記録が続いていたかを判定する。
+    func didBecomeActive() {
+        pressure.isInBackground = false
+        keeper.didBecomeActive(samples: pressure.samples)
+        pressure.start()
+        keeper.evaluate()
+    }
+
+    /// フォアグラウンドを離れたとき。バックグラウンドで記録する設定でなければ、気圧計を止める。
+    func didEnterBackground() {
+        pressure.isInBackground = true
+        keeper.evaluate()
+        keeper.didEnterBackground()
+        if !keeper.isRunning { pressure.stop() }
     }
 
     func refreshRainManually() async {
@@ -159,6 +218,8 @@ final class AppEnvironment {
         weather.clearMemory()
         exchange.clearMemory()
         rain.clearMemory()
+        warnings.clearMemory()
+        quakes.clearMemory()
         trains.clearCachedInfo()
         let radarLoader = radar.loader
         await Task.detached(priority: .utility) { radarLoader.removeAll() }.value

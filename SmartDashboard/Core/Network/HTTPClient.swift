@@ -52,7 +52,7 @@ final class MeteredHTTPClient: NSObject, HTTPClient, URLSessionTaskDelegate, @un
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
-        let category = UsageCategory.from(host: task.originalRequest?.url?.host)
+        let category = UsageCategory.from(url: task.originalRequest?.url)
         var totals: [UsageLink: Int64] = [:]
         for t in metrics.transactionMetrics {
             let bytes = t.countOfResponseHeaderBytesReceived + t.countOfResponseBodyBytesReceived

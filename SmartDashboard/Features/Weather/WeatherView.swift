@@ -17,6 +17,7 @@ struct WeatherView: View {
                     Section(snapshot.placeName) {
                         currentView(snapshot.current)
                     }
+                    WarningSection()
                     Section("今後2時間の雨") {
                         rainView(snapshot)
                         NavigationLink {
@@ -41,6 +42,8 @@ struct WeatherView: View {
                             dailyRow(day, offset: snapshot.utcOffsetSeconds)
                         }
                     }
+                    PressureSection()
+                    QuakeSection()
                 } else if !store.isLoading {
                     ContentUnavailableView("天気は未取得です", systemImage: "cloud.sun", description: Text("右上の更新ボタンで取得できます"))
                 }
@@ -53,19 +56,25 @@ struct WeatherView: View {
             .navigationTitle("天気")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    RefreshToolbarButton(isLoading: store.isLoading || env.rain.isLoading) {
+                    RefreshToolbarButton(isLoading: store.isLoading || env.rain.isLoading || env.warnings.isLoading || env.quakes.isLoading) {
                         await store.refreshManually()
                         await env.refreshRainManually()
+                        await env.refreshWarningsManually()
+                        await env.quakes.refreshManually()
                     }
                 }
             }
             .refreshable {
                 await store.refreshManually()
                 await env.refreshRainManually()
+                await env.refreshWarningsManually()
+                await env.quakes.refreshManually()
             }
             .task {
                 await store.refreshIfStale()
                 await env.refreshRainIfStale()
+                await env.refreshWarningsIfStale()
+                await env.quakes.refreshIfStale()
             }
         }
     }

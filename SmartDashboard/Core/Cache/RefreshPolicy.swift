@@ -5,6 +5,8 @@ enum DataKind: String, CaseIterable, Codable {
     case weather
     case exchange
     case rainNowcast
+    case warning
+    case quake
     case trainInfo
     case trainDelay
     case railwayCatalog
@@ -14,6 +16,8 @@ enum DataKind: String, CaseIterable, Codable {
         case .weather: return 30 * 60
         case .exchange: return 24 * 60 * 60
         case .rainNowcast: return 10 * 60
+        case .warning: return 10 * 60
+        case .quake: return 5 * 60
         case .trainInfo: return 5 * 60
         case .trainDelay: return 2 * 60
         case .railwayCatalog: return 30 * 24 * 60 * 60
@@ -25,6 +29,8 @@ enum DataKind: String, CaseIterable, Codable {
         case .weather: return "天気"
         case .exchange: return "為替"
         case .rainNowcast: return "雨のナウキャスト"
+        case .warning: return "警報・注意報"
+        case .quake: return "地震情報"
         case .trainInfo: return "運行情報"
         case .trainDelay: return "列車の遅れ"
         case .railwayCatalog: return "路線・駅の一覧"

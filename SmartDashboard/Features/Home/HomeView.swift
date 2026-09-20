@@ -8,38 +8,45 @@ struct HomeView: View {
     @State private var location = LocationSensors()
     @State private var device = DeviceStatus()
     @State private var isVisible = false
+    @State private var isEditing = false
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), spacing: 12)], spacing: 12) {
-                    timerCard
-                    nextTrainCard
-                    trainInfoCard
-                    weatherCard
-                    exchangeCard
-                    sensorCard
+                    ForEach(env.settings.homeLayout.visible) { kind in
+                        card(kind)
+                    }
                 }
                 .padding()
             }
             .background(Color(.systemGroupedBackground))
             .navigationTitle("ホーム")
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("編集") { isEditing = true }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
-                    RefreshToolbarButton(isLoading: env.weather.isLoading || env.exchange.isLoading || env.trains.isLoadingInfo) {
-                        await env.weather.refreshManually()
-                        await env.refreshRainManually()
-                        await env.exchange.refreshIfStale()
-                        await env.trains.refreshInfoManually()
+                    RefreshToolbarButton(isLoading: env.weather.isLoading || env.exchange.isLoading || env.trains.isLoadingInfo
+                                         || env.warnings.isLoading || env.quakes.isLoading) {
+                        // 非表示にしたカードのデータは取得しない
+                        let layout = env.settings.homeLayout
+                        if layout.needsWeather { await env.weather.refreshManually() }
+                        if layout.needsRain { await env.refreshRainManually() }
+                        if layout.needsWarnings { await env.refreshWarningsManually() }
+                        if layout.needsQuakes { await env.quakes.refreshManually() }
+                        if layout.needsExchange { await env.exchange.refreshIfStale() }
+                        if layout.needsTrainInfo { await env.trains.refreshInfoManually() }
                     }
                 }
             }
+            .sheet(isPresented: $isEditing) { HomeLayoutEditor() }
         }
         .onAppear {
             isVisible = true
             startSensors()
             // 遅れの取得は、ホームの電車カードを表示している間だけ
-            env.live.setVisible("home", !env.trains.stations.isEmpty)
+            updateTrainVisibility()
         }
         .onDisappear {
             isVisible = false
@@ -51,17 +58,45 @@ struct HomeView: View {
             guard isVisible else { return }
             if phase == .active { startSensors() } else { stopSensors() }
         }
-        .onChange(of: env.settings.homeShowsSpeed) { _, _ in
-            if isVisible { startSensors() }
+        .onChange(of: env.settings.homeLayout) { _, _ in
+            guard isVisible else { return }
+            startSensors()
+            updateTrainVisibility()
+            Task { await env.refreshStaleData() }
         }
     }
 
+    @ViewBuilder
+    private func card(_ kind: HomeCardKind) -> some View {
+        switch kind {
+        case .timer: timerCard
+        case .nextTrain: nextTrainCard
+        case .trainInfo: trainInfoCard
+        case .weather: weatherCard
+        case .rain: rainCard
+        case .exchange: exchangeCard
+        case .speed: speedCard
+        case .sensors: sensorCard
+        case .warnings: WarningHomeCard()
+        case .quakes: QuakeHomeCard()
+        case .pressure: PressureHomeCard()
+        }
+    }
+
+    /// 遅れの取得は、ホームの電車カードを表示している間だけ
+    private func updateTrainVisibility() {
+        env.live.setVisible("home", env.settings.homeLayout.shows(.nextTrain) && !env.trains.stations.isEmpty)
+    }
+
     private func startSensors() {
+        // 非表示にしたカードのセンサーは動かさない
+        let layout = env.settings.homeLayout
+        let showsSpeed = layout.shows(.speed)
         motion.onPedometerUpdate = { [location] snapshot, date in location.addPedometer(snapshot, at: date) }
-        motion.startLight()
-        device.start()
-        // 速度は高精度のGPSを使うので、設定でオフにできる。方位は使わない。
-        if env.settings.homeShowsSpeed { location.start(includesHeading: false) } else { location.stop() }
+        if layout.shows(.sensors) || showsSpeed { motion.startLight() } else { motion.stop() }
+        if layout.shows(.sensors) { device.start() } else { device.stop() }
+        // 速度は高精度のGPSを使う。方位は使わない。
+        if showsSpeed { location.start(includesHeading: false) } else { location.stop() }
     }
 
     private func stopSensors() {
@@ -180,19 +215,26 @@ struct HomeView: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
                 }
-                if let outlook = env.rainOutlook() {
-                    Label(outlook.headline, systemImage: "umbrella")
-                        .font(.subheadline.weight(.semibold))
+            } else {
+                Text(env.weather.errorMessage ?? "未取得です").foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var rainCard: some View {
+        HomeCard(title: "雨の要約", symbol: "umbrella", fetchedAt: env.rain.cached?.fetchedAt) {
+            if let outlook = env.rainOutlook() {
+                Text(outlook.headline)
+                    .font(.headline)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let later = outlook.later {
+                    Text(later).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+                if let note = outlook.note {
+                    Text(note)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
-                    if let later = outlook.later {
-                        Text(later).font(.caption).foregroundStyle(.secondary)
-                    }
-                    if let note = outlook.note {
-                        Text(note)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
                 }
             } else {
                 Text(env.weather.errorMessage ?? "未取得です").foregroundStyle(.secondary)
@@ -226,9 +268,6 @@ struct HomeView: View {
 
     private var sensorCard: some View {
         HomeCard(title: "センサー", symbol: "gauge.with.dots.needle.33percent") {
-            if env.settings.homeShowsSpeed {
-                SpeedReadout(location: location, size: 44)
-            }
             Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 8) {
                 GridRow {
                     sensorValue("画面の明るさ", String(format: "%.0f%%", device.brightness * 100))
@@ -241,6 +280,12 @@ struct HomeView: View {
                     sensorValue("外気温(予報値)", env.weather.cached.map { String(format: "%.1f°C", $0.value.current.temperature) } ?? "-")
                 }
             }
+        }
+    }
+
+    private var speedCard: some View {
+        HomeCard(title: "速度", symbol: "speedometer") {
+            SpeedReadout(location: location, size: 44)
         }
     }
 

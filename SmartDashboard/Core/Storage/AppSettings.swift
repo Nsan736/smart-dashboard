@@ -95,9 +95,22 @@ final class AppSettings {
     var sensorsKeepAwake: Bool {
         didSet { defaults.set(sensorsKeepAwake, forKey: Keys.sensorsKeepAwake) }
     }
-    /// ホームで速度を表示する(高精度のGPSで電池を多く使う。初期値はオン)
-    var homeShowsSpeed: Bool {
-        didSet { defaults.set(homeShowsSpeed, forKey: Keys.homeShowsSpeed) }
+    /// ホームのカードの並び順と表示・非表示
+    var homeLayout: HomeLayout {
+        didSet { defaults.set(homeLayout.encoded(), forKey: Keys.homeLayout) }
+    }
+
+    /// ホームの地震カードに出す最小の震度(P2P地震情報の値。初期値は30=震度3)
+    var quakeMinimumScale: Int {
+        didSet { defaults.set(quakeMinimumScale, forKey: Keys.quakeMinimumScale) }
+    }
+    /// 気圧: 3時間でこの値(hPa)以上に下がる予報のとき、ホームのカードを目立たせる(初期値は4)
+    var pressureAlertDrop: Double {
+        didSet { defaults.set(pressureAlertDrop, forKey: Keys.pressureAlertDrop) }
+    }
+    /// 気圧: 無音のオーディオでアプリを起こしておき、バックグラウンドでも記録する(初期値はオフ)
+    var backgroundPressureEnabled: Bool {
+        didSet { defaults.set(backgroundPressureEnabled, forKey: Keys.backgroundPressureEnabled) }
     }
 
     static let defaultExchangeCodes = ["USD", "EUR", "GBP", "CNY", "KRW"]
@@ -118,7 +131,15 @@ final class AppSettings {
         didCreateDefaultTileArea = defaults.bool(forKey: Keys.didCreateDefaultTileArea)
         cellularLimitEnabled = defaults.bool(forKey: Keys.cellularLimitEnabled)
         sensorsKeepAwake = defaults.object(forKey: Keys.sensorsKeepAwake) as? Bool ?? true
-        homeShowsSpeed = defaults.object(forKey: Keys.homeShowsSpeed) as? Bool ?? true
+        var layout = HomeLayout.decode(defaults.data(forKey: Keys.homeLayout))
+        // 以前の設定「ホームで速度を表示する」をオフにしていた場合は、速度のカードを非表示にして引き継ぐ
+        if defaults.data(forKey: Keys.homeLayout) == nil, defaults.object(forKey: Keys.homeShowsSpeed) as? Bool == false {
+            layout.hidden.insert(.speed)
+        }
+        homeLayout = layout
+        quakeMinimumScale = defaults.object(forKey: Keys.quakeMinimumScale) as? Int ?? 30
+        pressureAlertDrop = defaults.object(forKey: Keys.pressureAlertDrop) as? Double ?? 4
+        backgroundPressureEnabled = defaults.bool(forKey: Keys.backgroundPressureEnabled)
         yearEndHolidayTimetable = defaults.object(forKey: Keys.yearEndHolidayTimetable) as? Bool ?? true
         timetableOverrideDayKey = defaults.string(forKey: Keys.timetableOverrideDayKey)
         timetableOverrideType = defaults.string(forKey: Keys.timetableOverrideType).flatMap(DayType.init(rawValue:))
@@ -158,6 +179,10 @@ final class AppSettings {
         static let cellularLimitEnabled = "usage.cellularLimitEnabled"
         static let sensorsKeepAwake = "sensors.keepAwake"
         static let homeShowsSpeed = "home.showsSpeed"
+        static let homeLayout = "home.layout"
+        static let quakeMinimumScale = "quake.minimumScale"
+        static let pressureAlertDrop = "pressure.alertDrop"
+        static let backgroundPressureEnabled = "pressure.backgroundEnabled"
         static let yearEndHolidayTimetable = "train.yearEndHolidayTimetable"
         static let timetableOverrideDayKey = "train.timetableOverrideDayKey"
         static let timetableOverrideType = "train.timetableOverrideType"

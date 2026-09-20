@@ -25,6 +25,7 @@ enum UsageCategory: String, Codable, CaseIterable, Sendable {
     case train
     case radar
     case mapTiles
+    case alerts
     case other
     /// 機能別の記録を始める前の記録
     case legacy
@@ -36,9 +37,18 @@ enum UsageCategory: String, Codable, CaseIterable, Sendable {
         case .train: return "電車"
         case .radar: return "レーダー・雨の要約"
         case .mapTiles: return "地図タイル(地理院)"
+        case .alerts: return "警報・地震"
         case .other: return "その他"
         case .legacy: return "以前の記録"
         }
+    }
+
+    /// 気象庁は、レーダー(ナウキャスト)と警報でホストが同じなので、パスでも分ける
+    static func from(url: URL?) -> UsageCategory {
+        let host = url?.host?.lowercased() ?? ""
+        if host.hasSuffix("p2pquake.net") { return .alerts }
+        if host.hasSuffix("jma.go.jp"), url?.path.contains("/bosai/warning/") == true { return .alerts }
+        return from(host: url?.host)
     }
 
     static func from(host: String?) -> UsageCategory {

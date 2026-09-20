@@ -59,14 +59,17 @@ struct SettingsView: View {
                     }
                 }
 
+                Group {
+                AlertSettingsSections()
                 Section {
                     Toggle("センサー画面の表示中は画面を消さない", isOn: $settings.sensorsKeepAwake)
-                    Toggle("ホームで速度を表示する", isOn: $settings.homeShowsSpeed)
                 } header: {
                     Text("センサー")
                 } footer: {
-                    Text("速度は高精度のGPSを使うため、表示中は電池を多く使います。画面を離れると測位を止めます。ホームは開いている時間が長くなりやすいので、気になる場合はオフにしてください。")
+                    Text("速度は高精度のGPSを使うため、表示中は電池を多く使います。画面を離れると測位を止めます。ホームの速度のカードは、ホームの「編集」で非表示にできます(非表示の間はGPSを動かしません)。")
                 }
+                }
+
 
                 Section {
                     Toggle("年末年始(12/30〜1/3)は休日ダイヤ", isOn: $settings.yearEndHolidayTimetable)
@@ -271,5 +274,63 @@ struct TrainInfoCaptureView: View {
         .navigationTitle("直近のレスポンス")
         .navigationBarTitleDisplayMode(.inline)
         .task { await env.trains.loadIfNeeded() }
+    }
+}
+
+/// 地震・気圧の設定と、バックグラウンドでの気圧の記録
+struct AlertSettingsSections: View {
+    @Environment(AppEnvironment.self) private var env
+    @State private var confirmBackgroundPressure = false
+
+    var body: some View {
+        @Bindable var settings = env.settings
+        Section {
+            Picker("ホームに出す地震", selection: $settings.quakeMinimumScale) {
+                ForEach(SeismicScale.choices, id: \.self) { scale in
+                    Text("震度\(SeismicScale.label(scale))以上").tag(scale)
+                }
+            }
+            Stepper(value: $settings.pressureAlertDrop, in: 1...10, step: 0.5) {
+                Text("気圧の低下を目立たせる：3時間で−\(String(format: "%.1f", settings.pressureAlertDrop))hPa以上")
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } header: {
+            Text("地震・気圧")
+        }
+
+        Section {
+            Toggle("バックグラウンドで気圧を記録", isOn: Binding(
+                get: { settings.backgroundPressureEnabled },
+                set: { isOn in
+                    if isOn { confirmBackgroundPressure = true } else {
+                        settings.backgroundPressureEnabled = false
+                        env.keeper.evaluate()
+                    }
+                }))
+            if settings.backgroundPressureEnabled {
+                LabeledContent("状態", value: env.keeper.statusText)
+                switch env.keeper.lastCheck {
+                case .recorded:
+                    Text("前回アプリを閉じていた間も、記録が続いていました。").font(.footnote).foregroundStyle(.secondary)
+                case .notRecorded:
+                    Text("この環境ではバックグラウンドで記録できないようです").font(.footnote).foregroundStyle(.orange)
+                default:
+                    Text("アプリを15分以上閉じてから開き直すと、その間も記録できていたかを判定します。").font(.footnote).foregroundStyle(.secondary)
+                }
+            }
+        } header: {
+            Text("気圧の記録")
+        } footer: {
+            Text("無音のオーディオを再生してアプリを動かしたままにし、閉じている間も5分に1回気圧を記録します。ほかのアプリの音は止めません。電池残量が20%未満のときと、低電力モードのときは自動で止まります。")
+        }
+        .confirmationDialog("バックグラウンドで気圧を記録しますか", isPresented: $confirmBackgroundPressure, titleVisibility: .visible) {
+            Button("オンにする") {
+                settings.backgroundPressureEnabled = true
+                env.keeper.evaluate()
+            }
+            Button("キャンセル", role: .cancel) {}
+        } message: {
+            Text("アプリを閉じている間も動き続けるため、電池の消費が増えます。")
+        }
     }
 }

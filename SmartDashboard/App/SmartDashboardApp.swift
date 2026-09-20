@@ -14,8 +14,10 @@ struct SmartDashboardApp: App {
                     guard phase == .active else {
                         // フォアグラウンドを離れたら地図の保存を止める
                         env.tiles.evaluate(isForeground: false)
+                        if phase == .background { env.didEnterBackground() }
                         return
                     }
+                    env.didBecomeActive()
                     Task { await env.refreshStaleData() }
                 }
                 .onChange(of: env.network.status) { _, _ in
