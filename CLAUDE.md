@@ -29,12 +29,12 @@ iOS向けの個人用「手元ダッシュボード」アプリ。SwiftUI製。A
 
 - ウィジェット、Live Activity、App Extension、プッシュ通知(APNs)、バックグラウンド更新は使わない
 - 例外として、気圧の記録のためのオプション(初期値オフ)でだけ、UIBackgroundModes の audio を使う。LiveContainer ではアプリの Info.plist が効かない可能性があるので、実際に記録が続いたかを記録の時刻から判定して表示する
-- 位置・モーション・マイクなどの権限が取れなくてもクラッシュさせず、「利用不可」と表示し、他の機能は使えるようにする
-- Info.plistに NSLocationWhenInUseUsageDescription、NSMotionUsageDescription、NSMicrophoneUsageDescription を入れておく
+- 位置・モーション・マイク・カメラなどの権限が取れなくてもクラッシュさせず、「利用不可」と表示し、他の機能は使えるようにする
+- Info.plistに NSLocationWhenInUseUsageDescription、NSMotionUsageDescription、NSMicrophoneUsageDescription、NSCameraUsageDescription を入れておく
 
 ## 画面構成(TabView)
 
-ホーム(まとめ) / 天気(Open-Meteo) / 為替(open.er-api.com、JPY基準、1日1回) / 電車(ODPT API v4) / センサー(すべて通信なし、表示中のみ動作) / タイマー / 設定
+ホーム(まとめ) / 天気(Open-Meteo) / 為替(open.er-api.com、JPY基準、1日1回) / 電車(ODPT API v4) / センサー(すべて通信なし、表示中のみ動作) / タイマー / 設定 / ウェイポイント(通信なし)。タブが6つ以上あるので、後ろのタブはiOSの「その他」の中に入る
 
 詳細:
 - 天気: current / minutely_15 / hourly / daily は使う変数だけを指定し、リクエストは1回(15分値は2時間分、1時間値は24時間分、日別は7日分で日の出・日の入り・UV指数を含む)。位置は現在地(100m程度の精度で1回だけ取得して止める)か登録地点。天気コードはSF Symbolsと日本語ラベルに変換
@@ -113,6 +113,18 @@ iOS向けの個人用「手元ダッシュボード」アプリ。SwiftUI製。A
   - 歩数: CMPedometer.startUpdates(from: 今日の0時)で継続的に受け取る(最初の値だけは queryPedometerData で補う)。ペースと歩調も表示する。更新は数秒おきにまとめて届く旨を注記する
   - CLLocationManager のデリゲートはメインスレッドで呼ばれるので `MainActor.assumeIsolated` で同期的に状態を更新する。CMPedometer のコールバックは任意のスレッドなので、Sendable な値に詰め替えてから `Task { @MainActor in }` で更新する
   - センサー画面の表示中は画面を消さない(設定でオフにできる)。画面を消さない指定は `ScreenAwake` で理由ごとに管理し、タイマーと打ち消し合わないようにする。ホームの速度のカードは、ホームの「編集」で非表示にできる(高精度のGPSは電池を多く使うため)
+- ウェイポイント(登録した地点の方向をカメラ越しに確認する。通信はしない。軽さの基準は iPhone SE 第2世代)
+  - 地点(`Waypoint`: 名前、色、メモ、緯度経度、ピン留め)は `WaypointStore` が Application Support の waypoints.json に保存する。登録は、現在地(1回だけの測位)、地図の長押し(既存の `MapContainerView` の onLongPress)、緯度経度の入力(`WaypointCoordinateParser`。「35.68, 139.76」の形、かっこ・全角・空白区切りも可)。削除は各行のゴミ箱ボタンと確認ダイアログ
+  - 一覧とホームのカードの距離・方角は、最後に分かった現在地(`WaypointStore.origin`)から計算する。一覧を開いたときに1回だけ測位し、ホームでは測位しない
+  - カメラ越しの表示は ARKit を使わない。CMMotionManager の deviceMotion(参照フレーム .xTrueNorthZVertical、30fps)の回転行列から、画面の右・画面の上・背面カメラの向きを基準の座標系(x=北、y=西、z=上)で求め(`CameraAttitude`。行列の各行が端末の各軸、カメラは −Z)、地点の方向(仰角0度)をカメラの座標に直して画面上の位置にする(`WaypointProjection.point`)。端末の傾きと回転もそのまま反映される。カメラの後ろと、画面の外の地点は描かない(端の矢印も出さない)
+  - 写る範囲は AVCaptureDevice の activeFormat.videoFieldOfView(映像の長辺の画角)と、映像と画面の縦横比から求める(`WaypointProjection.tangents`、映像は aspectFill)。縦向きだけに対応し、横向きでは案内を出す。映像は 1280x720
+  - センサーの値は、向きのベクトルのまま軽く平滑化する(重み0.25。角度で混ぜないので 0度/360度 の境目の問題がない)
+  - 印は、一定の大きさのリング(直径44pt、黒い線+細い白い縁)と、地点の色の内側の円。内側の円の大きさは距離の対数で決め、10m以下で95%、15km以上で10%(`WaypointMarkStyle.innerFraction` の1か所で調整する)。距離の上限はない。印の下に名前と距離。1枚の Canvas に、遠い地点から描く(近い地点が手前)
+  - 表示する地点は「すべて/選んだ1つ」で切り替える。向いている方角(例: 北東 45°)の表示は初期値オフ(設定 `waypointShowsHeading`、画面のメニューからも切り替えられる)
+  - カメラの許可がない、またはカメラが使えない環境では、コンパス表示(方位の目盛りと地点の方向の矢印、「右へ◯°」)に自動で切り替える。コンパス表示の方位は CLHeading の trueHeading(端末を水平に持っても使える)。カメラ表示からも切り替えられる
+  - 方位の精度(CLHeading.headingAccuracy)と位置の精度を画面の下に表示し、±20°より悪いときは「iPhoneを8の字に動かすと方位の精度が上がります」と案内する
+  - カメラ・GPS・モーションは、カメラ表示とコンパス表示の画面を表示している間だけ動かし(`WaypointTracker`、`CameraController`)、画面を離れたときとバックグラウンドでは止める。表示中は画面を消さない(`ScreenAwake`)
+  - ホームのカード(初期値は非表示。`HomeLayout.defaultHidden`): ピン留めした地点(なければ一番近い地点)の名前・方角・距離。タップでコンパス表示を開く
 - 開発者向け: 運行情報の直近の応答(生のJSON)を1件だけ保存し、設定画面で表示・コピーできる(遅延時のサンプル収集用。追加の通信はしない)
 - 設定: APIトークン、登録した地点・路線・駅・通貨ペア、地図(表示の切り替え、保存エリア、最大ズーム、容量の上限、進捗、削除、再ダウンロード)、自動更新ポリシー、受信バイト数、キャッシュ削除、各データの最終更新時刻
 
