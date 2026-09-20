@@ -45,15 +45,18 @@ struct PressureChart: View {
         .chartXAxis(isCompact ? .hidden : .automatic)
         .chartYAxis(isCompact ? .hidden : .automatic)
         .chartOverlay { proxy in
+            // ホームの小さなグラフではタップを受けない(カード全体のタップで詳細画面を開くため)
+            if !isCompact {
             GeometryReader { geometry in
                 Rectangle()
                     .fill(Color.clear)
                     .contentShape(Rectangle())
                     .onTapGesture { location in
-                        guard !isCompact, let frame = proxy.plotFrame else { return }
+                        guard let frame = proxy.plotFrame else { return }
                         let x = location.x - geometry[frame].origin.x
                         if let time = proxy.value(atX: x, as: Date.self) { selected = series.nearest(to: time) }
                     }
+            }
             }
         }
     }
@@ -111,6 +114,15 @@ struct PressureHomeCard: View {
     @Environment(AppEnvironment.self) private var env
 
     var body: some View {
+        NavigationLink {
+            PressureDetailView()
+        } label: {
+            card
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var card: some View {
         TimelineView(.periodic(from: .now, by: 60)) { context in
             let now = context.date
             let forecast = env.pressureForecast
@@ -127,6 +139,7 @@ struct PressureHomeCard: View {
                             .foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 8)
+                    Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
                 }
                 if series.points.count > 1 {
                     PressureChart(series: series, now: now, height: 70, isCompact: true)
@@ -174,10 +187,15 @@ struct PressureSection: View {
                     BackgroundRecordingStatus()
                 }
             }
+            NavigationLink {
+                PressureDetailView()
+            } label: {
+                Label("詳細(過去約90日〜7日先)", systemImage: "chart.xyaxis.line")
+            }
         } header: {
             Text("気圧の変化(過去24時間〜今後24時間)")
         } footer: {
-            Text("気圧計で実測した時間帯は実測、それ以外(アプリを閉じていた間と未来)は予報(Open-Meteo)です。実測は、アプリを開いている間に5分に1回記録し、48時間分を保存します。")
+            Text("気圧計で実測した時間帯は実測、それ以外(アプリを閉じていた間と未来)は予報(Open-Meteo)です。実測は、アプリを開いている間に5分に1回記録し、100日分を保存します。")
         }
     }
 }
