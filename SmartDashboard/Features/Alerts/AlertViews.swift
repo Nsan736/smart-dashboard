@@ -158,26 +158,23 @@ struct QuakeRow: View {
                     .font(.headline)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)
-                Text(QuakeText.scale(quake.maxScale))
-                    .font(.subheadline.weight(.bold))
-                    .foregroundStyle(Self.color(quake.maxScale ?? 0))
+                QuakeScaleBadge(scale: quake.maxScale, prefix: "最大震度")
             }
-            Text("\(QuakeText.timeFormatter.string(from: quake.time))・\(QuakeList.magnitudeText(quake.magnitude))")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
+            HStack(spacing: 6) {
+                Text("\(QuakeText.timeFormatter.string(from: quake.time))・\(QuakeList.magnitudeText(quake.magnitude))")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                if quake.wasRevised == true {
+                    Text("更新あり").font(.caption2.weight(.semibold)).foregroundStyle(.orange)
+                }
+            }
             if let prefecture, let scale = quake.scale(inPrefecture: prefecture) {
                 Text("\(prefecture)：震度\(SeismicScale.label(scale))")
                     .font(.footnote.weight(.semibold))
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private static func color(_ scale: Int) -> Color {
-        if scale >= 45 { return .red }
-        if scale >= 30 { return .orange }
-        return .primary
     }
 }
 
@@ -196,7 +193,17 @@ struct QuakeHomeCard: View {
                             .foregroundStyle(.secondary)
                     } else {
                         VStack(alignment: .leading, spacing: 8) {
-                            ForEach(recent.prefix(3)) { QuakeRow(quake: $0, prefecture: env.currentPrefecture) }
+                            ForEach(recent.prefix(3)) { quake in
+                                NavigationLink {
+                                    QuakeDetailView(quakeTime: quake.time)
+                                } label: {
+                                    HStack(spacing: 4) {
+                                        QuakeRow(quake: quake, prefecture: env.currentPrefecture)
+                                        Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                            }
                         }
                     }
                 }
@@ -218,7 +225,13 @@ struct QuakeSection: View {
             if store.latest.isEmpty, store.errorMessage == nil {
                 Text(store.isLoading ? "取得中…" : "未取得です").foregroundStyle(.secondary)
             }
-            ForEach(store.latest) { QuakeRow(quake: $0, prefecture: env.currentPrefecture) }
+            ForEach(store.latest) { quake in
+                NavigationLink {
+                    QuakeDetailView(quakeTime: quake.time)
+                } label: {
+                    QuakeRow(quake: quake, prefecture: env.currentPrefecture)
+                }
+            }
             DataStatusView(fetchedAt: store.cached?.fetchedAt, note: store.autoRefreshNote, error: store.errorMessage)
         } header: {
             Text("最近の地震")
