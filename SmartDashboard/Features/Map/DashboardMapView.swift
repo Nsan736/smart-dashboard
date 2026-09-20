@@ -106,6 +106,11 @@ struct DashboardMapView: UIViewRepresentable {
     var onLongPress: ((CLLocationCoordinate2D) -> Void)?
     /// 表示範囲が変わったとき(範囲、ズーム)
     var onRegionChange: ((GeoBounds, Int) -> Void)?
+    /// 現在地への追従(経路の案内用)。trackingKey が変わったら、追従をかけ直す(「現在地に戻る」)。
+    var tracking: MapTracking = .none
+    var trackingKey = 0
+    /// 指で地図を動かして、追従が外れたとき
+    var onTrackingLost: (() -> Void)?
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -140,6 +145,8 @@ struct DashboardMapView: UIViewRepresentable {
         coordinator.onSelectLine = onSelectLine
         coordinator.onSelectMarker = onSelectMarker
         coordinator.onLongPress = onLongPress
+        coordinator.onTrackingLost = onTrackingLost
+        coordinator.applyTracking(tracking, key: trackingKey, on: map)
         map.isScrollEnabled = isInteractive
         map.isZoomEnabled = isInteractive
         map.showsUserLocation = showsUserLocation
@@ -367,6 +374,54 @@ struct DashboardMapView: UIViewRepresentable {
             blinkTimer = nil
         }
 
+        // MARK: 現在地への追従
+
+        var onTrackingLost: (() -> Void)?
+        private var tracking: MapTracking = .none
+        private var trackingKey = 0
+        /// 追従の設定を自分で変えている間は、「外れた」と知らせない
+        private var isApplyingTracking = false
+
+        /// 一度でも追従を使った地図(経路の案内)では、現在地を矢印で表示する
+        private(set) var showsDirectionArrow = false
+
+        func applyTracking(_ new: MapTracking, key: Int, on map: MKMapView) {
+            guard new != tracking || key != trackingKey else { return }
+            tracking = new
+            trackingKey = key
+            if new != .none { showsDirectionArrow = true }
+            isApplyingTracking = true
+            map.isRotateEnabled = new == .followHeading
+            switch new {
+            case .none: map.setUserTrackingMode(.none, animated: false)
+            // 進行方向を上にする表示から戻すと、MapKit が北を上に戻す
+            case .follow: map.setUserTrackingMode(.follow, animated: true)
+            case .followHeading: map.setUserTrackingMode(.followWithHeading, animated: true)
+            }
+            isApplyingTracking = false
+        }
+
+        func mapView(_ mapView: MKMapView, didChange mode: MKUserTrackingMode, animated: Bool) {
+            // 指で地図を動かすと、MapKit が追従を外す
+            if mode == .none, tracking != .none, !isApplyingTracking {
+                tracking = .none
+                onTrackingLost?()
+            }
+        }
+
+        func mapView(_ mapView: MKMapView, didUpdate userLocation: MKUserLocation) {
+            rotateDirectionArrow(on: mapView)
+        }
+
+        /// 現在地の矢印を、進行方向(なければ端末の向き)に向ける。地図が回転していれば、その分を引く。
+        func rotateDirectionArrow(on map: MKMapView) {
+            guard let view = map.view(for: map.userLocation) as? DirectionArrowView else { return }
+            let course = map.userLocation.location?.course ?? -1
+            let heading = map.userLocation.heading?.trueHeading ?? -1
+            guard let direction = MapDirection.arrowRotation(course: course, heading: heading, cameraHeading: map.camera.heading) else { return }
+            view.setRotation(degrees: direction)
+        }
+
         // MARK: 観測点ごとの震度
 
         private var intensitySignature = ""
@@ -397,6 +452,14 @@ struct DashboardMapView: UIViewRepresentable {
         }
 
         func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
+            if annotation is MKUserLocation {
+                // 経路の案内では、現在地を進行方向の分かる矢印で表示する。それ以外は標準の青い点。
+                guard showsDirectionArrow else { return nil }
+                let view = (mapView.dequeueReusableAnnotationView(withIdentifier: DirectionArrowView.reuseID) as? DirectionArrowView)
+                    ?? DirectionArrowView(annotation: annotation, reuseIdentifier: DirectionArrowView.reuseID)
+                view.annotation = annotation
+                return view
+            }
             if let train = annotation as? TrainAnnotation {
                 let view = (mapView.dequeueReusableAnnotationView(withIdentifier: TrainAnnotationView.reuseID) as? TrainAnnotationView)
                     ?? TrainAnnotationView(annotation: train, reuseIdentifier: TrainAnnotationView.reuseID)
@@ -430,6 +493,9 @@ struct DashboardMapView: UIViewRepresentable {
             case .dot:
                 view.glyphImage = UIImage(systemName: "circle.fill")
                 view.markerTintColor = .systemBlue
+            case .turn:
+                view.glyphImage = UIImage(systemName: "arrow.triangle.turn.up.right.diamond.fill")
+                view.markerTintColor = .systemYellow
             }
             view.titleVisibility = .visible
             view.displayPriority = .required
@@ -558,6 +624,7 @@ struct DashboardMapView: UIViewRepresentable {
                 refreshStationNames(on: mapView)
             }
             onRegionChange?(bounds, zoom)
+            rotateDirectionArrow(on: mapView)
         }
     }
 }
@@ -583,6 +650,9 @@ struct MapContainerView: View {
     var onSelectTrain: ((String) -> Void)?
     var recenterKey = 0
     var onLongPress: ((CLLocationCoordinate2D) -> Void)?
+    var tracking: MapTracking = .none
+    var trackingKey = 0
+    var onTrackingLost: (() -> Void)?
 
     static let gsiURL = URL(string: "https://maps.gsi.go.jp/development/ichiran.html")!
 
@@ -614,7 +684,10 @@ struct MapContainerView: View {
                 // Wi-Fi接続中に Apple Maps で見た範囲を保存する
                 guard mode == .apple, isInteractive else { return }
                 env.tiles.enqueueViewedRegion(bounds: bounds, zoom: zoom)
-            }
+            },
+            tracking: tracking,
+            trackingKey: trackingKey,
+            onTrackingLost: onTrackingLost
         )
         .overlay(alignment: .topLeading) {
             Text(mode.label)

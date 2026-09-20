@@ -14,9 +14,11 @@ struct MapLine {
     /// 選ばれていない路線。薄く細く描く。
     var isDimmed = false
 
-    /// 描き直しが必要かどうかの判定に使う
+    /// 描き直しが必要かどうかの判定に使う(端の点も見る。経路の案内では、点の数が同じまま端だけが動く)
     var signature: String {
-        "\(id)|\(coordinates.count)|\(color.description)|\(casingColor?.description ?? "-")|\(isEmphasized)|\(isDimmed)"
+        let first = coordinates.first.map { "\($0.latitude),\($0.longitude)" } ?? "-"
+        let last = coordinates.last.map { "\($0.latitude),\($0.longitude)" } ?? "-"
+        return "\(id)|\(coordinates.count)|\(first)|\(last)|\(color.description)|\(casingColor?.description ?? "-")|\(isEmphasized)|\(isDimmed)"
     }
 }
 
@@ -30,6 +32,17 @@ enum MapMarkerStyle: String {
     case epicenter
     /// 現在地など(青い点)
     case dot
+    /// 経路の次の曲がり角(黄色)
+    case turn
+}
+
+/// 地図を現在地に追従させるか
+enum MapTracking: Equatable {
+    case none
+    /// 現在地を中心に保つ(北が上)
+    case follow
+    /// 現在地を中心に保ち、進行方向を上にして回転する
+    case followHeading
 }
 
 /// 地図に立てるピン(駅など)
