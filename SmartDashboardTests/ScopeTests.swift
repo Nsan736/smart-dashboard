@@ -161,6 +161,69 @@ final class ScopeTests: XCTestCase {
         XCTAssertTrue(RouteStore.canRefetch(lastFetchedAt: now.addingTimeInterval(-20), now: now))
     }
 
+    func testRouteLineIsSplitAtCurrentPosition() throws {
+        let path = plan().points
+        // 最初の辺(北へ200m)の途中、120m地点の少し東にいるとき
+        let progress = try XCTUnwrap(RouteProgress.make(path: path, latitude: north(120), longitude: east(8)))
+        // 通り過ぎた部分: 出発点 → 線上の120m地点。これからの部分: そこ → 曲がり角 → 目的地
+        XCTAssertEqual(progress.passed.count, 2)
+        XCTAssertEqual(progress.remaining.count, 3)
+        XCTAssertEqual(progress.passed.first, path.first)
+        XCTAssertEqual(progress.remaining.last, path.last)
+        XCTAssertEqual(progress.passed.last, progress.remaining.first)
+        // 分ける点は、経路の線の上(東にずれた分は無視して、線に垂直に下ろした点)
+        XCTAssertEqual(progress.passed.last?.longitude ?? 0, 139.0, accuracy: 1e-9)
+        XCTAssertEqual(RouteProgress.length(of: progress.passed), 120, accuracy: 0.5)
+        XCTAssertEqual(progress.remainingDistance, 280, accuracy: 0.5)
+        // 2本目の辺(東へ)に入ったあと
+        let later = try XCTUnwrap(RouteProgress.make(path: path, latitude: north(205), longitude: east(150)))
+        XCTAssertEqual(later.passed.count, 3)
+        XCTAssertEqual(later.remaining.count, 2)
+        XCTAssertEqual(later.remainingDistance, 50, accuracy: 0.5)
+        // 出発点より手前・目的地より先にいても、線の端で止まる
+        XCTAssertEqual(try XCTUnwrap(RouteProgress.make(path: path, latitude: north(-30), longitude: 139.0)).remainingDistance, 400, accuracy: 0.5)
+        XCTAssertEqual(try XCTUnwrap(RouteProgress.make(path: path, latitude: north(200), longitude: east(260))).remainingDistance, 0, accuracy: 0.5)
+        XCTAssertNil(RouteProgress.make(path: [path[0]], latitude: 35, longitude: 139))
+    }
+
+    func testRemainingDistanceTimeAndArrival() {
+        let now = Date(timeIntervalSince1970: 1_790_000_000)
+        var navigator = RouteNavigator(plan: plan())
+        // 現在地が分かる前は、経路の全体(400m、5分)
+        XCTAssertEqual(navigator.remaining(now: now), RouteRemaining(distance: 400, time: 300, arrival: now.addingTimeInterval(300)))
+        // 120m進んだら、残り280m。時間は距離の割合で案分する(300秒 × 280/400 = 210秒)
+        navigator.update(latitude: north(120), longitude: 139.0)
+        let remaining = navigator.remaining(now: now)
+        XCTAssertEqual(remaining.distance, 280, accuracy: 0.5)
+        XCTAssertEqual(remaining.time, 210, accuracy: 0.5)
+        XCTAssertEqual(remaining.arrival.timeIntervalSince(now), 210, accuracy: 0.5)
+        XCTAssertTrue(remaining.arrivalText.hasSuffix("着"))
+        // 地図に描く線: 通り過ぎた部分と、これからの部分
+        let paths = RouteMapContent.paths(navigator)
+        XCTAssertEqual(paths.passed.count, 2)
+        XCTAssertEqual(paths.remaining.count, 3)
+        XCTAssertEqual(RouteMapContent.paths(RouteNavigator(plan: plan())).passed.count, 0)
+        // 上部の案内: 次の曲がり角と、その次
+        XCTAssertEqual(navigator.nextTurn?.id, 1)
+        XCTAssertEqual(RouteMapContent.afterNextText(navigator), "その次：目的地は右側です")
+        navigator.update(latitude: north(195), longitude: 139.0)
+        XCTAssertNil(RouteMapContent.afterNextText(navigator))
+        // 距離が0の経路でも、割り算で落ちない
+        var empty = plan()
+        empty.distance = 0
+        XCTAssertEqual(RouteRemaining.make(plan: empty, remainingDistance: 0, now: now).time, 0)
+    }
+
+    func testDirectionArrowRotation() {
+        // 進行方向(course)が分かればそれを使う。地図が回転していれば、その分を引く
+        XCTAssertEqual(MapDirection.arrowRotation(course: 90, heading: 10, cameraHeading: 0), 90)
+        XCTAssertEqual(MapDirection.arrowRotation(course: 90, heading: 10, cameraHeading: 90), 0)
+        XCTAssertEqual(MapDirection.arrowRotation(course: 10, heading: -1, cameraHeading: 30), 340)
+        // 止まっていて進行方向が無効なら、端末の向き。どちらも無効なら回さない
+        XCTAssertEqual(MapDirection.arrowRotation(course: -1, heading: 45, cameraHeading: 0), 45)
+        XCTAssertNil(MapDirection.arrowRotation(course: -1, heading: -1, cameraHeading: 0))
+    }
+
     func testRouteMarksOrderFarToNear() {
         let marks = [ScopeMark(id: "destination", name: "目的地", latitude: north(200), longitude: east(200), color: .red),
                      ScopeMark(id: "turn", name: "次の曲がり角", latitude: north(200), longitude: 139.0, color: .yellow)]
