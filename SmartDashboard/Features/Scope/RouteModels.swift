@@ -80,6 +80,78 @@ enum RouteGeometry {
     }
 }
 
+/// 経路の上での進み具合。地図で、通り過ぎた部分を薄く、これからの部分を濃く描くのに使う。
+struct RouteProgress: Equatable {
+    /// 通り過ぎた部分の線(出発点 → 現在地に一番近い線上の点)
+    var passed: [RoutePoint]
+    /// これからの部分の線(現在地に一番近い線上の点 → 目的地)
+    var remaining: [RoutePoint]
+    /// これからの部分の長さ(m)
+    var remainingDistance: Double
+
+    /// 現在地に一番近い線上の点で、経路の線を2つに分ける。線が2点未満なら nil。
+    static func make(path: [RoutePoint], latitude: Double, longitude: Double) -> RouteProgress? {
+        guard path.count > 1 else { return nil }
+        let location = RoutePoint(latitude: latitude, longitude: longitude)
+        var bestIndex = 0
+        var bestT = 0.0
+        var bestDistance = Double.infinity
+        for index in 1..<path.count {
+            let a = RouteGeometry.meters(path[index - 1], origin: location)
+            let b = RouteGeometry.meters(path[index], origin: location)
+            let dx = b.x - a.x
+            let dy = b.y - a.y
+            let lengthSquared = dx * dx + dy * dy
+            let t = lengthSquared > 0 ? max(0, min(1, (-a.x * dx - a.y * dy) / lengthSquared)) : 0
+            let px = a.x + t * dx
+            let py = a.y + t * dy
+            let distance = (px * px + py * py).squareRoot()
+            if distance < bestDistance {
+                bestDistance = distance
+                bestIndex = index
+                bestT = t
+            }
+        }
+        let a = path[bestIndex - 1]
+        let b = path[bestIndex]
+        let split = RoutePoint(latitude: a.latitude + (b.latitude - a.latitude) * bestT, longitude: a.longitude + (b.longitude - a.longitude) * bestT)
+        let passed = Array(path[0..<bestIndex]) + [split]
+        let remaining = [split] + Array(path[bestIndex...])
+        return RouteProgress(passed: passed, remaining: remaining, remainingDistance: length(of: remaining))
+    }
+
+    static func length(of path: [RoutePoint]) -> Double {
+        guard path.count > 1 else { return 0 }
+        return (1..<path.count).reduce(0.0) { total, index in
+            total + WaypointMath.distance(fromLatitude: path[index - 1].latitude, longitude: path[index - 1].longitude,
+                                          toLatitude: path[index].latitude, longitude: path[index].longitude)
+        }
+    }
+}
+
+/// 目的地までの残り(距離、時間、到着予定)
+struct RouteRemaining: Equatable {
+    var distance: Double
+    var time: TimeInterval
+    var arrival: Date
+
+    /// 残りの時間は、経路全体の所要時間を、残りの距離の割合で案分する
+    static func make(plan: RoutePlan, remainingDistance: Double, now: Date) -> RouteRemaining {
+        let ratio = plan.distance > 0 ? min(max(remainingDistance / plan.distance, 0), 1) : 0
+        let time = plan.expectedTravelTime * ratio
+        return RouteRemaining(distance: remainingDistance, time: time, arrival: now.addingTimeInterval(time))
+    }
+
+    static let arrivalFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "ja_JP")
+        formatter.dateFormat = "H:mm"
+        return formatter
+    }()
+
+    var arrivalText: String { Self.arrivalFormatter.string(from: arrival) + "着" }
+}
+
 /// 経路の案内の状態。現在地が変わるたびに update を呼ぶ(純粋なロジックで、測位や通信はしない)。
 struct RouteNavigator: Equatable {
     /// 曲がり角にこの距離まで近づいたら、次の曲がり角に切り替える(m)
@@ -96,6 +168,8 @@ struct RouteNavigator: Equatable {
     private(set) var hasArrived = false
     /// 次の曲がり角(なければ目的地)までの距離(m)
     private(set) var distanceToNext: Double?
+    /// 経路の上での進み具合(通り過ぎた部分と、これからの部分)
+    private(set) var progress: RouteProgress?
 
     init(plan: RoutePlan) {
         self.plan = plan
@@ -109,6 +183,16 @@ struct RouteNavigator: Equatable {
 
     var nextTurn: RouteTurn? {
         plan.turns.indices.contains(nextIndex) ? plan.turns[nextIndex] : nil
+    }
+
+    /// その次の曲がり角
+    var turnAfterNext: RouteTurn? {
+        plan.turns.indices.contains(nextIndex + 1) ? plan.turns[nextIndex + 1] : nil
+    }
+
+    /// 目的地までの残り。現在地がまだ分からなければ、経路の全体。
+    func remaining(now: Date) -> RouteRemaining {
+        RouteRemaining.make(plan: plan, remainingDistance: progress?.remainingDistance ?? plan.distance, now: now)
     }
 
     mutating func update(latitude: Double, longitude: Double) {
@@ -126,6 +210,7 @@ struct RouteNavigator: Equatable {
         } else {
             distanceToNext = toDestination
         }
+        progress = RouteProgress.make(path: plan.points, latitude: latitude, longitude: longitude)
         let offset = RouteGeometry.distanceToPath(from: RoutePoint(latitude: latitude, longitude: longitude), path: plan.points)
         isOffRoute = !hasArrived && (offset ?? 0) > Self.offRouteDistance
     }

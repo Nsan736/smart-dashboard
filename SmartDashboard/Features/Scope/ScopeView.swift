@@ -283,14 +283,10 @@ struct RouteView: View {
                     }
                     if route.plan != nil {
                         NavigationLink {
-                            ScopeSightView(mode: .camera, source: .route)
+                            RouteGuidanceView()
                         } label: {
-                            Label("カメラで案内", systemImage: "camera.viewfinder")
-                        }
-                        NavigationLink {
-                            ScopeSightView(mode: .compass, source: .route)
-                        } label: {
-                            Label("コンパスで案内", systemImage: "safari")
+                            Label("地図で案内を始める", systemImage: "location.north.line.fill")
+                                .font(.headline)
                         }
                     }
                     Button {
@@ -301,7 +297,7 @@ struct RouteView: View {
                     .disabled(isLocating || route.isLoading)
                     Button("案内をやめる", role: .destructive) { route.setDestination(nil) }
                 } footer: {
-                    Text("徒歩の経路です。取得は iOS の地図(MapKit)が行うため、このアプリでは受信量を計測できません。案内中(カメラ・コンパスの画面)だけ、高精度のGPSを使い、画面を消しません。")
+                    Text("徒歩の経路です。取得は iOS の地図(MapKit)が行うため、このアプリでは受信量を計測できません。案内中(地図の案内の画面と、そこから開くカメラ表示)だけ、高精度のGPSを使い、画面を消しません。")
                 }
                 if let plan = route.plan {
                     Section {
