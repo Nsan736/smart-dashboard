@@ -49,6 +49,7 @@ final class AppEnvironment {
     let quakes: QuakeStore
     let pressure: PressureRecorder
     let pressureHistory: PressureHistoryStore
+    let waypoints: WaypointStore
     let keeper: BackgroundKeeper
     @ObservationIgnored let cache: DiskCache
     @ObservationIgnored let http: HTTPClient
@@ -120,6 +121,7 @@ final class AppEnvironment {
                                                    settings: settings, network: network,
                                                    onFetched: { fetchLog.mark(.pressureHistory, at: $0) })
         self.pressureHistory = pressureHistory
+        waypoints = WaypointStore(fileURL: support.appendingPathComponent("waypoints.json"))
         let keeper = BackgroundKeeper(settings: settings)
         self.keeper = keeper
         keeper.onStateChange = { [weak recorder] state in

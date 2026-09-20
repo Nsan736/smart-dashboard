@@ -294,8 +294,9 @@ struct AlertSettingsSections: View {
                 Text("気圧の低下を目立たせる：3時間で−\(String(format: "%.1f", settings.pressureAlertDrop))hPa以上")
                     .fixedSize(horizontal: false, vertical: true)
             }
+            Toggle("ウェイポイントで、向いている方角を表示", isOn: $settings.waypointShowsHeading)
         } header: {
-            Text("地震・気圧")
+            Text("地震・気圧・ウェイポイント")
         }
 
         Section {

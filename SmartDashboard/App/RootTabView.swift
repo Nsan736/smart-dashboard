@@ -17,6 +17,9 @@ struct RootTabView: View {
                 .tabItem { Label("タイマー", systemImage: "timer") }
             SettingsView()
                 .tabItem { Label("設定", systemImage: "gearshape") }
+            // タブが6つ以上あるので、iOSの「その他」の中に入る
+            WaypointListView()
+                .tabItem { Label("ウェイポイント", systemImage: "mappin.and.ellipse") }
         }
         .background(KeyboardTapDismissInstaller())
     }

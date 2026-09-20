@@ -108,6 +108,10 @@ final class AppSettings {
     var pressureAlertDrop: Double {
         didSet { defaults.set(pressureAlertDrop, forKey: Keys.pressureAlertDrop) }
     }
+    /// ウェイポイント: 今向いている方角(例: 北東 45°)を表示する(初期値はオフ)
+    var waypointShowsHeading: Bool {
+        didSet { defaults.set(waypointShowsHeading, forKey: Keys.waypointShowsHeading) }
+    }
     /// 気圧: 無音のオーディオでアプリを起こしておき、バックグラウンドでも記録する(初期値はオフ)
     var backgroundPressureEnabled: Bool {
         didSet { defaults.set(backgroundPressureEnabled, forKey: Keys.backgroundPressureEnabled) }
@@ -140,6 +144,7 @@ final class AppSettings {
         quakeMinimumScale = defaults.object(forKey: Keys.quakeMinimumScale) as? Int ?? 30
         pressureAlertDrop = defaults.object(forKey: Keys.pressureAlertDrop) as? Double ?? 4
         backgroundPressureEnabled = defaults.bool(forKey: Keys.backgroundPressureEnabled)
+        waypointShowsHeading = defaults.bool(forKey: Keys.waypointShowsHeading)
         yearEndHolidayTimetable = defaults.object(forKey: Keys.yearEndHolidayTimetable) as? Bool ?? true
         timetableOverrideDayKey = defaults.string(forKey: Keys.timetableOverrideDayKey)
         timetableOverrideType = defaults.string(forKey: Keys.timetableOverrideType).flatMap(DayType.init(rawValue:))
@@ -183,6 +188,7 @@ final class AppSettings {
         static let quakeMinimumScale = "quake.minimumScale"
         static let pressureAlertDrop = "pressure.alertDrop"
         static let backgroundPressureEnabled = "pressure.backgroundEnabled"
+        static let waypointShowsHeading = "waypoint.showsHeading"
         static let yearEndHolidayTimetable = "train.yearEndHolidayTimetable"
         static let timetableOverrideDayKey = "train.timetableOverrideDayKey"
         static let timetableOverrideType = "train.timetableOverrideType"
