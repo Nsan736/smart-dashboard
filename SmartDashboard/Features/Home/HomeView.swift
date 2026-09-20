@@ -80,6 +80,7 @@ struct HomeView: View {
         case .warnings: WarningHomeCard()
         case .quakes: QuakeHomeCard()
         case .pressure: PressureHomeCard()
+        case .waypoint: WaypointHomeCard()
         }
     }
 

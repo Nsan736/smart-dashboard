@@ -13,6 +13,7 @@ enum HomeCardKind: String, Codable, CaseIterable, Identifiable {
     case warnings
     case quakes
     case pressure
+    case waypoint
 
     var id: String { rawValue }
 
@@ -29,6 +30,7 @@ enum HomeCardKind: String, Codable, CaseIterable, Identifiable {
         case .warnings: return "警報・注意報"
         case .quakes: return "地震"
         case .pressure: return "気圧"
+        case .waypoint: return "ウェイポイント"
         }
     }
 
@@ -45,6 +47,7 @@ enum HomeCardKind: String, Codable, CaseIterable, Identifiable {
         case .warnings: return "exclamationmark.triangle"
         case .quakes: return "waveform.path.ecg"
         case .pressure: return "barometer"
+        case .waypoint: return "mappin.and.ellipse"
         }
     }
 
@@ -54,6 +57,7 @@ enum HomeCardKind: String, Codable, CaseIterable, Identifiable {
         case .timer: return "動作中のタイマーがあるときだけ表示"
         case .nextTrain, .trainInfo: return "路線・駅を登録しているときだけ表示"
         case .speed: return "表示中は高精度のGPSを使います"
+        case .waypoint: return "一番近い地点か、ピン留めした地点を表示(測位はしません)"
         default: return nil
         }
     }
@@ -64,7 +68,10 @@ struct HomeLayout: Codable, Equatable {
     var order: [HomeCardKind]
     var hidden: Set<HomeCardKind>
 
-    static let initial = HomeLayout(order: HomeCardKind.allCases, hidden: [])
+    /// 初期状態で非表示のカード
+    static let defaultHidden: Set<HomeCardKind> = [.waypoint]
+
+    static let initial = HomeLayout(order: HomeCardKind.allCases, hidden: defaultHidden)
 
     var visible: [HomeCardKind] { order.filter { !hidden.contains($0) } }
 
@@ -75,8 +82,13 @@ struct HomeLayout: Codable, Equatable {
     func normalized() -> HomeLayout {
         var seen = Set<HomeCardKind>()
         var result = order.filter { seen.insert($0).inserted }
-        for kind in HomeCardKind.allCases where !seen.contains(kind) { result.append(kind) }
-        return HomeLayout(order: result, hidden: hidden)
+        var newHidden = hidden
+        for kind in HomeCardKind.allCases where !seen.contains(kind) {
+            result.append(kind)
+            // あとから増えたカードのうち、初期状態で非表示のものは、非表示で足す
+            if Self.defaultHidden.contains(kind) { newHidden.insert(kind) }
+        }
+        return HomeLayout(order: result, hidden: newHidden)
     }
 
     /// 保存データから復元する。知らない種類が混ざっていても、読めるものだけを使う。
