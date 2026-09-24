@@ -141,9 +141,10 @@ struct VirtualMover: Equatable {
             if along >= path.length { break }
             let target = nextStop < stops.count ? min(stops[nextStop].along, path.length) : path.length
             let time = (target - along) / speed
-            if time <= remaining {
+            // 36 / 3.6 のような割り算の誤差で、停車位置にわずかに届かないことがないようにする
+            if time <= remaining + 1e-6 {
                 along = target
-                remaining -= time
+                remaining = max(0, remaining - time)
                 if nextStop < stops.count, abs(stops[nextStop].along - target) < 0.001 {
                     dwellRemaining = stops[nextStop].dwell
                     nextStop += 1
