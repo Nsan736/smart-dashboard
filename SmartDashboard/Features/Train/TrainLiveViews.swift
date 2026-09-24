@@ -31,6 +31,7 @@ struct RailwayChoice: Identifiable, Equatable {
     let name: String
 }
 
+@MainActor
 enum TrainRailwayChoices {
     /// 選べる路線(運行情報の路線と、時刻表の駅がある路線)
     static func make(_ trains: TrainStore) -> [RailwayChoice] {
