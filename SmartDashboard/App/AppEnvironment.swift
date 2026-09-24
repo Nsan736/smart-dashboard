@@ -43,8 +43,10 @@ final class AppEnvironment {
     let radar: RadarStore
     let rain: RainNowcastStore
     let live: TrainLiveStore
-    /// 電車タブの表示の状態。地図と路線図で共有する。
+    /// 移動タブ(以前の電車タブ)の表示の状態。地図と路線図で共有する。
     let trainDisplay: TrainDisplayState
+    /// 移動の記録と、乗車中の判定
+    let movement: MovementStore
     let warnings: WarningStore
     let quakes: QuakeStore
     let pressure: PressureRecorder
@@ -105,11 +107,14 @@ final class AppEnvironment {
         trainDisplay = TrainDisplayState()
         let location = LocationProvider()
         self.location = location
-        live = TrainLiveStore(
+        let live = TrainLiveStore(
             api: ODPTClient(http: http, tokenProvider: { keychain.string(for: KeychainAccount.odptToken) }),
             storage: DiskCache(directory: support.appendingPathComponent("train-schedules", isDirectory: true)),
             settings: settings, network: network, trains: trainStore, location: location,
             onFetched: { fetchLog.mark(.trainDelay, at: $0) })
+        self.live = live
+        movement = MovementStore(directory: support.appendingPathComponent("movement", isDirectory: true),
+                                 settings: settings, trains: trainStore, live: live)
         let tiles = TileDownloader(store: TileStore(root: TileStore.defaultRoot()), http: http, settings: settings, network: network)
         self.tiles = tiles
         let radarLoader = RadarTileLoader(http: http, root: RadarTileLoader.defaultRoot())

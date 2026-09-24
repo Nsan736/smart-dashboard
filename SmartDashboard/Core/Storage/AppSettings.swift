@@ -129,6 +129,19 @@ final class AppSettings {
         didSet { defaults.set(backgroundPressureEnabled, forKey: Keys.backgroundPressureEnabled) }
     }
 
+    /// 移動: 乗車中の判定(初期値はオン)
+    var rideDetectionEnabled: Bool {
+        didSet { defaults.set(rideDetectionEnabled, forKey: Keys.rideDetectionEnabled) }
+    }
+    /// 移動: 記録の保存期間(初期値は今日だけ)
+    var movementRetention: MovementRetention {
+        didSet { defaults.set(movementRetention.rawValue, forKey: Keys.movementRetention) }
+    }
+    /// 開発者向け: 位置のデバッグ(初期値はオフ)
+    var movementDebugEnabled: Bool {
+        didSet { defaults.set(movementDebugEnabled, forKey: Keys.movementDebugEnabled) }
+    }
+
     static let defaultExchangeCodes = ["USD", "EUR", "GBP", "CNY", "KRW"]
 
     init(defaults: UserDefaults = .standard) {
@@ -164,6 +177,9 @@ final class AppSettings {
         timetableOverrideDayKey = defaults.string(forKey: Keys.timetableOverrideDayKey)
         timetableOverrideType = defaults.string(forKey: Keys.timetableOverrideType).flatMap(DayType.init(rawValue:))
         cellularLimitMB = defaults.object(forKey: Keys.cellularLimitMB) as? Int ?? 100
+        rideDetectionEnabled = defaults.object(forKey: Keys.rideDetectionEnabled) as? Bool ?? true
+        movementRetention = defaults.string(forKey: Keys.movementRetention).flatMap(MovementRetention.init(rawValue:)) ?? .today
+        movementDebugEnabled = defaults.bool(forKey: Keys.movementDebugEnabled)
     }
 
     var refreshPolicy: RefreshPolicy {
@@ -211,5 +227,8 @@ final class AppSettings {
         static let timetableOverrideDayKey = "train.timetableOverrideDayKey"
         static let timetableOverrideType = "train.timetableOverrideType"
         static let cellularLimitMB = "usage.cellularLimitMB"
+        static let rideDetectionEnabled = "movement.rideDetection"
+        static let movementRetention = "movement.retention"
+        static let movementDebugEnabled = "movement.debug"
     }
 }
