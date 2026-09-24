@@ -111,6 +111,12 @@ struct DashboardMapView: UIViewRepresentable {
     var trackingKey = 0
     /// 指で地図を動かして、追従が外れたとき
     var onTrackingLost: (() -> Void)?
+    /// 精度の円など
+    var circles: [MapCircle] = []
+    /// 地図の上で動く印(仮想の現在地など)
+    var movingMarks: [MapMovingMark] = []
+    /// 地図をタップした位置(位置のデバッグで点を置く)。指定すると、線のタップより優先する。
+    var onTapCoordinate: ((CLLocationCoordinate2D) -> Void)?
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -146,6 +152,7 @@ struct DashboardMapView: UIViewRepresentable {
         coordinator.onSelectMarker = onSelectMarker
         coordinator.onLongPress = onLongPress
         coordinator.onTrackingLost = onTrackingLost
+        coordinator.onTapCoordinate = onTapCoordinate
         coordinator.applyTracking(tracking, key: trackingKey, on: map)
         map.isScrollEnabled = isInteractive
         map.isZoomEnabled = isInteractive
@@ -192,6 +199,8 @@ struct DashboardMapView: UIViewRepresentable {
         coordinator.updateIntensityDots(intensityDots, on: map)
         coordinator.updateStationDots(stationDots, on: map)
         coordinator.updateTrains(trains, on: map)
+        coordinator.updateCircles(circles, on: map)
+        coordinator.updateMovingMarks(movingMarks, on: map)
         coordinator.recenterIfNeeded(key: recenterKey, on: map)
         coordinator.fitIfNeeded(key: fitKey, lines: lines.filter { fitLineIDs?.contains($0.id) ?? true }, markers: markers, on: map)
 
@@ -282,6 +291,62 @@ struct DashboardMapView: UIViewRepresentable {
             annotation.label = train.label
             annotation.isExpress = train.isExpress
             annotation.isDimmed = train.isDimmed
+        }
+
+        // MARK: 動く印と円
+
+        private var movingAnnotations: [String: MovingMarkAnnotation] = [:]
+        private var circleSignature = ""
+        var onTapCoordinate: ((CLLocationCoordinate2D) -> Void)?
+
+        func updateMovingMarks(_ marks: [MapMovingMark], on map: MKMapView) {
+            let ids = Set(marks.map(\.id))
+            let removed = movingAnnotations.filter { !ids.contains($0.key) }
+            if !removed.isEmpty {
+                map.removeAnnotations(Array(removed.values))
+                for key in removed.keys { movingAnnotations[key] = nil }
+            }
+            for mark in marks {
+                if let annotation = movingAnnotations[mark.id] {
+                    if annotation.coordinate.latitude != mark.coordinate.latitude || annotation.coordinate.longitude != mark.coordinate.longitude {
+                        UIView.animate(withDuration: 0.9, delay: 0, options: [.curveLinear, .allowUserInteraction]) {
+                            annotation.coordinate = mark.coordinate
+                        }
+                    }
+                    if annotation.appearance != mark.appearance {
+                        configure(annotation, with: mark)
+                        (map.view(for: annotation) as? MovingMarkView)?.apply(annotation)
+                    }
+                } else {
+                    let annotation = MovingMarkAnnotation()
+                    annotation.markID = mark.id
+                    annotation.coordinate = mark.coordinate
+                    configure(annotation, with: mark)
+                    movingAnnotations[mark.id] = annotation
+                    map.addAnnotation(annotation)
+                }
+            }
+        }
+
+        private func configure(_ annotation: MovingMarkAnnotation, with mark: MapMovingMark) {
+            annotation.appearance = mark.appearance
+            annotation.color = mark.color
+            annotation.diameter = mark.diameter
+            annotation.isHollow = mark.isHollow
+        }
+
+        func updateCircles(_ circles: [MapCircle], on map: MKMapView) {
+            let signature = circles.map(\.signature).joined(separator: ";")
+            guard signature != circleSignature else { return }
+            circleSignature = signature
+            map.removeOverlays(map.overlays.filter { $0 is MapCircleOverlay })
+            let overlays = circles.map { circle -> MapCircleOverlay in
+                let overlay = MapCircleOverlay(center: circle.center, radius: circle.radius)
+                overlay.circleID = circle.id
+                overlay.color = circle.color
+                return overlay
+            }
+            if !overlays.isEmpty { map.addOverlays(overlays, level: .aboveLabels) }
         }
 
         // MARK: 駅の点
@@ -460,6 +525,13 @@ struct DashboardMapView: UIViewRepresentable {
                 view.annotation = annotation
                 return view
             }
+            if let mark = annotation as? MovingMarkAnnotation {
+                let view = (mapView.dequeueReusableAnnotationView(withIdentifier: MovingMarkView.reuseID) as? MovingMarkView)
+                    ?? MovingMarkView(annotation: mark, reuseIdentifier: MovingMarkView.reuseID)
+                view.annotation = mark
+                view.apply(mark)
+                return view
+            }
             if let train = annotation as? TrainAnnotation {
                 let view = (mapView.dequeueReusableAnnotationView(withIdentifier: TrainAnnotationView.reuseID) as? TrainAnnotationView)
                     ?? TrainAnnotationView(annotation: train, reuseIdentifier: TrainAnnotationView.reuseID)
@@ -496,6 +568,14 @@ struct DashboardMapView: UIViewRepresentable {
             case .turn:
                 view.glyphImage = UIImage(systemName: "arrow.triangle.turn.up.right.diamond.fill")
                 view.markerTintColor = .systemYellow
+            case .debugPoint:
+                view.glyphImage = nil
+                view.glyphText = marker.title
+                view.markerTintColor = .systemPurple
+            case .debugSelected:
+                view.glyphImage = nil
+                view.glyphText = marker.title
+                view.markerTintColor = .systemPink
             }
             view.titleVisibility = .visible
             view.displayPriority = .required
@@ -549,8 +629,12 @@ struct DashboardMapView: UIViewRepresentable {
             // ピンのタップは didSelect で扱う
             var hit = map.hitTest(point, with: nil)
             while let view = hit {
-                if view is MKAnnotationView { return }
+                if view is MKAnnotationView, !(view is MovingMarkView) { return }
                 hit = view.superview
+            }
+            if let onTapCoordinate {
+                onTapCoordinate(map.convert(point, toCoordinateFrom: map))
+                return
             }
             var best: (id: String, distance: CGFloat)?
             for overlay in routeOverlays where !overlay.isCasing {
@@ -598,6 +682,13 @@ struct DashboardMapView: UIViewRepresentable {
                 renderer.lineJoin = .round
                 renderer.alpha = route.baseAlpha
                 routeRenderers[ObjectIdentifier(route)] = renderer
+                return renderer
+            }
+            if let circle = overlay as? MapCircleOverlay {
+                let renderer = MKCircleRenderer(circle: circle)
+                renderer.fillColor = circle.color.withAlphaComponent(0.15)
+                renderer.strokeColor = circle.color.withAlphaComponent(0.6)
+                renderer.lineWidth = 1
                 return renderer
             }
             if let dots = overlay as? IntensityDotsOverlay {
@@ -653,6 +744,9 @@ struct MapContainerView: View {
     var tracking: MapTracking = .none
     var trackingKey = 0
     var onTrackingLost: (() -> Void)?
+    var circles: [MapCircle] = []
+    var movingMarks: [MapMovingMark] = []
+    var onTapCoordinate: ((CLLocationCoordinate2D) -> Void)?
 
     static let gsiURL = URL(string: "https://maps.gsi.go.jp/development/ichiran.html")!
 
@@ -687,7 +781,10 @@ struct MapContainerView: View {
             },
             tracking: tracking,
             trackingKey: trackingKey,
-            onTrackingLost: onTrackingLost
+            onTrackingLost: onTrackingLost,
+            circles: circles,
+            movingMarks: movingMarks,
+            onTapCoordinate: onTapCoordinate
         )
         .overlay(alignment: .topLeading) {
             Text(mode.label)

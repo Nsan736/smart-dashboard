@@ -34,6 +34,10 @@ enum MapMarkerStyle: String {
     case dot
     /// 経路の次の曲がり角(黄色)
     case turn
+    /// 位置のデバッグで置いた点(番号を表示)
+    case debugPoint
+    /// 位置のデバッグで選んでいる点
+    case debugSelected
 }
 
 /// 地図を現在地に追従させるか
