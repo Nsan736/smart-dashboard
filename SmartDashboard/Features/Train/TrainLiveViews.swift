@@ -2,12 +2,21 @@ import CoreLocation
 import SwiftUI
 import UIKit
 
+/// 移動タブの中央の表示
 enum TrainViewMode: String, CaseIterable, Identifiable {
     case map
     case diagram
+    case record
 
     var id: String { rawValue }
-    var label: String { self == .map ? "地図" : "路線図" }
+
+    var label: String {
+        switch self {
+        case .map: return "地図"
+        case .diagram: return "路線図"
+        case .record: return "記録"
+        }
+    }
 }
 
 enum TrainLiveSelection: Equatable {
@@ -16,82 +25,15 @@ enum TrainLiveSelection: Equatable {
     case train(String)
 }
 
-/// 電車タブの上部。地図と路線図の切り替え、表示する電車の絞り込み、凡例、タップした対象の詳細。
-struct TrainLivePanel: View {
-    @Environment(AppEnvironment.self) private var env
-    @State private var selection: TrainLiveSelection?
-    @State private var directionNames: [String: String] = [:]
-    @State private var legendExpanded = false
-
-    var body: some View {
-        // 表示の状態(地図/路線図、絞り込み、選んだ路線)は、地図と路線図で1つを共有する。
-        // 切り替えの部品は、1秒ごとに描き直す TimelineView の外に置き、どちらの表示でも同じ位置で常に操作できるようにする。
-        @Bindable var display = env.trainDisplay
-        let railways = TrainLivePanel.railwayChoices(env.trains)
-        Picker("表示", selection: $display.mode) {
-            ForEach(TrainViewMode.allCases) { Text($0.label).tag($0) }
-        }
-        .pickerStyle(.segmented)
-        Picker("電車", selection: $display.filter) {
-            ForEach(TrainFilter.allCases) { Text($0.label).tag($0) }
-        }
-        .pickerStyle(.segmented)
-        if railways.count > 1 {
-            Picker("路線", selection: $display.selectedRailwayID) {
-                Text("すべての路線").tag(TrainRailwaySelection.all)
-                ForEach(railways) { Text($0.name).tag($0.id) }
-            }
-            .pickerStyle(.menu)
-        }
-
-        TimelineView(.periodic(from: .now, by: 1)) { context in
-            let board = TrainLiveBoard(env: env, now: context.date, filter: display.filter, directionNames: directionNames)
-            VStack(alignment: .leading, spacing: 8) {
-                switch display.mode {
-                case .map:
-                    TrainLiveMapView(board: board, selectedRailwayID: display.selectedRailwayID, selection: $selection)
-                        .frame(height: 300)
-                case .diagram:
-                    TrainDiagramView(board: board, selectedRailwayID: display.selectedRailwayID, selection: $selection)
-                }
-                if let selection {
-                    TrainSelectionCard(board: board, selection: selection) { self.selection = nil }
-                }
-                if display.filter != .all {
-                    ApproachGroupsView(board: board, selection: $selection)
-                }
-            }
-        }
-        .listRowInsets(EdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8))
-
-        DisclosureGroup("凡例", isExpanded: $legendExpanded) {
-            TrainLegendView()
-        }
-        .font(.subheadline)
-        TrainLiveStatusView()
-            // 路線を追加・削除したあと、選んでいた路線がなくなっていたら「すべての路線」に戻す
-            .onChange(of: railways.map(\.id), initial: true) { _, ids in
-                display.validate(available: ids)
-            }
-            .task {
-                let endpoints = Set(env.trains.neededRailways.compactMap { OperatorCatalog.find($0.operatorID)?.endpoint })
-                for endpoint in endpoints {
-                    let names = await env.trains.directionNames(endpoint: endpoint)
-                    directionNames.merge(names) { current, _ in current }
-                }
-            }
-    }
-}
-
 /// 路線の切り替えに出す選択肢
 struct RailwayChoice: Identifiable, Equatable {
     let id: String
     let name: String
 }
 
-extension TrainLivePanel {
+enum TrainRailwayChoices {
     /// 選べる路線(運行情報の路線と、時刻表の駅がある路線)
-    static func railwayChoices(_ trains: TrainStore) -> [RailwayChoice] {
+    static func make(_ trains: TrainStore) -> [RailwayChoice] {
         let names = Dictionary(trains.lines.map { ($0.railwayID, $0.railwayName) } + trains.stations.map { ($0.railwayID, $0.railwayName) },
                                uniquingKeysWith: { first, _ in first })
         return trains.neededRailways.map { RailwayChoice(id: $0.railwayID, name: names[$0.railwayID] ?? ODPTID.tail($0.railwayID)) }
@@ -184,6 +126,8 @@ struct TrainLiveMapView: View {
     /// 選んだ路線。空文字は「すべての路線」。
     let selectedRailwayID: String
     @Binding var selection: TrainLiveSelection?
+    /// 乗車中の判定と、位置のデバッグの表示
+    var overlay = RideMapOverlay()
     @State private var recenterKey = 0
 
     var body: some View {
@@ -218,16 +162,26 @@ struct TrainLiveMapView: View {
         ZStack(alignment: .bottomTrailing) {
             MapContainerView(
                 isInteractive: true,
-                showsUserLocation: true,
-                lines: lines,
+                showsUserLocation: overlay.showsUserLocation,
+                lines: lines + overlay.lines,
+                markers: overlay.markers,
                 fitKey: (fitShapes.isEmpty ? shapes : fitShapes).map(\.railwayID).joined(separator: ","),
                 fitLineIDs: Set((fitShapes.isEmpty ? shapes : fitShapes).map(\.railwayID)),
-                onSelectLine: { selection = .line($0) },
-                onSelectMarker: { selection = .station($0) },
+                onSelectLine: { id in
+                    // デバッグの経路の線は、路線として扱わない
+                    if !id.hasPrefix("debug.") { selection = .line(id) }
+                },
+                onSelectMarker: { id in
+                    if let handler = overlay.onSelectMarker, handler(id) { return }
+                    selection = .station(id)
+                },
                 trains: trains,
                 stationDots: dots,
                 onSelectTrain: { selection = .train($0) },
-                recenterKey: recenterKey
+                recenterKey: recenterKey,
+                circles: overlay.circles,
+                movingMarks: overlay.movingMarks,
+                onTapCoordinate: overlay.onTapCoordinate
             )
             Button {
                 recenterKey += 1
@@ -260,9 +214,11 @@ struct TrainLiveMapView: View {
 struct TrainDiagramView: View {
     @Environment(AppEnvironment.self) private var env
     let board: TrainLiveBoard
-    /// 選んだ路線。空文字は「すべての路線」で、その場合は全路線を順に並べる。
+    /// 選んだ路線。空文字は「すべての路線」で、その場合は先頭の路線を表示する。
     let selectedRailwayID: String
     @Binding var selection: TrainLiveSelection?
+    /// 表示する高さ
+    var height: CGFloat = 340
 
     private let rowHeight: CGFloat = 40
     private let laneWidth: CGFloat = 46
@@ -270,19 +226,24 @@ struct TrainDiagramView: View {
 
     var body: some View {
         let lines = board.lines.filter { TrainDisplayState.isEmphasized($0.railwayID, selected: selectedRailwayID) }
-        VStack(alignment: .leading, spacing: 10) {
-            if lines.isEmpty {
+        VStack(alignment: .leading, spacing: 4) {
+            if let line = lines.first {
+                // 中央の段の高さに収めるため、表示するのは1路線だけ(路線は上の段で選ぶ)
+                if lines.count > 1 {
+                    Text("\(line.name)(ほかの路線は、上の「路線」で選びます)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                }
+                diagram(line, height: max(120, height - (lines.count > 1 ? 20 : 0)))
+                    // 路線を切り替えたら、登録した駅の付近へのスクロールをやり直す
+                    .id(line.railwayID)
+            } else {
                 Text("列車ごとの時刻表がまだありません。下の「時刻表を取得」から保存してください。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-            }
-            ForEach(lines, id: \.railwayID) { line in
-                if lines.count > 1 {
-                    Text(line.name).font(.subheadline.weight(.bold))
-                }
-                diagram(line, height: lines.count > 1 ? 260 : 340)
-                    // 路線を切り替えたら、登録した駅の付近へのスクロールをやり直す
-                    .id(line.railwayID)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
     }

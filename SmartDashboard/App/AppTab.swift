@@ -6,6 +6,7 @@ enum AppTab: String, CaseIterable, Identifiable, Codable {
     case weather
     /// スコープ(以前の名前はウェイポイント。保存済みの並びを引き継ぐため、値は変えない)
     case waypoint
+    /// 移動(以前の名前は電車。保存済みの並びを引き継ぐため、値は変えない)
     case train
     case exchange
     case sensors
@@ -20,7 +21,7 @@ enum AppTab: String, CaseIterable, Identifiable, Codable {
         case .home: return "ホーム"
         case .weather: return "天気"
         case .waypoint: return "スコープ"
-        case .train: return "電車"
+        case .train: return "移動"
         case .exchange: return "為替"
         case .sensors: return "センサー"
         case .tools: return "小ツール"

@@ -107,6 +107,13 @@ struct SettingsView: View {
 
                 Section {
                     NavigationLink("運行情報の直近のレスポンス") { TrainInfoCaptureView() }
+                    Toggle("位置のデバッグ", isOn: Binding(
+                        get: { env.settings.movementDebugEnabled },
+                        set: { value in
+                            env.settings.movementDebugEnabled = value
+                            // オフにしたら、仮想の移動を止めて実際のGPSに戻す
+                            if !value, env.movement.isVirtual { env.movement.stopVirtual() }
+                        }))
                     LabeledContent("カメラの起動時間") {
                         Text(env.camera.lastTiming?.text ?? "未計測(「カメラで見る」を開くと計測します)")
                             .font(.footnote)
@@ -116,7 +123,7 @@ struct SettingsView: View {
                 } header: {
                     Text("開発者向け")
                 } footer: {
-                    Text("遅延などが起きたときの応答を確認・コピーできます。保存するのは直近の1件だけで、追加の通信はしません。")
+                    Text("遅延などが起きたときの応答を確認・コピーできます。保存するのは直近の1件だけで、追加の通信はしません。「位置のデバッグ」をオンにすると、移動タブの地図で仮想の移動やGPXの再生を使って、乗車中の判定を試せます。")
                 }
 
                 Section("キャッシュ") {
