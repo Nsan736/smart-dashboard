@@ -1,0 +1,70 @@
+{
+  "description": "線路の形(update_railway_shapes.py)で使う、ODPT の事業者・路線と、国土数値情報(鉄道データ N02)の運営会社・路線名の対応。事業者を増やすときは、ここに足す。",
+  "operators": {
+    "Toei": {
+      "odptOperator": "odpt.Operator:Toei",
+      "endpoint": "public",
+      "n02Company": "東京都",
+      "railways": {
+        "odpt.Railway:Toei.Asakusa": [
+          "1号線浅草線"
+        ],
+        "odpt.Railway:Toei.Mita": [
+          "6号線三田線"
+        ],
+        "odpt.Railway:Toei.Shinjuku": [
+          "10号線新宿線"
+        ],
+        "odpt.Railway:Toei.Oedo": [
+          "12号線大江戸線"
+        ],
+        "odpt.Railway:Toei.Arakawa": [
+          "荒川線"
+        ],
+        "odpt.Railway:Toei.NipporiToneri": [
+          "日暮里・舎人ライナー"
+        ]
+      },
+      "verified": "2026-09-28 に N02-25 で確認"
+    },
+    "TokyoMetro": {
+      "odptOperator": "odpt.Operator:TokyoMetro",
+      "endpoint": "token",
+      "n02Company": "東京地下鉄",
+      "railways": {
+        "odpt.Railway:TokyoMetro.Ginza": [
+          "3号線銀座線"
+        ],
+        "odpt.Railway:TokyoMetro.Marunouchi": [
+          "4号線丸ノ内線"
+        ],
+        "odpt.Railway:TokyoMetro.MarunouchiBranch": [
+          "4号線丸ノ内線分岐線"
+        ],
+        "odpt.Railway:TokyoMetro.Hibiya": [
+          "2号線日比谷線"
+        ],
+        "odpt.Railway:TokyoMetro.Tozai": [
+          "5号線東西線"
+        ],
+        "odpt.Railway:TokyoMetro.Chiyoda": [
+          "9号線千代田線"
+        ],
+        "odpt.Railway:TokyoMetro.Yurakucho": [
+          "8号線有楽町線"
+        ],
+        "odpt.Railway:TokyoMetro.Hanzomon": [
+          "11号線半蔵門線"
+        ],
+        "odpt.Railway:TokyoMetro.Namboku": [
+          "7号線南北線"
+        ],
+        "odpt.Railway:TokyoMetro.Fukutoshin": [
+          "13号線副都心線",
+          "8号線有楽町線"
+        ]
+      },
+      "verified": "未確認(トークンで駅を取得して、初めて実行するときに確かめる)"
+    }
+  }
+}
