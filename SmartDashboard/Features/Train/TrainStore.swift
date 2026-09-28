@@ -103,6 +103,8 @@ final class TrainStore {
     @ObservationIgnored private let onFetched: @MainActor (DataKind, Date) -> Void
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private var loadTask: Task<Void, Never>?
+    /// 路線の線(線路の形か、駅を結んだ直線)の作り置き
+    @ObservationIgnored private var rideLineCache: (key: String, lines: [String: RideLine]) = ("", [:])
 
     private static let infoKey = "trainInfo"
     private static let captureKey = "debug.trainInformation"
@@ -212,6 +214,31 @@ final class TrainStore {
         for station in stations { names[station.railwayID] = station.railwayName }
         for line in lines { names[line.railwayID] = line.railwayName }
         return names
+    }
+
+    // MARK: - 路線の線(地図・乗車中の判定・列車の位置・デバッグで共通)
+
+    /// 路線の形がある路線の線。同梱した線路の形があればそれを、なければ駅を結んだ直線を使う。路線や名前が変わったときだけ作り直す。
+    func rideLines() -> [RideLine] {
+        let ids = neededRailways.map(\.railwayID)
+        let names = railwayNames
+        let key = ids.map { id in "\(id):\(shapes[id]?.stops.count ?? -1):\(names[id] ?? "")" }.joined(separator: ",")
+        if key != rideLineCache.key {
+            var built: [String: RideLine] = [:]
+            for id in ids {
+                guard let shape = shapes[id],
+                      let line = RideLine.make(shape: shape, name: names[id] ?? ODPTID.tail(id), track: RailwayTrackCatalog.bundled.track(for: id))
+                else { continue }
+                built[id] = line
+            }
+            rideLineCache = (key, built)
+        }
+        return ids.compactMap { rideLineCache.lines[$0] }
+    }
+
+    func rideLine(for railwayID: String) -> RideLine? {
+        _ = rideLines()
+        return rideLineCache.lines[railwayID]
     }
 
     // MARK: - 経路の検索のための路線

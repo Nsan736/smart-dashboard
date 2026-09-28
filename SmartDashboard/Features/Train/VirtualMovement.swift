@@ -61,23 +61,29 @@ struct VirtualPlan: Codable, Equatable {
     }
 
     /// 選んだ路線の2駅の間を、線路の線(駅を結んだ線)に沿った経路にする。途中の駅には停車する。
-    static func along(line: RideLine, fromStation: Int, toStation: Int, dwell: TimeInterval) -> [GeoPoint]? {
+    /// 選んだ路線の2駅の間を、路線の線(線路の形があればそれ、なければ駅を結んだ直線)に沿った経路にする。途中の駅には停車する。
+    /// 点は、駅(線路の上に合わせた位置)と、その間の線路の点。
+    static func stationPlan(line: RideLine, fromStation: Int, toStation: Int, dwell: TimeInterval, base: VirtualPlan) -> VirtualPlan? {
         guard line.stations.indices.contains(fromStation), line.stations.indices.contains(toStation), fromStation != toStation else { return nil }
         let indices = fromStation < toStation ? Array(fromStation...toStation) : Array((toStation...fromStation).reversed())
-        return indices.compactMap { line.path.points.indices.contains($0) ? line.path.points[$0] : nil }
-    }
-
-    static func stationPlan(line: RideLine, fromStation: Int, toStation: Int, dwell: TimeInterval, base: VirtualPlan) -> VirtualPlan? {
-        guard let points = along(line: line, fromStation: fromStation, toStation: toStation, dwell: dwell) else { return nil }
-        let indices = fromStation < toStation ? Array(fromStation...toStation) : Array((toStation...fromStation).reversed())
+        var points: [GeoPoint] = []
+        var stops: [Stop] = []
+        for (offset, station) in indices.enumerated() {
+            let along = line.stations[station].along
+            if offset > 0 {
+                points += line.path.interiorPoints(from: line.stations[indices[offset - 1]].along, to: along)
+            }
+            guard let point = line.path.point(atAlong: along) else { return nil }
+            // 始発と終点を除く駅で止まる
+            if offset > 0, offset < indices.count - 1 {
+                stops.append(Stop(pointIndex: points.count, dwell: dwell, name: line.stations[station].name))
+            }
+            points.append(point)
+        }
         var plan = base
         plan.points = points
         plan.gaps = []
-        // 始発と終点を除く駅で止まる
-        plan.stops = []
-        for (offset, station) in indices.enumerated() where offset > 0 && offset < indices.count - 1 {
-            plan.stops.append(Stop(pointIndex: offset, dwell: dwell, name: line.stations[station].name))
-        }
+        plan.stops = stops
         return plan
     }
 }

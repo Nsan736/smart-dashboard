@@ -33,6 +33,8 @@ struct BoardLine {
     var schedule: LineSchedule
     var shape: RailwayShape?
     var positions: [TrainPosition]
+    /// 路線の線(線路の形か、駅を結んだ直線)。列車の位置を駅の間で線路に沿わせるのに使う。
+    var ride: RideLine? = nil
 
     func stationID(_ index: Int) -> String? {
         schedule.stationIDs.indices.contains(index) ? schedule.stationIDs[index] : nil
@@ -61,8 +63,17 @@ struct ApproachGroup: Identifiable {
 }
 
 enum TrainBoard {
-    /// 列車の地図上の位置と進行方向。駅の緯度経度を、駅間の進み具合で直線補間する。
+    /// 列車の地図上の位置と進行方向。路線の線があれば、駅の間を線路の形に沿って進ませる。なければ、駅の緯度経度を直線補間する。
     static func coordinate(of position: TrainPosition, in line: BoardLine) -> (coordinate: CLLocationCoordinate2D, heading: Double?)? {
+        if let ride = line.ride, let fromID = line.stationID(position.fromStation), let toID = line.stationID(position.toStation),
+           let pair = ride.alongPair(fromID, toID) {
+            let f = min(1, max(0, position.fraction))
+            let along = pair.from + (pair.to - pair.from) * f
+            if let point = ride.path.point(atAlong: along) {
+                let heading = pair.to != pair.from ? ride.path.bearing(atAlong: along, forward: pair.to > pair.from) : nil
+                return (point.coordinate, heading)
+            }
+        }
         guard let shape = line.shape,
               let fromID = line.stationID(position.fromStation), let toID = line.stationID(position.toStation),
               let from = shape.stops.first(where: { $0.stationID == fromID }),

@@ -86,6 +86,8 @@ struct GeoPath: Equatable {
         guard let first = points.first else { return nil }
         guard points.count >= 2 else { return first }
         let d = min(max(along, 0), length)
+        // 点の位置ちょうどなら、その点をそのまま返す(補間の丸めの誤差を出さない)
+        if let exact = cumulative.firstIndex(of: d) { return points[exact] }
         var index = 0
         while index < points.count - 2, cumulative[index + 1] < d { index += 1 }
         let span = cumulative[index + 1] - cumulative[index]
@@ -122,6 +124,57 @@ struct GeoPath: Equatable {
         return best
     }
 
+    /// 線に沿った距離 minAlong より先で、点を線に合わせる(駅の位置の合わせ込み)。
+    /// 線に沿って並べたときの谷(前後より近い所)のうち、一番近いものから window 以内で、一番手前のもの。
+    /// 環状の区間のように線が近くを2回通るとき、先の区間へ飛ばないようにする。
+    func snap(_ point: GeoPoint, after minAlong: Double = 0, window: Double = 100) -> TrackProjection? {
+        guard points.count >= 2 else { return nil }
+        var candidates: [TrackProjection] = []
+        for index in 0..<(points.count - 1) where cumulative[index + 1] >= minAlong {
+            let a = GeoMath.local(points[index], origin: point)
+            let b = GeoMath.local(points[index + 1], origin: point)
+            let dx = b.x - a.x
+            let dy = b.y - a.y
+            let length2 = dx * dx + dy * dy
+            let span = cumulative[index + 1] - cumulative[index]
+            var t = length2 > 0 ? min(max(-(a.x * dx + a.y * dy) / length2, 0), 1) : 0
+            var along = cumulative[index] + span * t
+            if along < minAlong {
+                along = minAlong
+                t = span > 0 ? min(1, max(0, (minAlong - cumulative[index]) / span)) : 0
+            }
+            let cx = a.x + dx * t
+            let cy = a.y + dy * t
+            let p = points[index]
+            let q = points[index + 1]
+            candidates.append(TrackProjection(along: along, lateral: (cx * cx + cy * cy).squareRoot(),
+                                              point: GeoPoint(p.latitude + (q.latitude - p.latitude) * t, p.longitude + (q.longitude - p.longitude) * t),
+                                              segment: index))
+        }
+        var valleys: [TrackProjection] = []
+        for (index, candidate) in candidates.enumerated() {
+            let before = index > 0 ? candidates[index - 1].lateral : .infinity
+            let after = index + 1 < candidates.count ? candidates[index + 1].lateral : .infinity
+            if candidate.lateral <= before, candidate.lateral <= after { valleys.append(candidate) }
+        }
+        guard let nearest = valleys.map(\.lateral).min() else { return candidates.min { $0.lateral < $1.lateral } }
+        return valleys.first { $0.lateral <= nearest + window }
+    }
+
+    /// 線に沿った距離 a から b へ向かうときに通る、途中の点(両端は含まない。a > b なら逆の順)
+    func interiorPoints(from a: Double, to b: Double) -> [GeoPoint] {
+        let low = min(a, b)
+        let high = max(a, b)
+        let inside = points.indices.filter { cumulative[$0] > low && cumulative[$0] < high }.map { points[$0] }
+        return a <= b ? inside : Array(inside.reversed())
+    }
+
+    /// その位置での線の向き(度。北が0、時計回り)。forward が false なら逆向き。
+    func bearing(atAlong along: Double, forward: Bool) -> Double? {
+        guard let a = point(atAlong: along - 10), let b = point(atAlong: along + 10) else { return nil }
+        return forward ? MapBearing.degrees(from: a.coordinate, to: b.coordinate) : MapBearing.degrees(from: b.coordinate, to: a.coordinate)
+    }
+
     /// 線に沿った距離 from〜to の部分の点(端は補間する)
     func subpath(from: Double, to: Double) -> [GeoPoint] {
         let low = max(0, min(from, to))
@@ -142,27 +195,60 @@ struct RideStation: Equatable {
     var name: String
     /// 線の始点からの距離(m)
     var along: Double
+    /// 駅の座標を線路の上に合わせたときに動かした距離(m)。線路の形がないときは0。
+    var offset: Double = 0
 }
 
-/// 判定に使う路線。路線の形(駅を結んだ線)から作る。事業者には依存しない。
+/// 判定に使う路線。事業者には依存しない。
+/// 線路の形(同梱した国土数値情報の線)があれば、それを線にして、駅を線路の上の最も近い点に合わせる。
+/// なければ、駅を結んだ直線を線にする。
 struct RideLine: Equatable {
     var railwayID: String
     var name: String
     var path: GeoPath
     var stations: [RideStation]
+    /// 実際の線路の形を使っているか
+    var usesTrack: Bool
 
-    init(railwayID: String, name: String, stations: [(id: String, name: String, point: GeoPoint)]) {
+    init(railwayID: String, name: String, stations: [(id: String, name: String, point: GeoPoint)], track: [GeoPoint]? = nil) {
         self.railwayID = railwayID
         self.name = name
-        let path = GeoPath(stations.map { $0.point })
-        self.path = path
-        self.stations = stations.enumerated().map { RideStation(stationID: $0.element.id, name: $0.element.name, along: path.cumulative[$0.offset]) }
+        if let track, track.count >= 2 {
+            let path = GeoPath(track)
+            var previous = 0.0
+            var list: [RideStation] = []
+            for station in stations {
+                // 駅の順に、前の駅より先で合わせる(同じ駅を2回通る路線でも、順番を保つ)
+                if let snapped = path.snap(station.point, after: previous) {
+                    list.append(RideStation(stationID: station.id, name: station.name, along: snapped.along, offset: snapped.lateral))
+                    previous = snapped.along
+                } else {
+                    list.append(RideStation(stationID: station.id, name: station.name, along: previous,
+                                            offset: path.points.last.map { GeoMath.distance($0, station.point) } ?? 0))
+                }
+            }
+            self.path = path
+            self.stations = list
+            usesTrack = true
+        } else {
+            let path = GeoPath(stations.map { $0.point })
+            self.path = path
+            self.stations = stations.enumerated().map { RideStation(stationID: $0.element.id, name: $0.element.name, along: path.cumulative[$0.offset]) }
+            usesTrack = false
+        }
     }
 
-    static func make(shape: RailwayShape, name: String) -> RideLine? {
+    /// track: 同梱した線路の形(RailwayTrackCatalog)。なければ駅を結んだ直線。
+    static func make(shape: RailwayShape, name: String, track: [GeoPoint]? = nil) -> RideLine? {
         guard shape.isDrawable else { return nil }
         return RideLine(railwayID: shape.railwayID, name: name,
-                        stations: shape.stops.map { (id: $0.stationID, name: $0.name, point: GeoPoint($0.latitude, $0.longitude)) })
+                        stations: shape.stops.map { (id: $0.stationID, name: $0.name, point: GeoPoint($0.latitude, $0.longitude)) },
+                        track: track)
+    }
+
+    /// 線路の上に合わせた駅の位置(同じ駅が2回出てくる路線では、最初のもの)
+    func stationPoint(_ stationID: String) -> GeoPoint? {
+        stations.first { $0.stationID == stationID }.flatMap { path.point(atAlong: $0.along) }
     }
 
     /// 駅の位置(線に沿った距離)。環状線などで同じ駅が2回出てくるときは、near に近いほう。

@@ -333,7 +333,6 @@ final class MovementStore {
     @ObservationIgnored private var detector = RideDetector()
     @ObservationIgnored private var loopTask: Task<Void, Never>?
     @ObservationIgnored private var isVisible = false
-    @ObservationIgnored private var lineCache: (key: String, lines: [RideLine]) = ("", [])
     @ObservationIgnored private var openRide: UUID?
     @ObservationIgnored private var lastSave = Date.distantPast
     @ObservationIgnored private var dirty = false
@@ -478,15 +477,9 @@ final class MovementStore {
         return context(now: now).trains.filter { $0.railwayID == railwayID }.sorted { abs($0.along - along) < abs($1.along - along) }
     }
 
-    /// 判定に使う路線(路線の形がある登録路線)
+    /// 判定に使う路線(線路の形か、駅を結んだ直線。TrainStore で作り置きしたもの)
     func rideLines() -> [RideLine] {
-        let shapes = trains.neededRailways.compactMap { trains.shapes[$0.railwayID] }
-        let names = trains.railwayNames
-        let key = shapes.map { "\($0.railwayID):\($0.stops.count):\(names[$0.railwayID] ?? "")" }.joined(separator: ",")
-        if key != lineCache.key {
-            lineCache = (key, shapes.compactMap { RideLine.make(shape: $0, name: names[$0.railwayID] ?? ODPTID.tail($0.railwayID)) })
-        }
-        return lineCache.lines
+        trains.rideLines()
     }
 
     /// その時刻の路線と列車(時刻表から計算し、遅れで補正した位置)
@@ -496,7 +489,7 @@ final class MovementStore {
         for ride in lines {
             guard let schedule = live.schedules[ride.railwayID] else { continue }
             let board = BoardLine(railwayID: ride.railwayID, name: ride.name, schedule: schedule, shape: trains.shapes[ride.railwayID],
-                                  positions: live.positions(for: ride.railwayID, now: now))
+                                  positions: live.positions(for: ride.railwayID, now: now), ride: ride)
             candidates += board.positions.compactMap { RideTrainCandidate.make(position: $0, line: board, ride: ride) }
         }
         return RideContext(lines: lines, trains: candidates)
