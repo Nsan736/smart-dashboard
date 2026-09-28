@@ -117,6 +117,8 @@ struct DashboardMapView: UIViewRepresentable {
     var movingMarks: [MapMovingMark] = []
     /// 地図をタップした位置(位置のデバッグで点を置く)。指定すると、線のタップより優先する。
     var onTapCoordinate: ((CLLocationCoordinate2D) -> Void)?
+    /// 駅の点のまわりに重ねる電車(拡大したときだけ描く)
+    var stationTrains: [MapStationTrain] = []
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -201,6 +203,7 @@ struct DashboardMapView: UIViewRepresentable {
         coordinator.updateTrains(trains, on: map)
         coordinator.updateCircles(circles, on: map)
         coordinator.updateMovingMarks(movingMarks, on: map)
+        coordinator.updateStationTrains(stationTrains, on: map)
         coordinator.recenterIfNeeded(key: recenterKey, on: map)
         coordinator.fitIfNeeded(key: fitKey, lines: lines.filter { fitLineIDs?.contains($0.id) ?? true }, markers: markers, on: map)
 
@@ -291,6 +294,44 @@ struct DashboardMapView: UIViewRepresentable {
             annotation.label = train.label
             annotation.isExpress = train.isExpress
             annotation.isDimmed = train.isDimmed
+        }
+
+        // MARK: 駅に重ねる電車
+
+        private var stationTrainsOverlay: StationTrainsOverlay?
+        private var stationTrainItems: [MapStationTrain] = []
+        private var stationTrainSignature = ""
+
+        /// 拡大したとき(stationTrainZoom 以上)だけ、1枚の重ね描きで描く。並びが変わったときだけ描き直す。
+        func updateStationTrains(_ trains: [MapStationTrain], on map: MKMapView) {
+            stationTrainItems = trains
+            let visible = currentZoom >= MapStationRule.stationTrainZoom && !trains.isEmpty
+            let signature = visible ? trains.map(\.signature).joined(separator: ";") : ""
+            guard signature != stationTrainSignature else { return }
+            stationTrainSignature = signature
+            let old = stationTrainsOverlay
+            if visible {
+                // 新しいものを重ねてから古いものを外す(ちらつきを抑える)
+                let overlay = StationTrainsOverlay(trains: trains)
+                map.addOverlay(overlay, level: .aboveLabels)
+                stationTrainsOverlay = overlay
+            } else {
+                stationTrainsOverlay = nil
+            }
+            if let old { map.removeOverlay(old) }
+        }
+
+        /// タップした位置にある、駅に重ねた電車
+        private func stationTrainHit(at point: CGPoint, on map: MKMapView) -> String? {
+            guard stationTrainsOverlay != nil else { return nil }
+            let size = StationTrainPlacement.iconSize
+            for train in stationTrainItems.reversed() {
+                let base = map.convert(train.coordinate, toPointTo: map)
+                let rect = CGRect(x: base.x + train.offset.x - size.width / 2 - 3, y: base.y + train.offset.y - size.height / 2 - 3,
+                                  width: size.width + 6, height: size.height + 6)
+                if rect.contains(point) { return train.trainID }
+            }
+            return nil
         }
 
         // MARK: 動く印と円
@@ -590,7 +631,8 @@ struct DashboardMapView: UIViewRepresentable {
                 return
             }
             if let dot = view.annotation as? StationDotAnnotation {
-                if dot.isRegistered { onSelectMarker?(dot.stationID) }
+                // どの駅でも、タップすると駅の情報(時刻表など)を出す
+                onSelectMarker?(dot.stationID)
                 mapView.deselectAnnotation(dot, animated: false)
                 return
             }
@@ -631,6 +673,10 @@ struct DashboardMapView: UIViewRepresentable {
             while let view = hit {
                 if view is MKAnnotationView, !(view is MovingMarkView) { return }
                 hit = view.superview
+            }
+            if let trainID = stationTrainHit(at: point, on: map) {
+                onSelectTrain?(trainID)
+                return
             }
             if let onTapCoordinate {
                 onTapCoordinate(map.convert(point, toCoordinateFrom: map))
@@ -684,6 +730,9 @@ struct DashboardMapView: UIViewRepresentable {
                 routeRenderers[ObjectIdentifier(route)] = renderer
                 return renderer
             }
+            if let trains = overlay as? StationTrainsOverlay {
+                return StationTrainsRenderer(overlay: trains)
+            }
             if let circle = overlay as? MapCircleOverlay {
                 let renderer = MKCircleRenderer(circle: circle)
                 renderer.fillColor = circle.color.withAlphaComponent(0.15)
@@ -713,6 +762,8 @@ struct DashboardMapView: UIViewRepresentable {
             if zoom != currentZoom {
                 currentZoom = zoom
                 refreshStationNames(on: mapView)
+                // 拡大・縮小で、駅に重ねる電車を出したり消したりする
+                updateStationTrains(stationTrainItems, on: mapView)
             }
             onRegionChange?(bounds, zoom)
             rotateDirectionArrow(on: mapView)
@@ -747,6 +798,7 @@ struct MapContainerView: View {
     var circles: [MapCircle] = []
     var movingMarks: [MapMovingMark] = []
     var onTapCoordinate: ((CLLocationCoordinate2D) -> Void)?
+    var stationTrains: [MapStationTrain] = []
 
     static let gsiURL = URL(string: "https://maps.gsi.go.jp/development/ichiran.html")!
 
@@ -784,7 +836,8 @@ struct MapContainerView: View {
             onTrackingLost: onTrackingLost,
             circles: circles,
             movingMarks: movingMarks,
-            onTapCoordinate: onTapCoordinate
+            onTapCoordinate: onTapCoordinate,
+            stationTrains: stationTrains
         )
         .overlay(alignment: .topLeading) {
             Text(mode.label)
