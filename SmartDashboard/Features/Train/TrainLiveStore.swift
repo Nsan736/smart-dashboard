@@ -172,7 +172,7 @@ final class TrainLiveStore {
     /// 最短の間隔(Wi-Fiで2分、モバイル通信で5分)を過ぎていて、自動更新が許されているときだけ取得する。
     /// 省データモードのとき、月のモバイル通信量の上限を超えたときは、手動更新だけになる。
     func fetchDelaysIfDue() async {
-        guard !trains.neededRailways.isEmpty else { return }
+        guard !trains.registeredRailways.isEmpty else { return }
         let now = Date()
         let decision = settings.refreshPolicy.autoDecision(kind: .trainDelay, fetchedAt: lastDelayFetch, now: now, network: network.status)
         autoFetchNote = decision.note
@@ -195,8 +195,8 @@ final class TrainLiveStore {
         defer { isFetchingDelays = false }
         delayError = nil
         let now = Date()
-        // 事業者ごとに1リクエスト。登録した路線だけに絞る。
-        let grouped = Dictionary(grouping: trains.neededRailways, by: \.operatorID)
+        // 事業者ごとに1リクエスト。登録した路線だけに絞る(経路の検索のために足した路線の遅れは取らない)。
+        let grouped = Dictionary(grouping: trains.registeredRailways, by: \.operatorID)
         for (operatorID, group) in grouped {
             guard let op = OperatorCatalog.find(operatorID) else { continue }
             let railwayIDs = group.map(\.railwayID)

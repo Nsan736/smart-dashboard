@@ -114,7 +114,7 @@ final class AppEnvironment {
             onFetched: { fetchLog.mark(.trainDelay, at: $0) })
         self.live = live
         movement = MovementStore(directory: support.appendingPathComponent("movement", isDirectory: true),
-                                 settings: settings, trains: trainStore, live: live)
+                                 settings: settings, trains: trainStore, live: live, network: network)
         let tiles = TileDownloader(store: TileStore(root: TileStore.defaultRoot()), http: http, settings: settings, network: network)
         self.tiles = tiles
         let radarLoader = RadarTileLoader(http: http, root: RadarTileLoader.defaultRoot())

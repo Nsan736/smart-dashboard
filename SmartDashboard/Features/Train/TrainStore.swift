@@ -50,6 +50,15 @@ struct TrainInfoCapture: Codable, Equatable {
     var body: String
 }
 
+/// 経路の検索のために時刻表を保存した路線(運行情報や駅の登録とは別)
+struct RouteRailway: Codable, Equatable, Identifiable {
+    var operatorID: String
+    var railwayID: String
+    var name: String
+
+    var id: String { railwayID }
+}
+
 struct TrainInfoItem: Codable, Equatable, Identifiable {
     var railwayID: String
     var railwayName: String
@@ -64,6 +73,12 @@ struct TrainInfoItem: Codable, Equatable, Identifiable {
 final class TrainStore {
     private(set) var lines: [RegisteredLine] = []
     private(set) var stations: [RegisteredStation] = []
+    /// 経路の検索のために時刻表を保存した路線
+    private(set) var routeRailways: [RouteRailway] = []
+    /// 駅の一覧と乗り換えの関係(経路の検索と、行きたい駅の検索に使う)
+    private(set) var directory: TransitDirectory?
+    private(set) var isLoadingDirectory = false
+    private(set) var directoryError: String?
     private(set) var info: CachedValue<[TrainInfoItem]>?
     private(set) var timetables: [UUID: StoredTimetable] = [:]
     /// 地図に描く路線の形。キーは路線ID。
@@ -106,6 +121,7 @@ final class TrainStore {
         self.defaults = defaults
         lines = Self.load([RegisteredLine].self, defaults, Keys.lines) ?? []
         stations = Self.load([RegisteredStation].self, defaults, Keys.stations) ?? []
+        routeRailways = Self.load([RouteRailway].self, defaults, Keys.routeRailways) ?? []
     }
 
     func loadIfNeeded() async {
@@ -175,11 +191,85 @@ final class TrainStore {
 
     // MARK: - 路線の形(地図用)
 
-    /// 地図に描く必要のある路線(運行情報の路線と、時刻表の駅がある路線)
-    var neededRailways: [(operatorID: String, railwayID: String)] {
+    /// 登録した路線(運行情報の路線と、時刻表の駅がある路線)。遅れはこの路線だけ取得する。
+    var registeredRailways: [(operatorID: String, railwayID: String)] {
         var seen = Set<String>()
         let all = lines.map { ($0.operatorID, $0.railwayID) } + stations.map { ($0.operatorID, $0.railwayID) }
         return all.filter { seen.insert($0.1).inserted }.map { (operatorID: $0.0, railwayID: $0.1) }
+    }
+
+    /// 地図に描き、列車ごとの時刻表を保存する路線(登録した路線と、経路の検索のために足した路線)
+    var neededRailways: [(operatorID: String, railwayID: String)] {
+        var seen = Set(registeredRailways.map(\.railwayID))
+        let extra = routeRailways.filter { seen.insert($0.railwayID).inserted }.map { (operatorID: $0.operatorID, railwayID: $0.railwayID) }
+        return registeredRailways + extra
+    }
+
+    /// 路線の表示名(登録した路線、経路の検索のために足した路線、駅の一覧の路線)
+    var railwayNames: [String: String] {
+        var names = directory?.railwayNames ?? [:]
+        for railway in routeRailways { names[railway.railwayID] = railway.name }
+        for station in stations { names[station.railwayID] = station.railwayName }
+        for line in lines { names[line.railwayID] = line.railwayName }
+        return names
+    }
+
+    // MARK: - 経路の検索のための路線
+
+    func addRouteRailways(_ list: [RouteRailway]) {
+        var changed = false
+        for railway in list where !routeRailways.contains(where: { $0.railwayID == railway.railwayID }) {
+            routeRailways.append(railway)
+            changed = true
+        }
+        if changed { save(routeRailways, Keys.routeRailways) }
+    }
+
+    func removeRouteRailways(ids: Set<String>) {
+        routeRailways.removeAll { ids.contains($0.railwayID) }
+        save(routeRailways, Keys.routeRailways)
+        removeUnusedShapes()
+    }
+
+    // MARK: - 駅の一覧と乗り換えの関係
+
+    /// 使っている事業者の、すべての駅(乗り換えの関係と緯度経度を含む)を読み込む。30日間キャッシュする(都営で約13KB)。
+    func ensureDirectory(manual: Bool) async {
+        await loadIfNeeded()
+        let operators = Set(neededRailways.map(\.operatorID)).compactMap { OperatorCatalog.find($0) }.sorted { $0.id < $1.id }
+        guard !operators.isEmpty, !isLoadingDirectory else { return }
+        isLoadingDirectory = true
+        defer { isLoadingDirectory = false }
+        var stationsList: [TransitStation] = []
+        var names: [String: String] = [:]
+        var failed = false
+        for op in operators {
+            if let list = try? await railways(of: op) {
+                for railway in list { names[railway.sameAs] = railway.name }
+            }
+            let key = "operatorStations.\(op.id)"
+            if let cached = await cache.load([ODPTStation].self, key: key),
+               Date().timeIntervalSince(cached.fetchedAt) < DataKind.railwayCatalog.minimumInterval {
+                stationsList += cached.value.compactMap { TransitStation($0) }
+                continue
+            }
+            let decision = manual
+                ? settings.refreshPolicy.manualDecision(network: network.status)
+                : settings.refreshPolicy.autoDecision(kind: .railwayCatalog, fetchedAt: nil, now: Date(), network: network.status)
+            if decision == .refresh, let list = try? await api.stations(ofOperator: op) {
+                let now = Date()
+                try? await cache.save(list, key: key, fetchedAt: now)
+                onFetched(.railwayCatalog, now)
+                stationsList += list.compactMap { TransitStation($0) }
+            } else if let cached = await cache.load([ODPTStation].self, key: key) {
+                // 古くても、ないよりはよい
+                stationsList += cached.value.compactMap { TransitStation($0) }
+            } else {
+                failed = true
+            }
+        }
+        directoryError = failed && stationsList.isEmpty ? "駅の一覧を取得できませんでした" : nil
+        if !stationsList.isEmpty { directory = TransitDirectory(stations: stationsList, railwayNames: names) }
     }
 
     /// 緯度経度が取れなかった駅(報告用)
@@ -424,5 +514,6 @@ final class TrainStore {
     private enum Keys {
         static let lines = "train.lines"
         static let stations = "train.stations"
+        static let routeRailways = "train.routeRailways"
     }
 }

@@ -137,6 +137,25 @@ final class AppSettings {
     var movementRetention: MovementRetention {
         didSet { defaults.set(movementRetention.rawValue, forKey: Keys.movementRetention) }
     }
+    /// 移動: 駅まで歩く時間の計算(直線距離にかける係数、歩く速さ km/h、駅の中の移動 分)
+    var walkRouteFactor: Double {
+        didSet { defaults.set(walkRouteFactor, forKey: Keys.walkRouteFactor) }
+    }
+    var walkSpeedKmh: Double {
+        didSet { defaults.set(walkSpeedKmh, forKey: Keys.walkSpeedKmh) }
+    }
+    var stationAccessMinutes: Double {
+        didSet { defaults.set(stationAccessMinutes, forKey: Keys.stationAccessMinutes) }
+    }
+    /// 移動: 経路の検索での乗り換えの時間(分)
+    var transferMinutes: Double {
+        didSet { defaults.set(transferMinutes, forKey: Keys.transferMinutes) }
+    }
+
+    var walkSettings: WalkSettings {
+        WalkSettings(routeFactor: walkRouteFactor, speedKmh: walkSpeedKmh, accessMinutes: stationAccessMinutes)
+    }
+
     /// 開発者向け: 位置のデバッグ(初期値はオフ)
     var movementDebugEnabled: Bool {
         didSet { defaults.set(movementDebugEnabled, forKey: Keys.movementDebugEnabled) }
@@ -180,6 +199,10 @@ final class AppSettings {
         rideDetectionEnabled = defaults.object(forKey: Keys.rideDetectionEnabled) as? Bool ?? true
         movementRetention = defaults.string(forKey: Keys.movementRetention).flatMap(MovementRetention.init(rawValue:)) ?? .today
         movementDebugEnabled = defaults.bool(forKey: Keys.movementDebugEnabled)
+        walkRouteFactor = defaults.object(forKey: Keys.walkRouteFactor) as? Double ?? 1.3
+        walkSpeedKmh = defaults.object(forKey: Keys.walkSpeedKmh) as? Double ?? 4.8
+        stationAccessMinutes = defaults.object(forKey: Keys.stationAccessMinutes) as? Double ?? 2
+        transferMinutes = defaults.object(forKey: Keys.transferMinutes) as? Double ?? 5
     }
 
     var refreshPolicy: RefreshPolicy {
@@ -230,5 +253,9 @@ final class AppSettings {
         static let rideDetectionEnabled = "movement.rideDetection"
         static let movementRetention = "movement.retention"
         static let movementDebugEnabled = "movement.debug"
+        static let walkRouteFactor = "movement.walkRouteFactor"
+        static let walkSpeedKmh = "movement.walkSpeedKmh"
+        static let stationAccessMinutes = "movement.stationAccessMinutes"
+        static let transferMinutes = "movement.transferMinutes"
     }
 }

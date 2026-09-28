@@ -98,6 +98,8 @@ final class MovementDebugSession {
     enum Kind: Equatable {
         case route
         case gpx
+        /// 選んだ経路の列車に、時刻表どおりに乗る
+        case journey
     }
 
     var plan: VirtualPlan {
@@ -107,6 +109,7 @@ final class MovementDebugSession {
     private(set) var kind: Kind = .route
     private(set) var mover: VirtualMover?
     private(set) var replay: GPXReplay?
+    private(set) var journeyMotion: JourneyMotion?
     private(set) var clock = VirtualClock(start: Date())
     private(set) var lastSample: RideSample?
     private(set) var isFinished = false
@@ -133,6 +136,7 @@ final class MovementDebugSession {
         switch kind {
         case .route: return mover?.position
         case .gpx: return lastSample?.point
+        case .journey: return journeyMotion?.position(at: clock.now)
         }
     }
 
@@ -163,6 +167,20 @@ final class MovementDebugSession {
         return true
     }
 
+    /// 経路の列車に乗って動く。仮想の時刻は、最初の列車が出る2分前から始める。
+    func startJourney(_ motion: JourneyMotion) -> Bool {
+        guard let start = motion.start else { return false }
+        journeyMotion = motion
+        mover = nil
+        replay = nil
+        kind = .journey
+        clock = VirtualClock(start: start.addingTimeInterval(-120))
+        lastSample = nil
+        isFinished = false
+        runState = .running
+        return true
+    }
+
     func pause() { if runState == .running { runState = .paused } }
     func resume() { if runState == .paused { runState = .running } }
 
@@ -170,6 +188,7 @@ final class MovementDebugSession {
         runState = .idle
         mover = nil
         replay = nil
+        journeyMotion = nil
         lastSample = nil
         isFinished = false
     }
@@ -197,6 +216,14 @@ final class MovementDebugSession {
             isFinished = replay.isFinished
             if let last = samples.last { lastSample = last }
             return samples
+        case .journey:
+            guard let motion = journeyMotion, let point = motion.position(at: clock.now) else { return [] }
+            if let end = motion.end { isFinished = clock.now > end.addingTimeInterval(60) }
+            let noise = VirtualMover.noise(meters: plan.noiseMeters, using: &generator)
+            let sample = RideSample(time: clock.now, point: GeoMath.offset(point, east: noise.east, north: noise.north),
+                                    accuracy: max(5, plan.noiseMeters))
+            lastSample = sample
+            return [sample]
         }
     }
 
@@ -294,6 +321,8 @@ final class MovementStore {
     private(set) var gpsAvailability: SensorAvailability = .unknown
     private(set) var isReducedAccuracy = false
     let debug: MovementDebugSession
+    /// 行きたい駅までの経路と、選んだ経路の案内
+    let journeys: JourneyStore
 
     @ObservationIgnored private let directory: URL
     @ObservationIgnored private let settings: AppSettings
@@ -312,11 +341,12 @@ final class MovementStore {
     /// 直近の位置を持つ時間
     static let recentWindow: TimeInterval = 10 * 60
 
-    init(directory: URL, settings: AppSettings, trains: TrainStore, live: TrainLiveStore) {
+    init(directory: URL, settings: AppSettings, trains: TrainStore, live: TrainLiveStore, network: NetworkMonitor) {
         self.directory = directory
         self.settings = settings
         self.trains = trains
         self.live = live
+        journeys = JourneyStore(trains: trains, live: live, settings: settings, network: network)
         let debug = MovementDebugSession()
         self.debug = debug
         virtualSource = VirtualMovementSource(session: debug)
@@ -338,6 +368,12 @@ final class MovementStore {
     /// 列車の位置の計算に使う時刻。仮想の移動の間は、倍率で進む仮想の時刻。
     func currentTime(real: Date = Date()) -> Date {
         debug.isActive ? debug.clock.now : real
+    }
+
+    /// 今の位置(駅までの徒歩の時間に使う)。仮想の移動の間は仮想の位置。移動タブの表示中だけ分かる。
+    var currentPoint: GeoPoint? {
+        if debug.isActive { return debug.position ?? recent.last?.point }
+        return recent.last?.point
     }
 
     /// 移動タブの表示・非表示
@@ -389,6 +425,23 @@ final class MovementStore {
         return true
     }
 
+    /// 選んだ経路の列車に、時刻表どおりに乗って動く(デバッグ)
+    func startJourneyRide(_ journey: Journey) -> Bool {
+        let directory = trains.directory
+        let shapes = trains.shapes
+        let motion = JourneyMotion(journey: journey, lines: rideLines()) { id in
+            if let point = directory?.station(id)?.point { return point }
+            for shape in shapes.values {
+                if let stop = shape.stops.first(where: { $0.stationID == id }) { return GeoPoint(stop.latitude, stop.longitude) }
+            }
+            return nil
+        }
+        guard debug.startJourney(motion) else { return false }
+        restartDetection()
+        startSource()
+        return true
+    }
+
     func stopVirtual() {
         debug.stop()
         restartDetection()
@@ -428,10 +481,9 @@ final class MovementStore {
     /// 判定に使う路線(路線の形がある登録路線)
     func rideLines() -> [RideLine] {
         let shapes = trains.neededRailways.compactMap { trains.shapes[$0.railwayID] }
-        let key = shapes.map { "\($0.railwayID):\($0.stops.count)" }.joined(separator: ",")
+        let names = trains.railwayNames
+        let key = shapes.map { "\($0.railwayID):\($0.stops.count):\(names[$0.railwayID] ?? "")" }.joined(separator: ",")
         if key != lineCache.key {
-            let names = Dictionary(trains.lines.map { ($0.railwayID, $0.railwayName) } + trains.stations.map { ($0.railwayID, $0.railwayName) },
-                                   uniquingKeysWith: { first, _ in first })
             lineCache = (key, shapes.compactMap { RideLine.make(shape: $0, name: names[$0.railwayID] ?? ODPTID.tail($0.railwayID)) })
         }
         return lineCache.lines
@@ -459,16 +511,27 @@ final class MovementStore {
         }
         if !isVirtual { log(sample) }
         guard settings.rideDetectionEnabled else { return }
-        judgement = detector.add(sample, context: context(now: sample.time))
+        let rideContext = context(now: sample.time)
+        judgement = detector.add(sample, context: rideContext)
         if !isVirtual { updateRides(now: sample.time) }
+        trackJourney(rideContext)
+    }
+
+    /// 選んだ経路の進み具合(予定どおりか、降りる駅の1駅前か)
+    private func trackJourney(_ rideContext: RideContext) {
+        guard journeys.selected != nil else { return }
+        let next = RideInfo.nextStationID(judgement: judgement, lines: rideContext.lines, trains: rideContext.trains)
+        journeys.track(judgement: judgement, nextStationID: next)
     }
 
     private func tick() {
         let now = currentTime()
         rollOverIfNeeded(now: Date())
         if settings.rideDetectionEnabled {
-            judgement = detector.tick(now: now, context: context(now: now))
+            let rideContext = context(now: now)
+            judgement = detector.tick(now: now, context: rideContext)
             if !debug.isActive { updateRides(now: now) }
+            trackJourney(rideContext)
         } else if judgement.state != .off {
             judgement = RideJudgement(state: .off)
         }
