@@ -20,6 +20,8 @@ struct RideInfo: Equatable {
     var aheadStations: [String] = []
     /// 次の駅までの距離(m)
     var nextStopDistance: Double?
+    /// 次に止まる駅のID(降りる駅の通知に使う)
+    var nextStationID: String?
     /// 登録した駅までの残り
     var targets: [Target] = []
     /// 線に沿った速さ(km/h)。推定中は nil。
@@ -52,6 +54,7 @@ struct RideInfo: Equatable {
         } else if let ascending {
             info.directionText = line.terminalName(ascending: ascending) + "方面"
         }
+        info.nextStationID = Self.nextStationID(judgement: judgement, lines: lines, trains: trains)
         if let train {
             info.nextStops = Array(train.upcoming.prefix(5))
             if let next = train.upcoming.first?.along { info.nextStopDistance = abs(next - along) }
@@ -67,5 +70,16 @@ struct RideInfo: Equatable {
             }
         }
         return info
+    }
+
+    /// 次に止まる駅。列車を照合できていれば、その列車の次の停車駅。できていなければ、進む向きで次にある駅。
+    static func nextStationID(judgement: RideJudgement, lines: [RideLine], trains: [RideTrainCandidate]) -> String? {
+        guard judgement.isRiding else { return nil }
+        if let id = judgement.trainID, let train = trains.first(where: { $0.id == id }) {
+            return train.upcoming.first?.stationID
+        }
+        guard let railwayID = judgement.railwayID, let along = judgement.along, let ascending = judgement.isAscending,
+              let line = lines.first(where: { $0.railwayID == railwayID }) else { return nil }
+        return line.stationsAhead(of: along, ascending: ascending).first?.stationID
     }
 }
