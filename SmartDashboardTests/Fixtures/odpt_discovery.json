@@ -1,0 +1,525 @@
+{
+ "description": "事業者の検出のテスト用。ODPT の応答(2026-09-28)を小さく切り詰め、一部の値を組み合わせたもの。トークンは含まない。",
+ "operators": [
+  {
+   "@type": "odpt:Operator",
+   "owl:sameAs": "odpt.Operator:Toei",
+   "dc:title": "東京都交通局",
+   "odpt:operatorTitle": {
+    "ja": "東京都交通局",
+    "en": "Bureau of Transportation, Tokyo Metropolitan Government"
+   }
+  },
+  {
+   "@type": "odpt:Operator",
+   "owl:sameAs": "odpt.Operator:TokyoMetro",
+   "dc:title": "東京メトロ",
+   "odpt:operatorTitle": {
+    "ja": "東京メトロ",
+    "en": "Tokyo Metro"
+   }
+  },
+  {
+   "@type": "odpt:Operator",
+   "owl:sameAs": "odpt.Operator:MIR",
+   "dc:title": "首都圏新都市鉄道",
+   "odpt:operatorTitle": {
+    "ja": "首都圏新都市鉄道",
+    "en": "Metropolitan Intercity Railway"
+   }
+  },
+  {
+   "@type": "odpt:Operator",
+   "owl:sameAs": "odpt.Operator:Yurikamome",
+   "dc:title": "ゆりかもめ",
+   "odpt:operatorTitle": {
+    "ja": "ゆりかもめ",
+    "en": "Yurikamome"
+   }
+  },
+  {
+   "@type": "odpt:Operator",
+   "owl:sameAs": "odpt.Operator:Hokuso",
+   "dc:title": "北総鉄道",
+   "odpt:operatorTitle": {
+    "ja": "北総鉄道",
+    "en": "Hokuso Railway"
+   }
+  },
+  {
+   "@type": "odpt:Operator",
+   "owl:sameAs": "odpt.Operator:Tobu",
+   "dc:title": "東武鉄道",
+   "odpt:operatorTitle": {
+    "ja": "東武鉄道",
+    "en": "Tobu Railway"
+   }
+  },
+  {
+   "@type": "odpt:Operator",
+   "dc:date": "2019-04-22T15:00:00+09:00",
+   "dc:title": "京王バス",
+   "owl:sameAs": "odpt.Operator:KeioBus",
+   "odpt:operatorTitle": {
+    "en": "Keio Bus",
+    "ja": "京王バス"
+   }
+  }
+ ],
+ "railways": [
+  {
+   "@type": "odpt:Railway",
+   "dc:date": "2024-06-27T08:00:00+09:00",
+   "dc:title": "浅草線",
+   "odpt:color": "#FF535F",
+   "owl:sameAs": "odpt.Railway:Toei.Asakusa",
+   "odpt:operator": "odpt.Operator:Toei",
+   "odpt:railwayTitle": {
+    "en": "Asakusa Line",
+    "ja": "浅草線"
+   },
+   "odpt:stationOrder": [
+    {
+     "odpt:index": 1,
+     "odpt:station": "odpt.Station:Toei.Asakusa.NishiMagome",
+     "odpt:stationTitle": {
+      "en": "Nishi-magome",
+      "ja": "西馬込"
+     }
+    },
+    {
+     "odpt:index": 2,
+     "odpt:station": "odpt.Station:Toei.Asakusa.Magome",
+     "odpt:stationTitle": {
+      "en": "Magome",
+      "ja": "馬込"
+     }
+    }
+   ],
+   "odpt:ascendingRailDirection": "odpt.RailDirection:Northbound",
+   "odpt:descendingRailDirection": "odpt.RailDirection:Southbound"
+  },
+  {
+   "@type": "odpt:Railway",
+   "owl:sameAs": "odpt.Railway:Toei.Arakawa",
+   "dc:title": "荒川線",
+   "odpt:operator": "odpt.Operator:Toei",
+   "odpt:railwayTitle": {
+    "ja": "東京さくらトラム（都電荒川線）",
+    "en": "Tokyo Sakura Tram (Arakawa Line)"
+   },
+   "odpt:stationOrder": [
+    {
+     "odpt:index": 1,
+     "odpt:station": "odpt.Station:Toei.Arakawa.Minowabashi",
+     "odpt:stationTitle": {
+      "ja": "三ノ輪橋",
+      "en": "Minowabashi"
+     }
+    }
+   ]
+  },
+  {
+   "@type": "odpt:Railway",
+   "owl:sameAs": "odpt.Railway:TokyoMetro.Marunouchi",
+   "dc:title": "丸ノ内線",
+   "odpt:operator": "odpt.Operator:TokyoMetro",
+   "odpt:color": "#F62E36",
+   "odpt:railwayTitle": {
+    "ja": "丸ノ内線",
+    "en": "Marunouchi Line"
+   },
+   "odpt:stationOrder": [
+    {
+     "odpt:index": 1,
+     "odpt:station": "odpt.Station:TokyoMetro.Marunouchi.Shinjuku",
+     "odpt:stationTitle": {
+      "ja": "新宿",
+      "en": "Shinjuku"
+     }
+    }
+   ],
+   "odpt:ascendingRailDirection": "odpt.RailDirection:TokyoMetro.Ikebukuro",
+   "odpt:descendingRailDirection": "odpt.RailDirection:TokyoMetro.Ogikubo"
+  },
+  {
+   "@type": "odpt:Railway",
+   "owl:sameAs": "odpt.Railway:MIR.TsukubaExpress",
+   "dc:title": "つくばエクスプレス",
+   "odpt:operator": "odpt.Operator:MIR",
+   "odpt:color": "#000084",
+   "odpt:railwayTitle": {
+    "ja": "つくばエクスプレス",
+    "en": "Tsukuba Express"
+   },
+   "odpt:stationOrder": [
+    {
+     "odpt:index": 3,
+     "odpt:station": "odpt.Station:MIR.TsukubaExpress.Asakusa",
+     "odpt:stationTitle": {
+      "ja": "浅草",
+      "en": "Asakusa"
+     }
+    }
+   ]
+  },
+  {
+   "@type": "odpt:Railway",
+   "owl:sameAs": "odpt.Railway:Yurikamome.Yurikamome",
+   "dc:title": "ゆりかもめ",
+   "odpt:operator": "odpt.Operator:Yurikamome",
+   "odpt:railwayTitle": {
+    "ja": "ゆりかもめ",
+    "en": "Yurikamome"
+   },
+   "odpt:stationOrder": [
+    {
+     "odpt:index": 10,
+     "odpt:station": "odpt.Station:Yurikamome.Yurikamome.Aomi",
+     "odpt:stationTitle": {
+      "ja": "青海",
+      "en": "Aomi"
+     }
+    }
+   ]
+  },
+  {
+   "@type": "odpt:Railway",
+   "owl:sameAs": "odpt.Railway:Hokuso.Hokuso",
+   "dc:title": "北総線",
+   "odpt:operator": "odpt.Operator:Hokuso",
+   "odpt:railwayTitle": {
+    "ja": "北総線",
+    "en": "Hokuso Line"
+   },
+   "odpt:stationOrder": []
+  }
+ ],
+ "information": [
+  {
+   "@type": "odpt:TrainInformation",
+   "dc:date": "2026-09-28T18:21:00+09:00",
+   "dct:valid": "2026-09-28T18:26:00+09:00",
+   "owl:sameAs": "odpt.TrainInformation:Toei.Asakusa",
+   "odpt:railway": "odpt.Railway:Toei.Asakusa",
+   "odpt:operator": "odpt.Operator:Toei",
+   "odpt:trainInformationText": {
+    "ja": "現在、１５分以上の遅延はありません。"
+   }
+  },
+  {
+   "@type": "odpt:TrainInformation",
+   "dc:date": "2026-09-28T18:23:00+09:00",
+   "dct:valid": "2026-09-28T18:28:00+09:00",
+   "owl:sameAs": "odpt.TrainInformation:TokyoMetro.Marunouchi",
+   "odpt:railway": "odpt.Railway:TokyoMetro.Marunouchi",
+   "odpt:operator": "odpt.Operator:TokyoMetro",
+   "odpt:trainInformationText": {
+    "en": "Normal service",
+    "ja": "現在、平常どおり運転しています。",
+    "ko": "정상 운행",
+    "zh-Hans": "通常运行",
+    "zh-Hant": "正常行駛"
+   }
+  },
+  {
+   "@type": "odpt:TrainInformation",
+   "dc:date": "2026-09-28T18:22:00+09:00",
+   "dct:valid": "2026-09-28T18:27:00+09:00",
+   "owl:sameAs": "odpt.TrainInformation:MIR.TsukubaExpress",
+   "odpt:railway": "odpt.Railway:MIR.TsukubaExpress",
+   "odpt:operator": "odpt.Operator:MIR",
+   "odpt:trainInformationText": {
+    "ja": "現在、平常通り運転しています。"
+   }
+  }
+ ],
+ "trains": [
+  {
+   "@type": "odpt:Train",
+   "dc:date": "2026-09-28T18:21:29+09:00",
+   "dct:valid": "2026-09-28T18:26:29+09:00",
+   "odpt:delay": 0,
+   "owl:sameAs": "odpt.Train:Toei.Asakusa.1878K",
+   "odpt:railway": "odpt.Railway:Toei.Asakusa",
+   "odpt:operator": "odpt.Operator:Toei",
+   "odpt:trainNumber": "1878K",
+   "odpt:railDirection": "odpt.RailDirection:Northbound"
+  },
+  {
+   "@type": "odpt:Train",
+   "owl:sameAs": "odpt.Train:Toei.Arakawa.1234",
+   "odpt:operator": "odpt.Operator:Toei",
+   "odpt:railway": "odpt.Railway:Toei.Arakawa",
+   "odpt:trainNumber": "1234",
+   "odpt:railDirection": "odpt.RailDirection:Toei.Waseda"
+  }
+ ],
+ "stations": [
+  {
+   "@type": "odpt:Station",
+   "dc:date": "2021-08-17T10:00:00+09:00",
+   "geo:lat": 35.58705,
+   "dc:title": "西馬込",
+   "geo:long": 139.706086,
+   "owl:sameAs": "odpt.Station:Toei.Asakusa.NishiMagome",
+   "odpt:railway": "odpt.Railway:Toei.Asakusa",
+   "odpt:operator": "odpt.Operator:Toei",
+   "odpt:stationTitle": {
+    "en": "Nishi-magome",
+    "ja": "西馬込"
+   },
+   "odpt:stationTimetable": [
+    "odpt.StationTimetable:Toei.Asakusa.NishiMagome.Northbound.Weekday"
+   ]
+  },
+  {
+   "@type": "odpt:Station",
+   "dc:date": "2024-03-27T09:00:00+09:00",
+   "geo:lat": 35.692452,
+   "dc:title": "新宿",
+   "geo:long": 139.700548,
+   "owl:sameAs": "odpt.Station:TokyoMetro.Marunouchi.Shinjuku",
+   "odpt:railway": "odpt.Railway:TokyoMetro.Marunouchi",
+   "odpt:operator": "odpt.Operator:TokyoMetro",
+   "odpt:stationTitle": {
+    "en": "Shinjuku",
+    "ja": "新宿",
+    "ko": "신주쿠",
+    "ja-Hrkt": "しんじゅく",
+    "zh-Hans": "新宿",
+    "zh-Hant": "新宿"
+   },
+   "odpt:stationTimetable": [
+    "odpt.StationTimetable:TokyoMetro.Marunouchi.Shinjuku.TokyoMetro.Ogikubo.Weekday",
+    "odpt.StationTimetable:TokyoMetro.Marunouchi.Shinjuku.TokyoMetro.Ogikubo.SaturdayHoliday",
+    "odpt.StationTimetable:TokyoMetro.Marunouchi.Shinjuku.TokyoMetro.Ikebukuro.Weekday",
+    "odpt.StationTimetable:TokyoMetro.Marunouchi.Shinjuku.TokyoMetro.Ikebukuro.SaturdayHoliday"
+   ],
+   "odpt:connectingStation": [
+    "odpt.Station:Toei.Oedo.ShinjukuNishiguchi"
+   ]
+  },
+  {
+   "@type": "odpt:Station",
+   "dc:date": "2024-05-14T14:00:00+09:00",
+   "geo:lat": 35.714,
+   "dc:title": "浅草",
+   "geo:long": 139.79239,
+   "owl:sameAs": "odpt.Station:MIR.TsukubaExpress.Asakusa",
+   "odpt:railway": "odpt.Railway:MIR.TsukubaExpress",
+   "odpt:operator": "odpt.Operator:MIR",
+   "odpt:stationTitle": {
+    "en": "Asakusa",
+    "ja": "浅草",
+    "ko": "아사쿠사",
+    "zh-Hans": "浅草",
+    "zh-Hant": "淺草"
+   },
+   "odpt:stationTimetable": [
+    "odpt.StationTimetable:MIR.TsukubaExpress.Asakusa.Inbound.Weekday",
+    "odpt.StationTimetable:MIR.TsukubaExpress.Asakusa.Inbound.SaturdayHoliday",
+    "odpt.StationTimetable:MIR.TsukubaExpress.Asakusa.Outbound.Weekday",
+    "odpt.StationTimetable:MIR.TsukubaExpress.Asakusa.Outbound.SaturdayHoliday"
+   ]
+  },
+  {
+   "@type": "odpt:Station",
+   "dc:date": "2024-06-27T08:00:00+09:00",
+   "geo:lat": 35.62479,
+   "dc:title": "青海",
+   "geo:long": 139.78131,
+   "owl:sameAs": "odpt.Station:Yurikamome.Yurikamome.Aomi",
+   "odpt:railway": "odpt.Railway:Yurikamome.Yurikamome",
+   "odpt:operator": "odpt.Operator:Yurikamome",
+   "odpt:stationTitle": {
+    "en": "Aomi",
+    "ja": "青海",
+    "ko": "아오미",
+    "zh-Hans": "青海"
+   },
+   "odpt:stationTimetable": [
+    "odpt.StationTimetable:Yurikamome.Yurikamome.Aomi.Inbound.Weekday",
+    "odpt.StationTimetable:Yurikamome.Yurikamome.Aomi.Inbound.SaturdayHoliday",
+    "odpt.StationTimetable:Yurikamome.Yurikamome.Aomi.Outbound.Weekday",
+    "odpt.StationTimetable:Yurikamome.Yurikamome.Aomi.Outbound.SaturdayHoliday"
+   ]
+  }
+ ],
+ "stationTimetables": [
+  {
+   "@type": "odpt:StationTimetable",
+   "dc:date": "2025-03-17T12:00:00+09:00",
+   "owl:sameAs": "odpt.StationTimetable:MIR.TsukubaExpress.Akihabara.Outbound.SaturdayHoliday",
+   "odpt:railway": "odpt.Railway:MIR.TsukubaExpress",
+   "odpt:station": "odpt.Station:MIR.TsukubaExpress.Akihabara",
+   "odpt:calendar": "odpt.Calendar:SaturdayHoliday",
+   "odpt:operator": "odpt.Operator:MIR",
+   "odpt:railDirection": "odpt.RailDirection:Outbound",
+   "odpt:stationTimetableObject": [
+    {
+     "odpt:train": "odpt.Train:MIR.TsukubaExpress.3013",
+     "odpt:trainType": "odpt.TrainType:MIR.Rapid",
+     "odpt:trainNumber": "3013",
+     "odpt:departureTime": "09:02",
+     "odpt:destinationStation": [
+      "odpt.Station:MIR.TsukubaExpress.Tsukuba"
+     ]
+    },
+    {
+     "odpt:train": "odpt.Train:MIR.TsukubaExpress.5237",
+     "odpt:trainType": "odpt.TrainType:MIR.Local",
+     "odpt:trainNumber": "5237",
+     "odpt:departureTime": "09:06",
+     "odpt:destinationStation": [
+      "odpt.Station:MIR.TsukubaExpress.Moriya"
+     ]
+    },
+    {
+     "odpt:train": "odpt.Train:MIR.TsukubaExpress.5239",
+     "odpt:trainType": "odpt.TrainType:MIR.Local",
+     "odpt:trainNumber": "5239",
+     "odpt:departureTime": "09:11",
+     "odpt:destinationStation": [
+      "odpt.Station:MIR.TsukubaExpress.Moriya"
+     ]
+    },
+    {
+     "odpt:train": "odpt.Train:MIR.TsukubaExpress.4015",
+     "odpt:trainType": "odpt.TrainType:MIR.SemiRapid",
+     "odpt:trainNumber": "4015",
+     "odpt:departureTime": "09:17",
+     "odpt:destinationStation": [
+      "odpt.Station:MIR.TsukubaExpress.Tsukuba"
+     ]
+    }
+   ]
+  },
+  {
+   "@type": "odpt:StationTimetable",
+   "dc:date": "2026-02-25T11:00:00+09:00",
+   "owl:sameAs": "odpt.StationTimetable:Yurikamome.Yurikamome.Aomi.Inbound.SaturdayHoliday",
+   "odpt:railway": "odpt.Railway:Yurikamome.Yurikamome",
+   "odpt:station": "odpt.Station:Yurikamome.Yurikamome.Aomi",
+   "odpt:calendar": "odpt.Calendar:SaturdayHoliday",
+   "odpt:operator": "odpt.Operator:Yurikamome",
+   "odpt:railDirection": "odpt.RailDirection:Inbound",
+   "odpt:stationTimetableObject": [
+    {
+     "odpt:trainType": "odpt.TrainType:Yurikamome.Local",
+     "odpt:departureTime": "09:16",
+     "odpt:destinationStation": [
+      "odpt.Station:Yurikamome.Yurikamome.Shimbashi"
+     ]
+    },
+    {
+     "odpt:trainType": "odpt.TrainType:Yurikamome.Local",
+     "odpt:departureTime": "09:21",
+     "odpt:destinationStation": [
+      "odpt.Station:Yurikamome.Yurikamome.Shimbashi"
+     ]
+    },
+    {
+     "odpt:trainType": "odpt.TrainType:Yurikamome.Local",
+     "odpt:departureTime": "09:25",
+     "odpt:destinationStation": [
+      "odpt.Station:Yurikamome.Yurikamome.Shimbashi"
+     ]
+    }
+   ]
+  }
+ ],
+ "trainTimetables": [
+  {
+   "dc:date": "2025-12-15T14:00:00+09:00",
+   "odpt:train": "odpt.Train:Toei.Asakusa.1029N",
+   "owl:sameAs": "odpt.TrainTimetable:Toei.Asakusa.1029N.Weekday",
+   "odpt:railway": "odpt.Railway:Toei.Asakusa",
+   "odpt:calendar": "odpt.Calendar:Weekday",
+   "odpt:operator": "odpt.Operator:Toei",
+   "odpt:trainType": "odpt.TrainType:Toei.Local",
+   "odpt:trainNumber": "1029N",
+   "odpt:railDirection": "odpt.RailDirection:Northbound",
+   "odpt:destinationStation": [
+    "odpt.Station:Hokuso.Hokuso.ImbaNihonIdai"
+   ],
+   "odpt:trainTimetableObject": [
+    {
+     "odpt:departureTime": "10:54",
+     "odpt:platformNumber": "2",
+     "odpt:departureStation": "odpt.Station:Toei.Asakusa.NishiMagome"
+    },
+    {
+     "odpt:arrivalTime": "10:55",
+     "odpt:departureTime": "10:56",
+     "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Magome",
+     "odpt:departureStation": "odpt.Station:Toei.Asakusa.Magome"
+    },
+    {
+     "odpt:arrivalTime": "10:57",
+     "odpt:departureTime": "10:58",
+     "odpt:arrivalStation": "odpt.Station:Toei.Asakusa.Nakanobu",
+     "odpt:departureStation": "odpt.Station:Toei.Asakusa.Nakanobu"
+    }
+   ]
+  },
+  {
+   "@type": "odpt:TrainTimetable",
+   "dc:date": "2026-09-24T08:00:00+09:00",
+   "odpt:train": "odpt.Train:TokyoMetro.Marunouchi.A555",
+   "owl:sameAs": "odpt.TrainTimetable:TokyoMetro.Marunouchi.A555.Weekday",
+   "odpt:railway": "odpt.Railway:TokyoMetro.Marunouchi",
+   "odpt:calendar": "odpt.Calendar:Weekday",
+   "odpt:operator": "odpt.Operator:TokyoMetro",
+   "odpt:trainType": "odpt.TrainType:TokyoMetro.Local",
+   "odpt:trainNumber": "A555",
+   "odpt:railDirection": "odpt.RailDirection:TokyoMetro.Ogikubo",
+   "odpt:destinationStation": [
+    "odpt.Station:TokyoMetro.Marunouchi.Ogikubo"
+   ],
+   "odpt:trainTimetableObject": [
+    {
+     "odpt:departureTime": "05:26",
+     "odpt:departureStation": "odpt.Station:TokyoMetro.Marunouchi.ShinjukuSanchome"
+    },
+    {
+     "odpt:departureTime": "05:28",
+     "odpt:departureStation": "odpt.Station:TokyoMetro.Marunouchi.Shinjuku"
+    },
+    {
+     "odpt:departureTime": "05:30",
+     "odpt:departureStation": "odpt.Station:TokyoMetro.Marunouchi.NishiShinjuku"
+    }
+   ]
+  },
+  {
+   "@type": "odpt:TrainTimetable",
+   "dc:date": "2025-03-17T12:00:00+09:00",
+   "odpt:train": "odpt.Train:MIR.TsukubaExpress.3005",
+   "owl:sameAs": "odpt.TrainTimetable:MIR.TsukubaExpress.3005.SaturdayHoliday",
+   "odpt:railway": "odpt.Railway:MIR.TsukubaExpress",
+   "odpt:calendar": "odpt.Calendar:SaturdayHoliday",
+   "odpt:operator": "odpt.Operator:MIR",
+   "odpt:trainType": "odpt.TrainType:MIR.Rapid",
+   "odpt:trainNumber": "3005",
+   "odpt:railDirection": "odpt.RailDirection:Outbound",
+   "odpt:destinationStation": [
+    "odpt.Station:MIR.TsukubaExpress.Tsukuba"
+   ],
+   "odpt:trainTimetableObject": [
+    {
+     "odpt:departureTime": "07:00",
+     "odpt:departureStation": "odpt.Station:MIR.TsukubaExpress.Akihabara"
+    },
+    {
+     "odpt:departureTime": "07:02",
+     "odpt:departureStation": "odpt.Station:MIR.TsukubaExpress.ShinOkachimachi"
+    },
+    {
+     "odpt:departureTime": "07:05",
+     "odpt:departureStation": "odpt.Station:MIR.TsukubaExpress.Asakusa"
+    }
+   ]
+  }
+ ]
+}
