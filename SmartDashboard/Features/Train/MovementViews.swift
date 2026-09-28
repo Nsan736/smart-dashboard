@@ -26,22 +26,29 @@ struct TrainView: View {
                 MovementCenterView(selection: $selection, directionNames: directionNames, recordDay: recordDay)
                     .containerRelativeFrame(.vertical) { length, _ in min(max(length * 0.4, 200), 420) }
                     .padding(.horizontal, 8)
-                List {
-                    switch display.mode {
-                    case .map, .diagram:
-                        MovementLiveSections(selection: $selection, directionNames: directionNames)
-                    case .record:
-                        MovementRecordSections(recordDay: $recordDay)
+                ScrollViewReader { proxy in
+                    List {
+                        switch display.mode {
+                        case .map, .diagram:
+                            MovementLiveSections(selection: $selection, directionNames: directionNames)
+                        case .record:
+                            MovementRecordSections(recordDay: $recordDay)
+                        }
+                        if env.settings.movementDebugEnabled {
+                            MovementDebugSections()
+                        }
+                        Section {
+                        } footer: {
+                            ODPTAttributionView()
+                        }
                     }
-                    if env.settings.movementDebugEnabled {
-                        MovementDebugSections()
-                    }
-                    Section {
-                    } footer: {
-                        ODPTAttributionView()
+                    .listStyle(.insetGrouped)
+                    // 駅や列車をタップしたら、下の詳細が見える位置までスクロールする
+                    .onChange(of: selection) { _, new in
+                        guard new != nil else { return }
+                        withAnimation { proxy.scrollTo(MovementScroll.selection, anchor: .top) }
                     }
                 }
-                .listStyle(.insetGrouped)
             }
             .navigationTitle("移動")
             .navigationBarTitleDisplayMode(.inline)
@@ -61,6 +68,8 @@ struct TrainView: View {
                 await env.live.ensureSchedules(manual: false)
                 // 最寄り駅は、タブを開いたときに1回だけ現在地を取って判定する(500m以上動いたときだけ判定し直す)
                 await env.live.updateNearestStation()
+                // 駅の一覧と乗り換えの関係(経路の検索に使う。30日キャッシュ)
+                await store.ensureDirectory(manual: false)
             }
             .task {
                 let endpoints = Set(store.neededRailways.compactMap { OperatorCatalog.find($0.operatorID)?.endpoint })
@@ -207,6 +216,24 @@ struct RideMapOverlay {
                                                      color: judgement.state == .estimating ? .systemGray : .systemOrange,
                                                      diameter: 22, isHollow: true))
         }
+        // 選んだ経路(区間ごとに、線路の線に沿って描く)
+        if let journey = movement.journeys.selected {
+            let lines = movement.rideLines()
+            let directory = env.trains.directory
+            for (index, leg) in journey.legs.enumerated() {
+                var coordinates: [CLLocationCoordinate2D] = []
+                if let line = lines.first(where: { $0.railwayID == leg.railwayID }),
+                   let from = line.stationAlong(leg.board.stationID),
+                   let to = line.stationAlong(leg.alight.stationID, near: from) {
+                    coordinates = line.path.subpath(from: min(from, to), to: max(from, to)).map(\.coordinate)
+                } else if let directory {
+                    coordinates = leg.stops.compactMap { directory.station($0.stationID)?.point?.coordinate }
+                }
+                guard coordinates.count >= 2 else { continue }
+                overlay.lines.append(MapLine(id: "journey.\(index)", coordinates: coordinates, color: .systemIndigo,
+                                             casingColor: .white, isEmphasized: false))
+            }
+        }
         guard env.settings.movementDebugEnabled else {
             if movement.isVirtual, let last = movement.recent.last {
                 overlay.movingMarks.append(MapMovingMark(id: "raw", coordinate: last.point.coordinate, color: .systemPurple, diameter: 14))
@@ -265,7 +292,26 @@ struct RideMapBadge: View {
 
     var body: some View {
         let judgement = env.movement.judgement
+        let journeys = env.movement.journeys
         VStack(alignment: .trailing, spacing: 4) {
+            if let notice = journeys.alightNotice {
+                Text(notice)
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.white)
+                    .multilineTextAlignment(.trailing)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .frame(maxWidth: 220, alignment: .trailing)
+                    .background(Color.orange, in: RoundedRectangle(cornerRadius: 8))
+            }
+            if case .onPlan = journeys.tracking {
+                Text("予定どおり")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Color.green, in: Capsule())
+            }
             if judgement.isRiding {
                 Text(judgement.state == .estimating ? "推定中(GPSなし)"
                      : "乗車中の可能性あり" + (judgement.confidence.map { "・" + $0.label } ?? ""))
@@ -369,7 +415,9 @@ struct MovementLiveSections: View {
         let items = store.info?.value ?? []
         let sortedLines = TrainSummary.sorted(store.lines, items: items)
 
-        if selection != nil || display.filter != .all {
+        if case .station(let stationID)? = selection {
+            StationInfoSections(stationID: stationID, directionNames: directionNames) { selection = nil }
+        } else if selection != nil || display.filter != .all {
             Section {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
                     let now = env.movement.currentTime(real: context.date)
@@ -383,10 +431,13 @@ struct MovementLiveSections: View {
                         }
                     }
                 }
+                .id(MovementScroll.selection)
             } header: {
                 Text(display.filter == .all ? "選んだもの" : display.filter.title)
             }
         }
+
+        JourneyStatusSection()
 
         RideStatusSection()
 
@@ -619,6 +670,18 @@ struct MovementSettingsSection: View {
                 TrainRegistrationListView()
             } label: {
                 Label("登録した路線・駅の管理", systemImage: "list.bullet")
+            }
+            NavigationLink {
+                MovementWalkSettingsView()
+            } label: {
+                Label("徒歩と乗り換えの時間", systemImage: "figure.walk")
+            }
+            if !env.trains.routeRailways.isEmpty {
+                NavigationLink {
+                    RouteRailwaysView()
+                } label: {
+                    Label("経路の検索用の路線(\(env.trains.routeRailways.count))", systemImage: "arrow.triangle.branch")
+                }
             }
         } header: {
             Text("設定")

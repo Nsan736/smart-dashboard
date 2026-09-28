@@ -35,8 +35,7 @@ struct RailwayChoice: Identifiable, Equatable {
 enum TrainRailwayChoices {
     /// 選べる路線(運行情報の路線と、時刻表の駅がある路線)
     static func make(_ trains: TrainStore) -> [RailwayChoice] {
-        let names = Dictionary(trains.lines.map { ($0.railwayID, $0.railwayName) } + trains.stations.map { ($0.railwayID, $0.railwayName) },
-                               uniquingKeysWith: { first, _ in first })
+        let names = trains.railwayNames
         return trains.neededRailways.map { RailwayChoice(id: $0.railwayID, name: names[$0.railwayID] ?? ODPTID.tail($0.railwayID)) }
     }
 }
@@ -58,8 +57,7 @@ struct TrainLiveBoard {
         self.filter = filter
         let trains = env.trains
         let live = env.live
-        let names = Dictionary(trains.lines.map { ($0.railwayID, $0.railwayName) } + trains.stations.map { ($0.railwayID, $0.railwayName) },
-                               uniquingKeysWith: { first, _ in first })
+        let names = trains.railwayNames
         let built: [BoardLine] = trains.neededRailways.compactMap { railway in
             guard let schedule = live.schedules[railway.railwayID] else { return nil }
             return BoardLine(railwayID: railway.railwayID, name: names[railway.railwayID] ?? ODPTID.tail(railway.railwayID),
@@ -169,8 +167,8 @@ struct TrainLiveMapView: View {
                 fitKey: (fitShapes.isEmpty ? shapes : fitShapes).map(\.railwayID).joined(separator: ","),
                 fitLineIDs: Set((fitShapes.isEmpty ? shapes : fitShapes).map(\.railwayID)),
                 onSelectLine: { id in
-                    // デバッグの経路の線は、路線として扱わない
-                    if !id.hasPrefix("debug.") { selection = .line(id) }
+                    // デバッグの経路の線と、選んだ経路の線は、路線として扱わない
+                    if !id.hasPrefix("debug."), !id.hasPrefix("journey.") { selection = .line(id) }
                 },
                 onSelectMarker: { id in
                     if let handler = overlay.onSelectMarker, handler(id) { return }
@@ -182,7 +180,8 @@ struct TrainLiveMapView: View {
                 recenterKey: recenterKey,
                 circles: overlay.circles,
                 movingMarks: overlay.movingMarks,
-                onTapCoordinate: overlay.onTapCoordinate
+                onTapCoordinate: overlay.onTapCoordinate,
+                stationTrains: Self.stationTrains(board: board, selectedRailwayID: selectedRailwayID)
             )
             Button {
                 recenterKey += 1
@@ -206,6 +205,30 @@ struct TrainLiveMapView: View {
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+extension TrainLiveMapView {
+    /// 駅の点のまわりに重ねる電車(停車中と、3分以内に着く電車)。並びは駅・行・列の順にそろえ、毎秒の描き直しを避ける。
+    static func stationTrains(board: TrainLiveBoard, selectedRailwayID: String) -> [MapStationTrain] {
+        var keyed: [(key: String, train: MapStationTrain)] = []
+        for line in board.lines where TrainDisplayState.isEmphasized(line.railwayID, selected: selectedRailwayID) {
+            guard let shape = line.shape else { continue }
+            let items = StationTrainPlacement.items(positions: board.visiblePositions(in: line), line: line, now: board.now,
+                                                    directionOrder: TrainPositionCalculator.directions(in: line.schedule))
+            for (stationID, slots) in StationTrainPlacement.place(items) {
+                guard let stop = shape.stops.first(where: { $0.stationID == stationID }) else { continue }
+                let coordinate = CLLocationCoordinate2D(latitude: stop.latitude, longitude: stop.longitude)
+                for slot in slots {
+                    let train = MapStationTrain(trainID: slot.item.trainID, coordinate: coordinate, offset: StationTrainPlacement.offset(of: slot),
+                                                label: slot.item.label, isExpress: slot.item.isExpress,
+                                                color: TrainColors.uiColor(slot.item.tone), isStopped: slot.item.isStopped,
+                                                hiddenCount: slot.hiddenCount)
+                    keyed.append((key: "\(line.railwayID)|\(stationID)|\(slot.row)|\(slot.column)", train: train))
+                }
+            }
+        }
+        return keyed.sorted { $0.key < $1.key }.map { $0.train }
     }
 }
 
@@ -320,7 +343,8 @@ struct TrainDiagramView: View {
         .frame(height: rowHeight)
         .contentShape(Rectangle())
         .onTapGesture {
-            if isRegistered { selection = .station(stationID) }
+            // どの駅でも、タップすると駅の情報(時刻表など)を出す
+            selection = .station(stationID)
         }
     }
 
@@ -390,30 +414,55 @@ struct TrainSelectionCard: View {
     }
 
     private func trainDetail(_ position: TrainPosition, line: BoardLine) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("\(position.destination.isEmpty ? "行先不明" : position.destination + "行") \(position.trainType)")
+        let onPlan = env.movement.journeys.selected?.legs.contains { $0.tripID == position.id } ?? false
+        return VStack(alignment: .leading, spacing: 4) {
+            Text((position.trainType.isEmpty ? "" : position.trainType + " ") + (position.destination.isEmpty ? "行先不明" : position.destination + "行"))
                 .font(.headline)
                 .fixedSize(horizontal: false, vertical: true)
             Text("\(line.name)・列車番号 \(position.number)")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            if onPlan {
+                Label("選んだ経路の列車", systemImage: "checkmark.circle.fill")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.indigo)
+            }
             Label(position.delay.label, systemImage: "clock")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(TrainColors.color(position.delay.tone))
                 .fixedSize(horizontal: false, vertical: true)
-            if position.isWaitingToDepart {
-                Text("\(line.stationName(position.fromStation))駅で発車待ち").font(.subheadline)
-            } else if position.isStopped {
-                Text("\(line.stationName(position.fromStation))駅に停車中").font(.subheadline)
-            }
-            if let next = position.upcoming.first {
-                Text("次の停車駅: \(line.stationName(next.station)) \(Self.timeText(next.arrival)) 着予定")
-                    .font(.subheadline)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else {
+            Text(Self.whereText(position, line: line) + (position.currentPlatform.map { "(\($0)番線)" } ?? ""))
+                .font(.subheadline)
+                .fixedSize(horizontal: false, vertical: true)
+            if position.upcoming.isEmpty {
                 Text("終点に到着").font(.subheadline)
+            } else {
+                Text("これからの停車駅と到着予定(遅れを反映)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                ForEach(Array(position.upcoming.enumerated()), id: \.offset) { _, stop in
+                    HStack(spacing: 6) {
+                        Text(line.stationName(stop.station))
+                            .font(.subheadline)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                        if let platform = stop.platform {
+                            Text("\(platform)番線").font(.caption2).foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 4)
+                        Text(Self.timeText(stop.arrival))
+                            .font(.subheadline)
+                            .monospacedDigit()
+                    }
+                }
             }
         }
+    }
+
+    static func whereText(_ position: TrainPosition, line: BoardLine) -> String {
+        if position.isWaitingToDepart { return "\(line.stationName(position.fromStation))駅で発車待ち" }
+        if position.isStopped { return "\(line.stationName(position.fromStation))駅に停車中" }
+        return "\(line.stationName(position.fromStation))→\(line.stationName(position.toStation))を走行中"
     }
 
     static func timeText(_ date: Date) -> String {
