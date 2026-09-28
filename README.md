@@ -61,6 +61,9 @@ https://github.com/Nsan736/smart-dashboard/releases/latest/download/SmartDashboa
 公共交通オープンデータセンター(ODPT)のアクセストークンは、アプリの設定画面で入力します(端末のKeychainだけに保存します)。
 トークンがなくても、都営の路線(公開エンドポイント)は使えます。
 
+トークンを保存すると、そのトークンで使える事業者・路線と、それぞれで使えるデータ(運行情報・時刻表・遅れ・駅の位置)を自動で調べ、30日間保存します(1回あたり最大7回の通信、数十KB)。登録の画面には、検出した事業者だけが出ます。
+「公共交通オープンデータチャレンジ」限定のライセンスのデータ(JR東日本、東武、京王、小田急、京急、相鉄、西武、東急)は、利用条件がチャレンジへの応募作品に限られるため使いません。
+
 ## 開発について
 
 - 開発には Claude Code を使っています。
@@ -78,14 +81,14 @@ xcodegen generate
 ```
 
 `v*` のタグをpushすると、リリースのワークフローが動きます。
-事業者を増やすときは `SmartDashboard/Features/Train/OperatorCatalog.swift` に定義を追加します。
+事業者は自動で検出するので、コードに書き足す必要はありません。`SmartDashboard/Features/Train/OperatorCatalog.swift` にあるのは、検出できなかったときの予備と、表示名・並び順の上書き、使わない事業者の一覧だけです。
 
 ## 使用しているデータと出典
 
 - **天気**: [Open-Meteo](https://open-meteo.com/)(Weather data by Open-Meteo.com、CC BY 4.0)。[利用規約](https://open-meteo.com/en/terms)
 - **為替**: [Rates By Exchange Rate API](https://www.exchangerate-api.com)。[利用規約](https://www.exchangerate-api.com/terms)
-- **電車**: [公共交通オープンデータセンター](https://www.odpt.org/)(ODPT)。都営のデータは、東京都交通局・公共交通オープンデータ協議会(CC BY 4.0)。[開発者サイト](https://developer.odpt.org/)
-- **線路の形**: 出典「[国土数値情報(鉄道データ)](https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-N02-2025.html)(国土交通省)」(2025年度版、CC BY 4.0)を加工して作成。使う事業者の路線だけを抜き出し、駅の順につないで1本の線にし、点を間引いたものをアプリに同梱しています(更新は `scripts/update_railway_shapes.py`)。線路の形がない路線は、駅を結んだ直線で描きます
+- **電車**: [公共交通オープンデータセンター](https://www.odpt.org/)(ODPT)。都営のデータは、東京都交通局・公共交通オープンデータ協議会(CC BY 4.0)。そのほかの事業者(東京メトロ、横浜市交通局、首都圏新都市鉄道、東京臨海高速鉄道、多摩都市モノレール、ゆりかもめなど)のデータは、各事業者・公共交通オープンデータ協議会(公共交通オープンデータ基本ライセンス)。[開発者サイト](https://developer.odpt.org/)
+- **線路の形**: 出典「[国土数値情報(鉄道データ)](https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-N02-2025.html)(国土交通省)」(2025年度版、CC BY 4.0)を加工して作成。使う事業者の路線だけを抜き出し、駅の順につないで1本の線にし、点を間引いたものをアプリに同梱しています(都営、東京メトロ、横浜市営地下鉄、つくばエクスプレス、りんかい線、多摩モノレール、ゆりかもめの22路線。更新は `scripts/update_railway_shapes.py`)。線路の形がない路線は、駅を結んだ直線で描きます
 - **警報・注意報**: 出典 [気象庁](https://www.jma.go.jp/bosai/warning/)(気象警報・注意報)。レーダーと同じく公式のAPIではなく、仕様の変更で使えなくなる可能性があります。河川の氾濫に関する情報は含みません
 - **地震**: [P2P地震情報](https://www.p2pquake.net/) の JSON API v2(気象庁の地震情報を配信)。[API仕様・利用条件](https://www.p2pquake.net/develop/json_api_v2/)
 - **震度観測点の位置**: 出典 [気象庁](https://www.data.jma.go.jp/eqev/data/kyoshin/jma-shindo.html)(震度観測点の一覧)。気象庁の一覧から、観測点の名前・緯度・経度・都道府県だけを抜き出して加工したものをアプリに同梱しています(取得日はアプリ内に表示。更新は `scripts/update_jma_stations.py`)。[気象庁ホームページの利用規約](https://www.jma.go.jp/jma/kishou/info/coment.html)
