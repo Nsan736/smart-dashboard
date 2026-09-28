@@ -265,6 +265,7 @@
    "owl:sameAs": "odpt.Station:Toei.Asakusa.NishiMagome",
    "odpt:railway": "odpt.Railway:Toei.Asakusa",
    "odpt:operator": "odpt.Operator:Toei",
+   "odpt:stationCode": "A-01",
    "odpt:stationTitle": {
     "en": "Nishi-magome",
     "ja": "西馬込"
@@ -282,6 +283,7 @@
    "owl:sameAs": "odpt.Station:TokyoMetro.Marunouchi.Shinjuku",
    "odpt:railway": "odpt.Railway:TokyoMetro.Marunouchi",
    "odpt:operator": "odpt.Operator:TokyoMetro",
+   "odpt:stationCode": "M08",
    "odpt:stationTitle": {
     "en": "Shinjuku",
     "ja": "新宿",
@@ -309,6 +311,7 @@
    "owl:sameAs": "odpt.Station:MIR.TsukubaExpress.Asakusa",
    "odpt:railway": "odpt.Railway:MIR.TsukubaExpress",
    "odpt:operator": "odpt.Operator:MIR",
+   "odpt:stationCode": "TX03",
    "odpt:stationTitle": {
     "en": "Asakusa",
     "ja": "浅草",
@@ -332,6 +335,7 @@
    "owl:sameAs": "odpt.Station:Yurikamome.Yurikamome.Aomi",
    "odpt:railway": "odpt.Railway:Yurikamome.Yurikamome",
    "odpt:operator": "odpt.Operator:Yurikamome",
+   "odpt:stationCode": "U10",
    "odpt:stationTitle": {
     "en": "Aomi",
     "ja": "青海",
