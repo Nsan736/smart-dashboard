@@ -57,6 +57,14 @@ struct OperatorDiscoveryStatusRows: View {
                 .font(.footnote)
                 .foregroundStyle(.orange)
                 .fixedSize(horizontal: false, vertical: true)
+            if let url = failure.url {
+                // 失敗したリクエスト(トークンは含まない)
+                Text(url)
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         if let note = discovery.note {
             Label(note, systemImage: "wifi")
@@ -85,7 +93,7 @@ struct OperatorPickerView: View {
             } header: {
                 Text("自動検出")
             } footer: {
-                Text("トークンで使える事業者・路線と、使えるデータを調べて30日間保存します(1回あたり約50KB、7回の通信)。期限が切れたときは、Wi-Fi接続時に調べ直します。")
+                Text("トークンで使える事業者・路線と、使えるデータを調べて30日間保存します(1回あたり約50KB、10回前後の通信)。期限が切れたときは、Wi-Fi接続時に調べ直します。")
             }
             Section {
                 ForEach(discovery.operators) { op in

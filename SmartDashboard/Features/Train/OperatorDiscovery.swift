@@ -51,14 +51,16 @@ struct OperatorDiscoveryResult: Codable, Equatable {
     var railwayCount: Int { operators.reduce(0) { $0 + $1.railways.count } }
 }
 
-/// 事業者の検出の手順(通信しない部分)。1回の検出は最大7リクエスト。
+/// 事業者の検出の手順(通信しない部分)。1回の検出は10リクエスト前後。
+/// カンマ区切りの絞り込みは1回に10件まで(ODPTQuery.maxORValues)なので、それを超えるときは分けて問い合わせる。
 ///
 /// 1. 事業者の一覧 (odpt:Operator)。チャレンジ限定のライセンスの事業者は、この時点で外す。
-/// 2. 路線 (odpt:Railway)。事業者をカンマ区切りで絞る。バス・航空の事業者は路線がないので、ここで落ちる。
-/// 3. 運行情報 (odpt:TrainInformation) と 4. 列車 (odpt:Train) を、路線のある事業者に絞って1回ずつ。
+/// 2. 路線 (odpt:Railway)。絞り込まずに全件を1回で取り、対象の事業者の路線だけを使う。バス・航空の事業者は路線がないので、ここで落ちる。
+/// 3. 運行情報 (odpt:TrainInformation) と 4. 列車 (odpt:Train) を、路線のある事業者に絞って。
 /// 5. 各路線の最初の駅だけの odpt:Station(owl:sameAs)。駅の位置と、駅時刻表のIDの有無が分かる。
 /// 6. 走っている列車がない事業者だけ、駅時刻表を1つ(owl:sameAs)。列車のIDを得るため。
 /// 7. 事業者ごとに2本までの列車の odpt:TrainTimetable(odpt:train)。返れば列車ごとの時刻表が使える。
+/// どれかの段階が失敗したら、そこで中止する(あとの段階を0件として扱わない)。
 enum OperatorDetection {
     /// ある事業者の列車が1本もないとき、「列車ごとの遅れは提供されていない」と判断してよい時間帯(日本時間)。
     /// 深夜・早朝は走っていないだけのことがあるので、未確認にする。
@@ -221,15 +223,31 @@ enum OperatorDirectory {
 final class OperatorDiscoveryStore {
     enum Failure: Equatable {
         case invalidToken
+        /// ある段階が失敗して中止した。url は失敗したリクエスト(トークンを除く)。
+        case stopped(stage: String, detail: String, url: String?)
         case other(String)
 
         var message: String {
             switch self {
             case .invalidToken:
                 return "ODPTのアクセストークンが無効か、期限が切れています。ODPTのサイトで確かめて、入力し直してください。都営などトークンが要らない事業者は、そのまま使えます。"
+            case let .stopped(stage, detail, _):
+                return "\(stage)が取れなかったため、検出を中止しました(前回の結果はそのまま使います)。\(detail)"
             case .other(let text): return "事業者を検出できませんでした: \(text)"
             }
         }
+
+        var url: String? {
+            if case let .stopped(_, _, url) = self { return url }
+            return nil
+        }
+    }
+
+    /// 検出の段階の失敗
+    struct StageFailure: Error {
+        var stage: String
+        var detail: String
+        var url: String?
     }
 
     private(set) var result: OperatorDiscoveryResult?
@@ -318,8 +336,23 @@ final class OperatorDiscoveryStore {
             failure = .invalidToken
             // 公開エンドポイントの事業者(都営など)は、トークンがなくても使えるようにしておく
             if let found = try? await run(.publicAPI) { try? await store(found) }
+        } catch let stop as StageFailure {
+            failure = .stopped(stage: stop.stage, detail: stop.detail, url: stop.url)
         } catch {
             failure = .other(error.localizedDescription)
+        }
+    }
+
+    /// 検出の1つの段階。失敗したら、段階の名前と、失敗したリクエストのURL・応答の本文を付けて中止する。
+    private func step<T>(_ stage: String, _ work: () async throws -> T) async throws -> T {
+        do {
+            return try await work()
+        } catch ODPTError.unauthorized {
+            throw ODPTError.unauthorized
+        } catch let error as ODPTError {
+            throw StageFailure(stage: stage, detail: error.localizedDescription, url: error.requestURL)
+        } catch {
+            throw StageFailure(stage: stage, detail: error.localizedDescription, url: nil)
         }
     }
 
@@ -333,25 +366,29 @@ final class OperatorDiscoveryStore {
     private func run(_ endpoint: ODPTEndpoint) async throws -> OperatorDiscoveryResult {
         let started = Date()
         var requests = 0
-        let operators = try await api.operators(endpoint: endpoint)
+        let operators = try await step("事業者の一覧") { try await api.operators(endpoint: endpoint) }
         requests += 1
+        guard !operators.isEmpty else { throw StageFailure(stage: "事業者の一覧", detail: "応答が空でした。", url: nil) }
         let candidates = OperatorDetection.candidates(operators)
-        let railways = try await api.railways(operatorIDs: candidates.ids, endpoint: endpoint)
+        let allRailways = try await step("路線の一覧") { try await api.railways(endpoint: endpoint) }
         requests += 1
+        let candidateIDs = Set(candidates.ids)
+        let railways = allRailways.filter { candidateIDs.contains($0.operatorID) }
+        guard !railways.isEmpty else { throw StageFailure(stage: "路線の一覧", detail: "対象の事業者の路線が1つもありませんでした。", url: nil) }
         let railOperators = Array(Set(railways.map(\.operatorID))).sorted()
-        let information = try await api.trainInformation(operatorIDs: railOperators, endpoint: endpoint)
-        let trains = try await api.trains(operatorIDs: railOperators, endpoint: endpoint)
-        requests += railOperators.isEmpty ? 0 : 2
+        let information = try await step("運行情報") { try await api.trainInformation(operatorIDs: railOperators, endpoint: endpoint) }
+        let trains = try await step("列車の情報") { try await api.trains(operatorIDs: railOperators, endpoint: endpoint) }
+        requests += ODPTQuery.chunks(railOperators).count * 2
         let stationIDs = OperatorDetection.probeStationIDs(railways)
-        let stations = try await api.stations(ids: stationIDs, endpoint: endpoint)
-        requests += stationIDs.isEmpty ? 0 : 1
+        let stations = try await step("駅") { try await api.stations(ids: stationIDs, endpoint: endpoint) }
+        requests += ODPTQuery.chunks(stationIDs).count
         let operatorsWithTrains = Set(trains.compactMap { $0.operatorID ?? ODPTID.operatorID(of: $0.railway) })
         let tableIDs = OperatorDetection.probeStationTimetableIDs(stations: stations, operatorsWithTrains: operatorsWithTrains)
-        let tables = try await api.stationTimetables(ids: tableIDs, endpoint: endpoint)
-        requests += tableIDs.isEmpty ? 0 : 1
+        let tables = try await step("駅の時刻表") { try await api.stationTimetables(ids: tableIDs, endpoint: endpoint) }
+        requests += ODPTQuery.chunks(tableIDs).count
         let trainIDs = OperatorDetection.probeTrainIDs(trains: trains, stationTimetables: tables)
-        let timetables = try await api.trainTimetables(trainIDs: trainIDs, endpoint: endpoint)
-        requests += trainIDs.isEmpty ? 0 : 1
+        let timetables = try await step("列車の時刻表") { try await api.trainTimetables(trainIDs: trainIDs, endpoint: endpoint) }
+        requests += ODPTQuery.chunks(trainIDs).count
         let now = Date()
         return OperatorDetection.evaluate(
             endpoint: endpoint, operators: operators, excluded: candidates.excluded, railways: railways,

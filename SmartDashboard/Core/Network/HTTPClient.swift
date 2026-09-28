@@ -3,6 +3,14 @@ import Foundation
 /// すべての通信はこのプロトコルを経由する。テストではスタブに差し替える。
 protocol HTTPClient: Sendable {
     func get(_ url: URL) async throws -> Data
+    /// 状態コードが200番台でなくても、本文と状態コードを返す(エラーの内容を表示したいとき)
+    func response(_ url: URL) async throws -> (data: Data, status: Int)
+}
+
+extension HTTPClient {
+    func response(_ url: URL) async throws -> (data: Data, status: Int) {
+        (try await get(url), 200)
+    }
 }
 
 enum HTTPError: LocalizedError, Equatable {
@@ -38,12 +46,17 @@ final class MeteredHTTPClient: NSObject, HTTPClient, URLSessionTaskDelegate, @un
     }
 
     func get(_ url: URL) async throws -> Data {
+        let (data, status) = try await response(url)
+        guard (200..<300).contains(status) else { throw HTTPError.badStatus(status) }
+        return data
+    }
+
+    func response(_ url: URL) async throws -> (data: Data, status: Int) {
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw HTTPError.notHTTP }
-        guard (200..<300).contains(http.statusCode) else { throw HTTPError.badStatus(http.statusCode) }
-        return data
+        return (data, http.statusCode)
     }
 
     /// モバイル通信のほか、テザリングなど従量制の回線もモバイル通信として数える

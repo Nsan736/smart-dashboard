@@ -111,6 +111,13 @@ struct SettingsView: View {
                             .font(.footnote)
                             .foregroundStyle(.orange)
                             .fixedSize(horizontal: false, vertical: true)
+                        if let url = failure.url {
+                            Text(url)
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
                     NavigationLink("使える事業者(自動検出)") { OperatorDiscoveryView() }
                 } header: {
