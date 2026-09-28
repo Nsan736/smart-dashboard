@@ -344,3 +344,112 @@ private func assertAlmostEqual(_ a: [Double], _ b: [Double], accuracy: Double, f
     XCTAssertEqual(a.count, b.count, file: file, line: line)
     for (x, y) in zip(a, b) { XCTAssertEqual(x, y, accuracy: accuracy, file: file, line: line) }
 }
+
+/// ODPT の問い合わせの組み立て(カンマ区切りの上限、空の絞り込み、失敗したときの内容)
+final class ODPTQueryTests: XCTestCase {
+    /// 決まった応答を返し、問い合わせたURLを記録する
+    private final class StubHTTP: HTTPClient, @unchecked Sendable {
+        private let lock = NSLock()
+        private var recorded: [URL] = []
+        let status: Int
+        let body: String
+
+        init(status: Int = 200, body: String = "[]") {
+            self.status = status
+            self.body = body
+        }
+
+        var urls: [URL] { lock.withLock { recorded } }
+
+        func get(_ url: URL) async throws -> Data {
+            let (data, status) = try await response(url)
+            guard status == 200 else { throw HTTPError.badStatus(status) }
+            return data
+        }
+
+        func response(_ url: URL) async throws -> (data: Data, status: Int) {
+            lock.withLock { recorded.append(url) }
+            return (Data(body.utf8), status)
+        }
+    }
+
+    private func values(_ url: URL, _ key: String) -> [String] {
+        let item = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == key }
+        return item?.value?.split(separator: ",").map(String.init) ?? []
+    }
+
+    func testChunks() {
+        let ids = (1...23).map { "id\($0)" }
+        let chunks = ODPTQuery.chunks(ids)
+        XCTAssertEqual(chunks.map(\.count), [10, 10, 3])
+        XCTAssertEqual(chunks.flatMap { $0 }, ids)
+        // 空の値と重複は送らない
+        XCTAssertEqual(ODPTQuery.chunks(["a", "", "a", "b"]), [["a", "b"]])
+        XCTAssertTrue(ODPTQuery.chunks([]).isEmpty)
+        XCTAssertTrue(ODPTQuery.chunks([""]).isEmpty)
+    }
+
+    func testRequestsAreSplitByTenAndEmptyFiltersAreNotSent() async throws {
+        let http = StubHTTP()
+        let client = ODPTClient(http: http, tokenProvider: { "secret-token-for-test" })
+        let ids = (1...23).map { "odpt.Station:X.Y.S\($0)" }
+        _ = try await client.stations(ids: ids, endpoint: .authenticated)
+        XCTAssertEqual(http.urls.count, 3)
+        XCTAssertTrue(http.urls.allSatisfy { values($0, "owl:sameAs").count <= ODPTQuery.maxORValues })
+        XCTAssertEqual(Set(http.urls.flatMap { values($0, "owl:sameAs") }), Set(ids))
+
+        _ = try await client.trainInformation(operatorIDs: [], endpoint: .authenticated)
+        _ = try await client.trains(operatorIDs: [""], endpoint: .authenticated)
+        XCTAssertEqual(http.urls.count, 3)
+
+        // 路線の一覧は、絞り込まずに1回で取る
+        _ = try await client.railways(endpoint: .authenticated)
+        let railway = try XCTUnwrap(http.urls.last)
+        XCTAssertTrue(railway.path.hasSuffix("odpt:Railway"))
+        XCTAssertEqual(URLComponents(url: railway, resolvingAgainstBaseURL: false)?.queryItems?.map(\.name), ["acl:consumerKey"])
+    }
+
+    func testTrainInformationFromSeveralRequestsIsMerged() async throws {
+        let http = StubHTTP(body: #"[{"owl:sameAs":"odpt.TrainInformation:X.A","odpt:operator":"odpt.Operator:X","odpt:railway":"odpt.Railway:X.A"}]"#)
+        let client = ODPTClient(http: http, tokenProvider: { nil })
+        let op = TrainOperator(id: "odpt.Operator:Toei", name: "都営", endpoint: .publicAPI)
+        let data = try await client.trainInformationData(op: op, railwayIDs: (1...12).map { "odpt.Railway:X.R\($0)" })
+        XCTAssertEqual(http.urls.count, 2)
+        XCTAssertEqual(try ODPTClient.decode([ODPTTrainInformation].self, from: data).count, 2)
+    }
+
+    func testFailureKeepsURLWithoutTokenAndBody() async throws {
+        let http = StubHTTP(status: 400, body: "too many OR condition in odpt:operator")
+        let client = ODPTClient(http: http, tokenProvider: { "secret-token-for-test" })
+        do {
+            _ = try await client.trainInformation(operatorIDs: ["odpt.Operator:A", "odpt.Operator:B"], endpoint: .authenticated)
+            XCTFail("失敗するはず")
+        } catch let error as ODPTError {
+            guard case let .requestFailed(name, status, body, url) = error else { return XCTFail("\(error)") }
+            XCTAssertEqual(name, "運行情報")
+            XCTAssertEqual(status, 400)
+            XCTAssertEqual(body, "too many OR condition in odpt:operator")
+            XCTAssertEqual(url, "https://api.odpt.org/api/v4/odpt:TrainInformation?odpt:operator=odpt.Operator:A,odpt.Operator:B")
+            XCTAssertFalse(url.contains("secret"))
+            XCTAssertEqual(error.requestURL, url)
+            XCTAssertTrue(error.localizedDescription.contains("HTTP 400"))
+            XCTAssertTrue(error.localizedDescription.contains("too many OR condition"))
+        }
+        // 無効なトークン(403 Invalid acl:consumerKey.)は、トークンのエラーとして扱う
+        let forbidden = ODPTClient(http: StubHTTP(status: 403, body: "Invalid acl:consumerKey."), tokenProvider: { "x" })
+        do {
+            _ = try await forbidden.operators(endpoint: .authenticated)
+            XCTFail("失敗するはず")
+        } catch {
+            XCTAssertEqual(error as? ODPTError, .unauthorized)
+        }
+    }
+
+    @MainActor
+    func testStoppedFailureMessage() {
+        let failure = OperatorDiscoveryStore.Failure.stopped(stage: "路線の一覧", detail: "路線の一覧を取得できませんでした(HTTP 400)", url: "https://example")
+        XCTAssertTrue(failure.message.hasPrefix("路線の一覧が取れなかったため、検出を中止しました"))
+        XCTAssertEqual(failure.url, "https://example")
+        XCTAssertNil(OperatorDiscoveryStore.Failure.invalidToken.url)
+    }
+}
