@@ -4,7 +4,8 @@
   python scripts/check_local.py
 
 確認する内容:
-- フィクスチャのJSONが妥当か、秘密情報(acl:consumerKey)を含まないか
+- フィクスチャのJSONが妥当か、秘密情報(acl:consumerKey、トークンらしき長い文字列)を含まないか
+- Git の管理下のファイルに、ODPT のトークンの値が書かれていないか。private/ が管理外か
 - project.yml と GitHub Actions のYAMLが読めるか、Info.plistの必須キーがあるか
 - ワークフローのトリガーが方針どおりか(mainへのpushで動かない)
 - make_apps_json.py が動き、履歴を引き継ぐか
@@ -14,6 +15,7 @@
 import glob
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -27,16 +29,62 @@ def check(condition, message):
         errors.append(message)
 
 
+# トークンらしき文字列: 小文字の16進で40文字以上、または英数字だけで48文字以上(ODPT の ucode の @id は大文字の16進32文字なので当たらない)
+TOKEN_LIKE = re.compile(r"(?<![0-9A-Za-z])(?:[0-9a-f]{40,}|[0-9A-Za-z]{48,})(?![0-9A-Za-z])")
+TOKEN_KEYS = re.compile(r"consumerKey|acl:|api[_-]?key|access[_-]?token", re.IGNORECASE)
+
+
+def find_token_like(value, path=""):
+    """JSON の値をたどって、トークンらしき文字列と、トークンの名前のキーを探す"""
+    found = []
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if TOKEN_KEYS.search(key):
+                found.append(f"{path}/{key}: トークンの名前のキー")
+            found += find_token_like(item, f"{path}/{key}")
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            found += find_token_like(item, f"{path}[{index}]")
+    elif isinstance(value, str) and TOKEN_LIKE.search(value):
+        found.append(f"{path}: トークンらしき文字列")
+    return found
+
+
 def check_fixtures():
     files = glob.glob(os.path.join(ROOT, "SmartDashboardTests", "Fixtures", "*.json"))
     check(files, "フィクスチャがありません")
     for path in files:
         text = open(path, encoding="utf-8").read()
+        name = os.path.basename(path)
         try:
-            json.loads(text)
+            data = json.loads(text)
         except ValueError as e:
-            errors.append(f"{os.path.basename(path)}: JSONが不正 ({e})")
-        check("consumerKey" not in text, f"{os.path.basename(path)}: トークンらしき文字列を含む")
+            errors.append(f"{name}: JSONが不正 ({e})")
+            continue
+        check("consumerKey" not in text, f"{name}: トークンらしき文字列を含む")
+        for problem in find_token_like(data)[:3]:
+            errors.append(f"{name}{problem}")
+
+
+def check_committed_secrets():
+    """Git の管理下のファイルに、acl:consumerKey の値が書かれていないか。private/ が管理外か。"""
+    try:
+        listed = subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True, text=True, encoding="utf-8", check=True).stdout.split("\n")
+    except (OSError, subprocess.CalledProcessError):
+        print("注意: git がないため、管理下のファイルの確認を省略")
+        return
+    check(not any(f.startswith("private/") for f in listed), "private/ のファイルが Git の管理下にあります")
+    assigned = re.compile(r"acl:consumerKey=([^&\s\"'<>]+)")
+    placeholders = ("[", "{", "<", "(", "$", "YOUR", "xxx", "invalid")
+    for name in listed:
+        if not name or not name.endswith((".swift", ".py", ".json", ".md", ".yml", ".txt")):
+            continue
+        try:
+            text = open(os.path.join(ROOT, name), encoding="utf-8").read()
+        except (OSError, UnicodeDecodeError):
+            continue
+        for match in assigned.finditer(text):
+            check(match.group(1).startswith(placeholders), f"{name}: acl:consumerKey に値が書かれています")
 
 
 def check_yaml():
@@ -167,7 +215,7 @@ def check_main_actor_statics():
                         check(ok, f"{os.path.basename(path)}:{i + 1}: {cls}.{member} は @MainActor。テストを @MainActor にするか nonisolated にする")
 
 
-for step in (check_fixtures, check_yaml, check_apps_json, check_swift_brackets, check_double_backslash, check_main_actor_statics):
+for step in (check_fixtures, check_committed_secrets, check_yaml, check_apps_json, check_swift_brackets, check_double_backslash, check_main_actor_statics):
     step()
 
 if errors:
