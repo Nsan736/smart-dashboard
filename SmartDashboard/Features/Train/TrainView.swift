@@ -100,7 +100,16 @@ struct ODPTAttributionView: View {
         公共交通事業者により提供されたデータを元にしていますが、必ずしも正確・完全なものとは限りません。\
         本アプリケーションの表示内容について、公共交通事業者への直接の問合せは行わないでください。
         都営のデータ: 東京都交通局・公共交通オープンデータ協議会 (CC BY 4.0)
+        \(Self.trackAttribution)
         """)
+    }
+
+    /// 同梱した線路の形の出典と、加工していること
+    static var trackAttribution: String {
+        let catalog = RailwayTrackCatalog.bundled
+        let made = catalog.fetched.isEmpty ? "" : "(\(catalog.fetched)作成)"
+        return RailwayTrackCatalog.attribution + "。路線ごとに抜き出し、駅の順につないで点を間引いています" + made
+            + "。線路の形がない路線は、駅を結んだ直線で描きます。"
     }
 }
 

@@ -3,13 +3,21 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
-/// 移動タブ(以前の電車タブ)。上から、切り替え・中央の地図(または路線図、記録)・関連する情報と設定の3段。
+/// 移動タブ(以前の電車タブ)。切り替えのボタンを上端に固定し、その下を1つの縦スクロールにする。
+/// スクロールの中は、上から地図(または路線図、記録)、関連する情報と設定。下へスクロールすると、地図も一緒に上へ流れて隠れる。
 struct TrainView: View {
     @Environment(AppEnvironment.self) private var env
     @State private var selection: TrainLiveSelection?
     @State private var directionNames: [String: String] = [:]
     /// 記録で表示する日。空文字は今日。
     @State private var recordDay = ""
+    /// 地図の行が画面に見えているか(隠れたら「地図へ」のボタンを出す)
+    @State private var mapVisible = true
+
+    /// 地図の高さ。スクロールの見える高さの55%(iPhone SE では画面の約4割)で、220〜420pt。
+    nonisolated static func mapHeight(visibleHeight: CGFloat) -> CGFloat {
+        min(max(visibleHeight * 0.55, 220), 420)
+    }
 
     var body: some View {
         let store = env.trains
@@ -20,33 +28,61 @@ struct TrainView: View {
                 if env.movement.isVirtual {
                     MovementDebugBanner()
                 }
+                // 切り替えのボタンは、スクロールしても上端に残す
                 MovementControlBar(railways: railways)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
-                MovementCenterView(selection: $selection, directionNames: directionNames, recordDay: recordDay)
-                    .containerRelativeFrame(.vertical) { length, _ in min(max(length * 0.4, 200), 420) }
-                    .padding(.horizontal, 8)
-                ScrollViewReader { proxy in
-                    List {
-                        switch display.mode {
-                        case .map, .diagram:
-                            MovementLiveSections(selection: $selection, directionNames: directionNames)
-                        case .record:
-                            MovementRecordSections(recordDay: $recordDay)
+                    .background(Color(.systemGroupedBackground))
+                GeometryReader { geometry in
+                    ScrollViewReader { proxy in
+                        List {
+                            // 地図(または路線図、記録)。地図の上の指の操作は地図が受け持ち、そのあいだ外側のスクロールは止まる。
+                            Section {
+                                MovementCenterView(selection: $selection, directionNames: directionNames, recordDay: recordDay)
+                                    .frame(height: Self.mapHeight(visibleHeight: geometry.size.height))
+                                    .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+                                    .id(MovementScroll.map)
+                                    .onAppear { mapVisible = true }
+                                    .onDisappear { mapVisible = false }
+                            }
+                            switch display.mode {
+                            case .map, .diagram:
+                                MovementLiveSections(selection: $selection, directionNames: directionNames)
+                            case .record:
+                                MovementRecordSections(recordDay: $recordDay)
+                            }
+                            if env.settings.movementDebugEnabled {
+                                MovementDebugSections()
+                            }
+                            Section {
+                            } footer: {
+                                ODPTAttributionView()
+                            }
                         }
-                        if env.settings.movementDebugEnabled {
-                            MovementDebugSections()
+                        .listStyle(.insetGrouped)
+                        .listSectionSpacing(.compact)
+                        // 駅や列車をタップしたら、下の詳細が見える位置までスクロールする
+                        .onChange(of: selection) { _, new in
+                            guard new != nil else { return }
+                            withAnimation { proxy.scrollTo(MovementScroll.selection, anchor: .top) }
                         }
-                        Section {
-                        } footer: {
-                            ODPTAttributionView()
+                        // 地図が隠れているときは、地図へ戻るボタンを出す
+                        .overlay(alignment: .bottomTrailing) {
+                            if !mapVisible {
+                                Button {
+                                    withAnimation { proxy.scrollTo(MovementScroll.map, anchor: .top) }
+                                } label: {
+                                    Label("地図へ", systemImage: "map")
+                                        .font(.subheadline.weight(.semibold))
+                                        .padding(.horizontal, 14)
+                                        .padding(.vertical, 10)
+                                        .background(.regularMaterial, in: Capsule())
+                                        .shadow(radius: 2)
+                                }
+                                .buttonStyle(.plain)
+                                .padding(16)
+                            }
                         }
-                    }
-                    .listStyle(.insetGrouped)
-                    // 駅や列車をタップしたら、下の詳細が見える位置までスクロールする
-                    .onChange(of: selection) { _, new in
-                        guard new != nil else { return }
-                        withAnimation { proxy.scrollTo(MovementScroll.selection, anchor: .top) }
                     }
                 }
             }
@@ -192,6 +228,9 @@ struct MovementCenterView: View {
 
 /// 地図に重ねる、乗車中の判定と位置のデバッグの表示
 struct RideMapOverlay {
+    /// デバッグの点に、すべて印を付ける上限
+    static let maxDebugMarkers = 30
+
     var showsUserLocation = true
     var lines: [MapLine] = []
     var markers: [MapMarker] = []
@@ -269,10 +308,17 @@ struct RideMapOverlay {
         }
         // 点の編集(動かしている間は出さない)
         if !debug.isActive {
-            overlay.markers = plan.points.enumerated().map { index, point in
-                MapMarker(id: "debug.\(index)", title: "\(index + 1)", coordinate: point.coordinate,
-                          style: debug.selectedPoint == index ? .debugSelected : .debugPoint)
+            // 「路線に沿わせる」で線路の点が多いときは、端・停車する点・選んでいる点だけに印を付ける
+            let stopIndices = Set(plan.stops.map(\.pointIndex))
+            var markers: [MapMarker] = []
+            for (index, point) in plan.points.enumerated() {
+                let shows = plan.points.count <= Self.maxDebugMarkers || index == 0 || index == plan.points.count - 1
+                    || stopIndices.contains(index) || debug.selectedPoint == index
+                guard shows else { continue }
+                markers.append(MapMarker(id: "debug.\(index)", title: "\(index + 1)", coordinate: point.coordinate,
+                                         style: debug.selectedPoint == index ? .debugSelected : .debugPoint))
             }
+            overlay.markers = markers
             if debug.placesPoints {
                 overlay.onTapCoordinate = { coordinate in debug.tapMap(GeoPoint(coordinate)) }
             }
@@ -720,7 +766,8 @@ struct MovementRecordMap: View {
                     casingColor: segment.isRide ? .white : nil, isEmphasized: false)
         }
         ZStack {
-            MapContainerView(isInteractive: true, showsUserLocation: !env.movement.isVirtual, lines: lines, fitKey: dayKey)
+            MapContainerView(isInteractive: true, showsUserLocation: !env.movement.isVirtual, lines: lines, fitKey: dayKey,
+                             locksParentScroll: true, memoryKey: "movement.record.\(dayKey)")
             if day.samples.count < 2 {
                 Text("この日の記録はありません")
                     .font(.footnote)

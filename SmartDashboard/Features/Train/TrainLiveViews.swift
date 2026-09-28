@@ -62,7 +62,8 @@ struct TrainLiveBoard {
             guard let schedule = live.schedules[railway.railwayID] else { return nil }
             return BoardLine(railwayID: railway.railwayID, name: names[railway.railwayID] ?? ODPTID.tail(railway.railwayID),
                              schedule: schedule, shape: trains.shapes[railway.railwayID],
-                             positions: live.positions(for: railway.railwayID, now: now, includesWaiting: filter != .all))
+                             positions: live.positions(for: railway.railwayID, now: now, includesWaiting: filter != .all),
+                             ride: trains.rideLine(for: railway.railwayID))
         }
         lines = built
         nearest = live.nearest
@@ -137,9 +138,12 @@ struct TrainLiveMapView: View {
             let isInfoLine = store.lines.contains { $0.railwayID == shape.railwayID }
             let status = isInfoLine ? items.first(where: { $0.railwayID == shape.railwayID })?.status : nil
             let isSelected = TrainDisplayState.isEmphasized(shape.railwayID, selected: selectedRailwayID)
+            // 線路の形(同梱した国土数値情報)があればそれを、なければ駅を結んだ直線を描く
+            let coordinates = store.rideLine(for: shape.railwayID)?.path.points.map(\.coordinate)
+                ?? shape.stops.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
             return MapLine(
                 id: shape.railwayID,
-                coordinates: shape.stops.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) },
+                coordinates: coordinates,
                 color: TrainMapBuilder.uiColor(status),
                 casingColor: UIColor(hex: shape.colorHex),
                 isEmphasized: isSelected && (status == .delay || status == .suspended),
@@ -148,7 +152,14 @@ struct TrainLiveMapView: View {
         }
         // 選んだ路線だけに表示範囲を合わせる(「すべての路線」なら全体)
         let fitShapes = shapes.filter { TrainDisplayState.isEmphasized($0.railwayID, selected: selectedRailwayID) }
+        // 駅の点は、線路の上に合わせた位置に置く
+        let rideLines = store.rideLines()
         let dots = TrainMapBuilder.stationDots(shapes: shapes, registered: board.registeredStationIDs, nearestStationID: board.nearest?.stationID)
+            .map { dot in
+                let snapped = rideLines.compactMap { $0.stationPoint(dot.id) }.first
+                return MapStationDot(id: dot.id, title: dot.title, coordinate: snapped?.coordinate ?? dot.coordinate,
+                                     isMajor: dot.isMajor, isRegistered: dot.isRegistered)
+            }
         let trains = board.lines.flatMap { line -> [MapTrain] in
             board.visiblePositions(in: line).compactMap { position -> MapTrain? in
                 guard let place = TrainBoard.coordinate(of: position, in: line) else { return nil }
@@ -181,7 +192,10 @@ struct TrainLiveMapView: View {
                 circles: overlay.circles,
                 movingMarks: overlay.movingMarks,
                 onTapCoordinate: overlay.onTapCoordinate,
-                stationTrains: Self.stationTrains(board: board, selectedRailwayID: selectedRailwayID)
+                stationTrains: Self.stationTrains(board: board, selectedRailwayID: selectedRailwayID),
+                // 画面全体の縦スクロールの中にあるので、地図に触れている間は外側のスクロールを止める
+                locksParentScroll: true,
+                memoryKey: "movement.live"
             )
             Button {
                 recenterKey += 1
@@ -218,7 +232,9 @@ extension TrainLiveMapView {
                                                     directionOrder: TrainPositionCalculator.directions(in: line.schedule))
             for (stationID, slots) in StationTrainPlacement.place(items) {
                 guard let stop = shape.stops.first(where: { $0.stationID == stationID }) else { continue }
-                let coordinate = CLLocationCoordinate2D(latitude: stop.latitude, longitude: stop.longitude)
+                // 駅の点と同じく、線路の上に合わせた位置
+                let coordinate = line.ride?.stationPoint(stationID)?.coordinate
+                    ?? CLLocationCoordinate2D(latitude: stop.latitude, longitude: stop.longitude)
                 for slot in slots {
                     let train = MapStationTrain(trainID: slot.item.trainID, coordinate: coordinate, offset: StationTrainPlacement.offset(of: slot),
                                                 label: slot.item.label, isExpress: slot.item.isExpress,

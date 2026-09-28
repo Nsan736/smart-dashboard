@@ -3,6 +3,8 @@ import SwiftUI
 /// 下部の段で、選んだもの(駅・列車)へ自動でスクロールするときの目印
 enum MovementScroll {
     static let selection = "movement.selection"
+    /// 地図の行(「地図へ」のボタンで戻る先)
+    static let map = "movement.map"
 }
 
 /// 駅の名前・路線・位置(路線の形と、駅の一覧から引く)
