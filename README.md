@@ -85,6 +85,7 @@ xcodegen generate
 - **天気**: [Open-Meteo](https://open-meteo.com/)(Weather data by Open-Meteo.com、CC BY 4.0)。[利用規約](https://open-meteo.com/en/terms)
 - **為替**: [Rates By Exchange Rate API](https://www.exchangerate-api.com)。[利用規約](https://www.exchangerate-api.com/terms)
 - **電車**: [公共交通オープンデータセンター](https://www.odpt.org/)(ODPT)。都営のデータは、東京都交通局・公共交通オープンデータ協議会(CC BY 4.0)。[開発者サイト](https://developer.odpt.org/)
+- **線路の形**: 出典「[国土数値情報(鉄道データ)](https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-N02-2025.html)(国土交通省)」(2025年度版、CC BY 4.0)を加工して作成。使う事業者の路線だけを抜き出し、駅の順につないで1本の線にし、点を間引いたものをアプリに同梱しています(更新は `scripts/update_railway_shapes.py`)。線路の形がない路線は、駅を結んだ直線で描きます
 - **警報・注意報**: 出典 [気象庁](https://www.jma.go.jp/bosai/warning/)(気象警報・注意報)。レーダーと同じく公式のAPIではなく、仕様の変更で使えなくなる可能性があります。河川の氾濫に関する情報は含みません
 - **地震**: [P2P地震情報](https://www.p2pquake.net/) の JSON API v2(気象庁の地震情報を配信)。[API仕様・利用条件](https://www.p2pquake.net/develop/json_api_v2/)
 - **震度観測点の位置**: 出典 [気象庁](https://www.data.jma.go.jp/eqev/data/kyoshin/jma-shindo.html)(震度観測点の一覧)。気象庁の一覧から、観測点の名前・緯度・経度・都道府県だけを抜き出して加工したものをアプリに同梱しています(取得日はアプリ内に表示。更新は `scripts/update_jma_stations.py`)。[気象庁ホームページの利用規約](https://www.jma.go.jp/jma/kishou/info/coment.html)
