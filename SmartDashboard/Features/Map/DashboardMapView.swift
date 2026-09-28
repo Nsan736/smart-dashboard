@@ -72,6 +72,13 @@ final class StoredTileOverlay: MKTileOverlay {
     }
 }
 
+/// 地図を指定した位置へ動かす依頼。key が変わったときだけ動かす(駅の検索で選んだ駅へ移動するなど)。
+struct MapFocus {
+    var key: Int
+    var coordinate: CLLocationCoordinate2D
+    var spanMeters: CLLocationDistance = 1500
+}
+
 /// 回線の状態で Apple Maps と保存済み地図を切り替える地図。表示位置と縮尺は切り替え後も維持する。
 struct DashboardMapView: UIViewRepresentable {
     let mode: MapMode
@@ -102,6 +109,8 @@ struct DashboardMapView: UIViewRepresentable {
     var onSelectTrain: ((String) -> Void)?
     /// この値が変わったら、現在地へ移動する
     var recenterKey = 0
+    /// 指定した位置へ動かす(key が変わったときだけ)
+    var focus: MapFocus?
     /// 地図を長押しした位置(スコープの地点の登録用)
     var onLongPress: ((CLLocationCoordinate2D) -> Void)?
     /// 表示範囲が変わったとき(範囲、ズーム)
@@ -156,6 +165,8 @@ struct DashboardMapView: UIViewRepresentable {
             // 前に見ていた範囲で開き直す(最初の範囲合わせはしない)
             map.setRegion(region, animated: false)
             context.coordinator.restoredFitKey = fitKey
+            // 覚えていた範囲は、移動の依頼を反映したあとのもの(作り直しで、もう一度その位置へ戻さない)
+            context.coordinator.lastFocusKey = focus?.key ?? 0
         }
         return map
     }
@@ -219,6 +230,7 @@ struct DashboardMapView: UIViewRepresentable {
         coordinator.updateMovingMarks(movingMarks, on: map)
         coordinator.updateStationTrains(stationTrains, on: map)
         coordinator.recenterIfNeeded(key: recenterKey, on: map)
+        coordinator.focusIfNeeded(focus, on: map)
         coordinator.fitIfNeeded(key: fitKey, lines: lines.filter { fitLineIDs?.contains($0.id) ?? true }, markers: markers, on: map)
 
         // 外から中心が変わったとき(現在地の更新など)だけ移動する
@@ -269,6 +281,7 @@ struct DashboardMapView: UIViewRepresentable {
         private var trainAnnotations: [String: TrainAnnotation] = [:]
         private var stationDotSignature = ""
         private var lastRecenterKey = 0
+        var lastFocusKey = 0
         private var currentZoom = 0
 
         // MARK: 電車
@@ -429,6 +442,13 @@ struct DashboardMapView: UIViewRepresentable {
                       let view = map.view(for: station) as? StationDotView else { continue }
                 view.apply(station, showsName: MapStationRule.showsName(zoom: currentZoom, isMajor: station.isMajor))
             }
+        }
+
+        func focusIfNeeded(_ focus: MapFocus?, on map: MKMapView) {
+            guard let focus, focus.key != lastFocusKey else { return }
+            lastFocusKey = focus.key
+            map.setRegion(MKCoordinateRegion(center: focus.coordinate, latitudinalMeters: focus.spanMeters,
+                                             longitudinalMeters: focus.spanMeters), animated: true)
         }
 
         func recenterIfNeeded(key: Int, on map: MKMapView) {
@@ -815,6 +835,7 @@ struct MapContainerView: View {
     var stationDots: [MapStationDot] = []
     var onSelectTrain: ((String) -> Void)?
     var recenterKey = 0
+    var focus: MapFocus?
     var onLongPress: ((CLLocationCoordinate2D) -> Void)?
     var tracking: MapTracking = .none
     var trackingKey = 0
@@ -851,6 +872,7 @@ struct MapContainerView: View {
             stationDots: stationDots,
             onSelectTrain: onSelectTrain,
             recenterKey: recenterKey,
+            focus: focus,
             onLongPress: onLongPress,
             onRegionChange: { bounds, zoom in
                 // Wi-Fi接続中に Apple Maps で見た範囲を保存する

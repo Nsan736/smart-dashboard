@@ -169,12 +169,18 @@ struct TrainLiveMapView: View {
                                 isDimmed: !TrainDisplayState.isEmphasized(line.railwayID, selected: selectedRailwayID))
             }
         }
+        // 検索で選んだ駅。地図に点のない駅(登録していない路線の駅)は、印を出す。
+        let focus = env.trainDisplay.focusRequest
+        let searchMarker = focus.flatMap { request in
+            dots.contains { $0.id == request.stationID } ? nil
+                : MapMarker(id: request.stationID, title: request.name, coordinate: request.point.coordinate, style: .station)
+        }
         ZStack(alignment: .bottomTrailing) {
             MapContainerView(
                 isInteractive: true,
                 showsUserLocation: overlay.showsUserLocation,
                 lines: lines + overlay.lines,
-                markers: overlay.markers,
+                markers: overlay.markers + [searchMarker].compactMap { $0 },
                 fitKey: (fitShapes.isEmpty ? shapes : fitShapes).map(\.railwayID).joined(separator: ","),
                 fitLineIDs: Set((fitShapes.isEmpty ? shapes : fitShapes).map(\.railwayID)),
                 onSelectLine: { id in
@@ -189,6 +195,7 @@ struct TrainLiveMapView: View {
                 stationDots: dots,
                 onSelectTrain: { selection = .train($0) },
                 recenterKey: recenterKey,
+                focus: focus.map { MapFocus(key: $0.key, coordinate: $0.point.coordinate) },
                 circles: overlay.circles,
                 movingMarks: overlay.movingMarks,
                 onTapCoordinate: overlay.onTapCoordinate,

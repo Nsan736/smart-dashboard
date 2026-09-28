@@ -4,8 +4,16 @@ import Foundation
 struct ODPTTitle: Codable, Equatable {
     let ja: String?
     let en: String?
+    /// 読み仮名(ひらがな)。東京メトロの駅名にだけある(2026-09-28に確認)。
+    var jaHrkt: String? = nil
 
     var text: String? { ja ?? en }
+
+    enum CodingKeys: String, CodingKey {
+        case ja
+        case en
+        case jaHrkt = "ja-Hrkt"
+    }
 }
 
 /// 仕様上は多言語オブジェクトだが、文字列で返る場合も受けられるようにする
@@ -109,6 +117,9 @@ struct ODPTStation: Codable, Equatable {
     var connectingStation: [String]? = nil
     /// この駅の駅時刻表のID。駅時刻表を提供していない事業者では空(事業者の検出に使う)。
     var stationTimetables: [String]? = nil
+    /// 駅ナンバリング (odpt:stationCode。例 "M08"、"I-13")。ない駅もある。
+    var stationCode: String? = nil
+    var operatorID: String? = nil
 
     var name: String { stationTitle?.text ?? title ?? ODPTID.tail(sameAs) }
 
@@ -121,6 +132,8 @@ struct ODPTStation: Codable, Equatable {
         case railway = "odpt:railway"
         case connectingStation = "odpt:connectingStation"
         case stationTimetables = "odpt:stationTimetable"
+        case stationCode = "odpt:stationCode"
+        case operatorID = "odpt:operator"
     }
 }
 

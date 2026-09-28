@@ -31,7 +31,14 @@ enum StationContext {
             point = point ?? GeoPoint(stop.latitude, stop.longitude)
             break
         }
-        let names = env.trains.railwayNames
+        // 登録していない路線の駅(検索で選んだ駅など)は、検索の駅の一覧から引く
+        var names = env.trains.railwayNames
+        if let found = env.trains.stationSearch?.station(stationID) {
+            name = name ?? found.name
+            railwayID = railwayID ?? found.railwayID
+            point = point ?? found.point
+            if names[found.railwayID] == nil { names[found.railwayID] = found.railwayName }
+        }
         var transfers: [String] = []
         if let directory {
             for target in directory.transferTargets(from: stationID) {
@@ -371,7 +378,7 @@ struct JourneySearchSections: View {
         } header: {
             Text("行きたい駅までの経路")
         } footer: {
-            Text("保存した時刻表だけを使い、通信せずに探します。使えるのは、時刻表を保存している事業者(今は都営)の路線だけです。乗り換えは\(Int(env.settings.transferMinutes))分で計算します(離れた駅どうしは、歩く時間を足します)。")
+            Text("保存した時刻表だけを使い、通信せずに探します。使えるのは、列車ごとの時刻表が提供されている事業者の路線だけです。乗り換えは\(Int(env.settings.transferMinutes))分で計算します(離れた駅どうしは、歩く時間を足します)。")
         }
         .sheet(isPresented: $showsSearch) {
             StationSearchSheet { group in
@@ -499,61 +506,20 @@ struct JourneyLegView: View {
     }
 }
 
-/// 行きたい駅を、駅名で探して選ぶ
+/// 行きたい駅を、駅と路線の検索で選ぶ(同じ名前の駅をまとめて、1つの行きたい駅にする)
 struct StationSearchSheet: View {
     @Environment(AppEnvironment.self) private var env
-    @Environment(\.dismiss) private var dismiss
     let onSelect: (StationGroup) -> Void
-    @State private var query = ""
-    @State private var groups: [StationGroup] = []
 
     var body: some View {
-        NavigationStack {
-            List {
-                let directory = env.trains.directory
-                if !env.trains.directoryPendingOperators.isEmpty {
-                    Text("\(env.trains.directoryPendingOperators.joined(separator: "、"))の駅は、まだ一覧にありません(通信できるときに開き直すと取得します)。")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                if directory == nil {
-                    if env.trains.isLoadingDirectory {
-                        ProgressView("駅の一覧を読み込んでいます")
-                    } else {
-                        Text(env.trains.directoryError ?? "駅の一覧がまだありません。通信できるときに開き直してください。")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                ForEach(directory?.search(query, in: groups) ?? []) { group in
-                    Button {
-                        onSelect(group)
-                        dismiss()
-                    } label: {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(group.name).foregroundStyle(Color.primary)
-                            Text(group.railwayIDs.map { env.trains.railwayNames[$0] ?? directory?.railwayName(of: $0) ?? ODPTID.tail($0) }
-                                .joined(separator: "、"))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-            }
-            .searchable(text: $query, prompt: "駅名(ひらがな・ローマ字でも)")
-            .navigationTitle("行きたい駅")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("閉じる") { dismiss() }
-                }
-            }
-            .task {
-                await env.trains.ensureDirectory(manual: true)
-                groups = env.trains.directory?.groups() ?? []
-            }
-        }
+        StationPickSheet(title: "行きたい駅", onSelect: { group in
+            var seen = Set<String>()
+            onSelect(StationGroup(name: group.name, stationIDs: group.stations.map(\.id).sorted(),
+                                  railwayIDs: group.stations.map(\.railwayID).filter { seen.insert($0).inserted }))
+        }, afterLoad: {
+            // 経路の検索に使う駅の一覧(乗り換えの関係)。検索の駅の一覧と同じ保存を使うので、通信は増えない。
+            await env.trains.ensureDirectory(manual: true)
+        })
     }
 }
 

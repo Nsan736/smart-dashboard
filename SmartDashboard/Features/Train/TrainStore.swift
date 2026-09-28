@@ -81,6 +81,14 @@ final class TrainStore {
     private(set) var directoryError: String?
     /// 駅の一覧に、まだ入れていない事業者(Wi-Fi接続時か、行きたい駅の検索を開いたときに取得する)
     private(set) var directoryPendingOperators: [String] = []
+    /// 駅と路線の検索の索引(検出した事業者すべての駅。通信せずに検索する)
+    private(set) var stationSearch: StationSearchIndex?
+    private(set) var isLoadingStationCatalog = false
+    private(set) var stationCatalogError: String?
+    /// 駅の一覧をまだ保存していない事業者(モバイル通信では「駅の一覧を取得」のボタンで取得する)
+    private(set) var stationCatalogPending: [String] = []
+    /// 最近検索して選んだ駅の名前(新しい順)
+    private(set) var recentStationSearches: [String] = []
     private(set) var info: CachedValue<[TrainInfoItem]>?
     private(set) var timetables: [UUID: StoredTimetable] = [:]
     /// 地図に描く路線の形。キーは路線ID。
@@ -109,6 +117,8 @@ final class TrainStore {
     @ObservationIgnored private var loadTask: Task<Void, Never>?
     /// 路線の線(線路の形か、駅を結んだ直線)の作り置き
     @ObservationIgnored private var rideLineCache: (key: String, lines: [String: RideLine]) = ("", [:])
+    /// 検索の索引を作った事業者と時刻(同じなら、開くたびに作り直さない)
+    @ObservationIgnored private var stationSearchBuilt: (operators: [String], at: Date)?
 
     private static let infoKey = "trainInfo"
     private static let captureKey = "debug.trainInformation"
@@ -130,6 +140,12 @@ final class TrainStore {
         lines = Self.load([RegisteredLine].self, defaults, Keys.lines) ?? []
         stations = Self.load([RegisteredStation].self, defaults, Keys.stations) ?? []
         routeRailways = Self.load([RouteRailway].self, defaults, Keys.routeRailways) ?? []
+        recentStationSearches = defaults.stringArray(forKey: Keys.recentSearches) ?? []
+    }
+
+    /// 事業者のすべての駅の保存のキー。v0.9.14 で駅ナンバリングと読み仮名を読むようにしたので、キーを変えて取り直す。
+    nonisolated static func operatorStationsKey(_ operatorID: String) -> String {
+        "operatorStations2.\(operatorID)"
     }
 
     func loadIfNeeded() async {
@@ -294,7 +310,7 @@ final class TrainStore {
         var failed = false
         var pending: [String] = []
         for op in operators {
-            let key = "operatorStations.\(op.id)"
+            let key = Self.operatorStationsKey(op.id)
             let cached = await cache.load([ODPTStation].self, key: key)
             let isUsed = used.contains(op.id)
             if !isUsed, cached == nil, !manual, !MapMode.canDownloadTiles(network: network.status) {
@@ -328,6 +344,80 @@ final class TrainStore {
         directoryPendingOperators = pending
         directoryError = failed && stationsList.isEmpty ? "駅の一覧を取得できませんでした" : nil
         if !stationsList.isEmpty { directory = TransitDirectory(stations: stationsList, railwayNames: names) }
+    }
+
+    // MARK: - 駅と路線の検索
+
+    /// 検索に使う、検出した事業者すべての駅の一覧を読み込み、索引を作る。事業者ごとに30日間保存する。
+    /// 取得は、自動(manual = false)では従量制でない回線(Wi-Fiなど)のときだけ。モバイル通信では「駅の一覧を取得」のボタン(manual = true)。
+    /// 事業者はカンマ区切りで10件ずつにまとめて問い合わせる(エンドポイントごと)。
+    func ensureStationCatalog(manual: Bool) async {
+        await loadIfNeeded()
+        await discovery.loadIfNeeded()
+        guard !isLoadingStationCatalog else { return }
+        let operators = discovery.operators
+        let now = Date()
+        if !manual, stationSearch != nil, let built = stationSearchBuilt, built.operators == operators.map(\.id),
+           now.timeIntervalSince(built.at) < 3600 { return }
+        isLoadingStationCatalog = true
+        defer { isLoadingStationCatalog = false }
+        var lists: [String: [ODPTStation]] = [:]
+        var stale: [TrainOperator] = []
+        for op in operators {
+            if let cached = await cache.load([ODPTStation].self, key: Self.operatorStationsKey(op.id)) {
+                lists[op.id] = cached.value
+                if now.timeIntervalSince(cached.fetchedAt) >= DataKind.railwayCatalog.minimumInterval { stale.append(op) }
+            } else {
+                stale.append(op)
+            }
+        }
+        let allowed = manual ? network.status.isOnline : MapMode.canDownloadTiles(network: network.status)
+        if !stale.isEmpty, allowed {
+            stationCatalogError = nil
+            let groups = Dictionary(grouping: stale, by: \.endpoint)
+            for endpoint in groups.keys.sorted(by: { $0.rawValue < $1.rawValue }) {
+                guard let group = groups[endpoint], !(endpoint.requiresToken && !hasToken()) else { continue }
+                do {
+                    let fetched = try await api.stations(operatorIDs: group.map(\.id), endpoint: endpoint)
+                    let byOperator = Dictionary(grouping: fetched) { $0.operatorID ?? ODPTID.operatorID(of: $0.sameAs) ?? "" }
+                    let fetchedAt = Date()
+                    for op in group {
+                        let list = byOperator[op.id] ?? []
+                        lists[op.id] = list
+                        try? await cache.save(list, key: Self.operatorStationsKey(op.id), fetchedAt: fetchedAt)
+                    }
+                    onFetched(.railwayCatalog, fetchedAt)
+                } catch {
+                    stationCatalogError = error.localizedDescription
+                }
+            }
+        }
+        stationCatalogPending = operators.filter { lists[$0.id] == nil }.map(\.name)
+        // 路線の名前・英語名・色(検出のときの応答か、保存した一覧を使う)
+        var railways: [ODPTRailway] = []
+        for op in operators where lists[op.id] != nil {
+            if let list = try? await railways(of: op, allowFetch: allowed) { railways += list }
+        }
+        let names = Dictionary(operators.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
+        let catalog = lists
+        let railwayList = railways
+        stationSearch = await Task.detached(priority: .userInitiated) {
+            StationSearchIndex.make(stations: catalog, railways: railwayList, operatorNames: names)
+        }.value
+        stationSearchBuilt = (operators.map(\.id), Date())
+    }
+
+    /// 検索で「登録済み」として先に並べる路線
+    var registeredRailwayIDs: Set<String> {
+        Set(registeredRailways.map(\.railwayID))
+    }
+
+    /// 最近検索して選んだ駅に足す(5件まで)
+    func addRecentStationSearch(_ name: String) {
+        var list = recentStationSearches.filter { $0 != name }
+        list.insert(name, at: 0)
+        recentStationSearches = Array(list.prefix(5))
+        defaults.set(recentStationSearches, forKey: Keys.recentSearches)
     }
 
     /// 緯度経度が取れなかった駅(報告用)
@@ -469,7 +559,8 @@ final class TrainStore {
 
     // MARK: - 路線・駅の一覧(長期間キャッシュする)
 
-    func railways(of op: TrainOperator) async throws -> [ODPTRailway] {
+    /// allowFetch が false のときは、保存した一覧と検出のときの応答だけを使い、通信しない(なければ空)
+    func railways(of op: TrainOperator, allowFetch: Bool = true) async throws -> [ODPTRailway] {
         let key = "railways2.\(op.id)"
         if let cached = await cache.load([ODPTRailway].self, key: key),
            Date().timeIntervalSince(cached.fetchedAt) < DataKind.railwayCatalog.minimumInterval {
@@ -481,6 +572,7 @@ final class TrainStore {
             try? await cache.save(list, key: key, fetchedAt: discovery.result?.detectedAt ?? Date())
             return list
         }
+        guard allowFetch else { return [] }
         let list = try await api.railways(of: op).sorted { $0.name < $1.name }
         let now = Date()
         try? await cache.save(list, key: key, fetchedAt: now)
@@ -592,5 +684,6 @@ final class TrainStore {
         static let lines = "train.lines"
         static let stations = "train.stations"
         static let routeRailways = "train.routeRailways"
+        static let recentSearches = "train.recentStationSearches"
     }
 }

@@ -114,6 +114,10 @@ final class AppEnvironment {
             hasToken: { !(keychain.string(for: KeychainAccount.odptToken) ?? "").isEmpty },
             onFetched: { fetchLog.mark($0, at: $1) })
         trains = trainStore
+        // 事業者を検出したら、駅と路線の検索に使う駅の一覧を取る(Wi-Fiなど従量制でない回線のときだけ)
+        discovery.onDetected = { [weak trainStore] in
+            Task { await trainStore?.ensureStationCatalog(manual: false) }
+        }
         timers = TimerStore()
         trainDisplay = TrainDisplayState()
         let location = LocationProvider()

@@ -1,6 +1,14 @@
 import Foundation
 import Observation
 
+/// 検索で選んだ駅へ地図を動かす依頼。key が変わったときだけ地図が動く。
+struct StationFocusRequest: Equatable {
+    var key: Int
+    var stationID: String
+    var name: String
+    var point: GeoPoint
+}
+
 enum TrainRailwaySelection {
     /// 「すべての路線」を表す値
     static let all = ""
@@ -22,7 +30,16 @@ final class TrainDisplayState {
         didSet { defaults.set(selectedRailwayID, forKey: Keys.railway) }
     }
 
+    /// 駅の検索で選んだ駅へ地図を動かす依頼(保存しない)
+    var focusRequest: StationFocusRequest?
+
     @ObservationIgnored private let defaults: UserDefaults
+
+    /// 検索で選んだ駅へ地図を動かす
+    func focus(on station: SearchStation) {
+        guard let point = station.point else { return }
+        focusRequest = StationFocusRequest(key: (focusRequest?.key ?? 0) + 1, stationID: station.id, name: station.name, point: point)
+    }
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults

@@ -13,6 +13,8 @@ struct TrainView: View {
     @State private var recordDay = ""
     /// 地図の行が画面に見えているか(隠れたら「地図へ」のボタンを出す)
     @State private var mapVisible = true
+    /// 検索で駅を選んだ直後(地図が見える位置へスクロールする)
+    @State private var selectedFromSearch = false
 
     /// 地図の高さ。スクロールの見える高さの55%(iPhone SE では画面の約4割)で、220〜420pt。
     nonisolated static func mapHeight(visibleHeight: CGFloat) -> CGFloat {
@@ -29,7 +31,13 @@ struct TrainView: View {
                     MovementDebugBanner()
                 }
                 // 切り替えのボタンは、スクロールしても上端に残す
-                MovementControlBar(railways: railways)
+                MovementControlBar(railways: railways) { station in
+                    // 検索で選んだ駅へ地図を動かし、下に駅の情報(時刻表など)を出す
+                    display.mode = .map
+                    display.focus(on: station)
+                    selectedFromSearch = true
+                    selection = .station(station.id)
+                }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
                     .background(Color(.systemGroupedBackground))
@@ -64,7 +72,13 @@ struct TrainView: View {
                         // 駅や列車をタップしたら、下の詳細が見える位置までスクロールする
                         .onChange(of: selection) { _, new in
                             guard new != nil else { return }
-                            withAnimation { proxy.scrollTo(MovementScroll.selection, anchor: .top) }
+                            if selectedFromSearch {
+                                // 検索で選んだときは、動かした地図が見えるように上端へ(駅の情報は地図のすぐ下)
+                                selectedFromSearch = false
+                                withAnimation { proxy.scrollTo(MovementScroll.map, anchor: .top) }
+                            } else {
+                                withAnimation { proxy.scrollTo(MovementScroll.selection, anchor: .top) }
+                            }
                         }
                         // 地図が隠れているときは、地図へ戻るボタンを出す
                         .overlay(alignment: .bottomTrailing) {
@@ -143,14 +157,35 @@ struct TrainView: View {
 struct MovementControlBar: View {
     @Environment(AppEnvironment.self) private var env
     let railways: [RailwayChoice]
+    /// 検索で駅を選んだとき
+    var onSelectStation: (SearchStation) -> Void = { _ in }
+    @State private var showsSearch = false
 
     var body: some View {
         @Bindable var display = env.trainDisplay
         VStack(spacing: 6) {
-            Picker("表示", selection: $display.mode) {
-                ForEach(TrainViewMode.allCases) { Text($0.label).tag($0) }
+            HStack(spacing: 8) {
+                Picker("表示", selection: $display.mode) {
+                    ForEach(TrainViewMode.allCases) { Text($0.label).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                Button {
+                    showsSearch = true
+                } label: {
+                    Image(systemName: "magnifyingglass")
+                        .font(.body.weight(.semibold))
+                        .frame(width: 36, height: 32)
+                }
+                .buttonStyle(.bordered)
+                .accessibilityLabel("駅を検索")
             }
-            .pickerStyle(.segmented)
+            .sheet(isPresented: $showsSearch) {
+                StationPickSheet(title: "駅を検索") { group in
+                    if let station = Self.preferred(in: group, drawn: Set(env.trains.shapes.keys)) {
+                        onSelectStation(station)
+                    }
+                }
+            }
             if display.mode != .record {
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 8) {
@@ -164,6 +199,13 @@ struct MovementControlBar: View {
                 }
             }
         }
+    }
+
+    /// 地図で表示する駅: 地図に描いている路線の駅、なければ位置の分かる駅
+    nonisolated static func preferred(in group: StationSearchGroup, drawn: Set<String>) -> SearchStation? {
+        group.stations.first { drawn.contains($0.railwayID) && $0.point != nil }
+            ?? group.stations.first { $0.point != nil }
+            ?? group.stations.first
     }
 
     private var filterPicker: some View {

@@ -266,6 +266,8 @@ final class OperatorDiscoveryStore {
     @ObservationIgnored private let network: NetworkMonitor
     @ObservationIgnored private let onFetched: @MainActor (Date) -> Void
     @ObservationIgnored private var loadTask: Task<Void, Never>?
+    /// 検出を保存したあとに呼ぶ(駅と路線の検索の一覧を、Wi-Fiなら続けて取得する)
+    @ObservationIgnored var onDetected: (@MainActor () -> Void)?
 
     private static let storageKey = "operatorDiscovery"
 
@@ -361,6 +363,7 @@ final class OperatorDiscoveryStore {
         rebuild()
         try await storage.save(found, key: Self.storageKey, fetchedAt: found.detectedAt)
         onFetched(found.detectedAt)
+        onDetected?()
     }
 
     private func run(_ endpoint: ODPTEndpoint) async throws -> OperatorDiscoveryResult {

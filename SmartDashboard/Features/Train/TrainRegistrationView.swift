@@ -80,52 +80,63 @@ struct OperatorDiscoveryStatusRows: View {
     }
 }
 
-/// 登録の入口: 事業者を選ぶ(自動で検出した事業者)
+/// 登録の入口: 駅・路線を検索して選ぶか、事業者を選ぶ(自動で検出した事業者)
 struct OperatorPickerView: View {
     @Environment(AppEnvironment.self) private var env
     @State private var showsExcluded = false
+    @State private var query = ""
 
     var body: some View {
         let discovery = env.discovery
         List {
-            Section {
-                OperatorDiscoveryStatusRows()
-            } header: {
-                Text("自動検出")
-            } footer: {
-                Text("トークンで使える事業者・路線と、使えるデータを調べて30日間保存します(1回あたり約50KB、10回前後の通信)。期限が切れたときは、Wi-Fi接続時に調べ直します。")
-            }
-            Section {
-                ForEach(discovery.operators) { op in
-                    NavigationLink {
-                        RailwayPickerView(op: op)
-                    } label: {
-                        OperatorRow(op: op)
-                    }
-                }
-            } header: {
-                Text("事業者")
-            } footer: {
-                Text("ラベルは使えるデータです(運行情報/時刻表/遅れ/地図)。路線の一覧は、検出のときに取得したものを使います。")
-            }
-            if let excluded = discovery.result?.excluded, !excluded.isEmpty {
+            if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                // 駅名から、その駅の路線と方面を選んで登録する
+                StationSearchSections(query: query, mode: .register)
+            } else {
+                StationSearchSections(query: "", mode: .register)
                 Section {
-                    DisclosureGroup("使わない事業者(\(excluded.count))", isExpanded: $showsExcluded) {
-                        ForEach(excluded) { item in
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(item.name)
-                                Text(item.reason)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
+                    OperatorDiscoveryStatusRows()
+                } header: {
+                    Text("自動検出")
+                } footer: {
+                    Text("トークンで使える事業者・路線と、使えるデータを調べて30日間保存します(1回あたり約70KB、10回前後の通信)。期限が切れたときは、Wi-Fi接続時に調べ直します。")
+                }
+                Section {
+                    ForEach(discovery.operators) { op in
+                        NavigationLink {
+                            RailwayPickerView(op: op)
+                        } label: {
+                            OperatorRow(op: op)
+                        }
+                    }
+                } header: {
+                    Text("事業者")
+                } footer: {
+                    Text("ラベルは使えるデータです(運行情報/時刻表/遅れ/地図)。路線の一覧は、検出のときに取得したものを使います。上の検索欄で、駅名から直接登録することもできます。")
+                }
+                if let excluded = discovery.result?.excluded, !excluded.isEmpty {
+                    Section {
+                        DisclosureGroup("使わない事業者(\(excluded.count))", isExpanded: $showsExcluded) {
+                            ForEach(excluded) { item in
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(item.name)
+                                    Text(item.reason)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
                             }
                         }
                     }
                 }
             }
         }
+        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "駅名・路線名・駅ナンバリング")
         .navigationTitle("事業者")
-        .task { await env.discovery.detectIfNeeded() }
+        .task {
+            await env.discovery.detectIfNeeded()
+            await env.trains.ensureStationCatalog(manual: false)
+        }
     }
 }
 
