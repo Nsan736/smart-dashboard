@@ -108,7 +108,7 @@ struct TrainView: View {
                 await store.ensureDirectory(manual: false)
             }
             .task {
-                let endpoints = Set(store.neededRailways.compactMap { OperatorCatalog.find($0.operatorID)?.endpoint })
+                let endpoints = Set(store.neededRailways.map { store.operatorInfo($0.operatorID).endpoint })
                 for endpoint in endpoints {
                     let names = await store.directionNames(endpoint: endpoint)
                     directionNames.merge(names) { current, _ in current }

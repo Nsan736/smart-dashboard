@@ -11,6 +11,7 @@ enum DataKind: String, CaseIterable, Codable {
     case trainInfo
     case trainDelay
     case railwayCatalog
+    case operatorDiscovery
 
     var minimumInterval: TimeInterval {
         switch self {
@@ -23,6 +24,7 @@ enum DataKind: String, CaseIterable, Codable {
         case .trainInfo: return 5 * 60
         case .trainDelay: return 2 * 60
         case .railwayCatalog: return 30 * 24 * 60 * 60
+        case .operatorDiscovery: return 30 * 24 * 60 * 60
         }
     }
 
@@ -37,6 +39,7 @@ enum DataKind: String, CaseIterable, Codable {
         case .trainInfo: return "運行情報"
         case .trainDelay: return "列車の遅れ"
         case .railwayCatalog: return "路線・駅の一覧"
+        case .operatorDiscovery: return "ODPTの事業者の検出"
         }
     }
 }

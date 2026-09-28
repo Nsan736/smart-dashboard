@@ -6,9 +6,7 @@ import UIKit
 enum RouteRailwayResolver {
     /// 路線IDから事業者IDを求める(例: odpt.Railway:Toei.Mita → odpt.Operator:Toei)
     static func operatorID(forRailway railwayID: String) -> String? {
-        guard let body = railwayID.split(separator: ":", maxSplits: 1).last,
-              let name = body.split(separator: ".").first, !name.isEmpty else { return nil }
-        return "odpt.Operator:" + name
+        ODPTID.operatorID(of: railwayID)
     }
 }
 
@@ -130,16 +128,20 @@ final class JourneyStore {
             message = "出発と同じ駅です"
             return
         }
+        // 経路に使えるのは、列車ごとの時刻表がある路線だけ(提供されていない路線は、乗り換えの経路にも入れない)
+        let allowed = Set(directory.railwayGraph().keys.filter { live.schedules[$0] != nil || trains.capabilities(ofRailway: $0).trainTimetable })
         // 経路に出てくる路線のうち、時刻表を保存していない路線
-        let needed = directory.railwaysOnShortestPaths(from: Set(origin.railwayIDs), to: Set(destination.railwayIDs))
+        let needed = directory.railwaysOnShortestPaths(from: Set(origin.railwayIDs), to: Set(destination.railwayIDs), allowed: allowed)
         guard !needed.isEmpty else {
             options = []
             missingRailways = []
-            message = "この2つの駅は、使える路線ではつながっていません"
+            message = Set(origin.railwayIDs).isDisjoint(with: allowed) || Set(destination.railwayIDs).isDisjoint(with: allowed)
+                ? "列車ごとの時刻表が提供されていない路線の駅なので、経路を探せません"
+                : "この2つの駅は、使える路線ではつながっていません"
             return
         }
         missingRailways = needed.filter { live.schedules[$0] == nil }.compactMap { id in
-            guard let operatorID = RouteRailwayResolver.operatorID(forRailway: id), OperatorCatalog.find(operatorID) != nil else { return nil }
+            guard let operatorID = RouteRailwayResolver.operatorID(forRailway: id) else { return nil }
             return RouteRailway(operatorID: operatorID, railwayID: id, name: directory.railwayName(of: id))
         }
         // Wi-Fi など従量制でない回線なら、足りない路線の時刻表を自動で取得する

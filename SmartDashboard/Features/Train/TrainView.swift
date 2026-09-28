@@ -100,6 +100,7 @@ struct ODPTAttributionView: View {
         公共交通事業者により提供されたデータを元にしていますが、必ずしも正確・完全なものとは限りません。\
         本アプリケーションの表示内容について、公共交通事業者への直接の問合せは行わないでください。
         都営のデータ: 東京都交通局・公共交通オープンデータ協議会 (CC BY 4.0)
+        そのほかの事業者(東京メトロ、横浜市交通局など)のデータ: 各事業者・公共交通オープンデータ協議会(公共交通オープンデータ基本ライセンス)
         \(Self.trackAttribution)
         """)
     }
@@ -232,7 +233,9 @@ struct NextTrainRow: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                if store.downloadingTimetables.contains(station.id) {
+                if !store.capabilities(ofRailway: station.railwayID).stationTimetable {
+                    EmptyView()
+                } else if store.downloadingTimetables.contains(station.id) {
                     ProgressView()
                 } else {
                     Button {
@@ -264,7 +267,9 @@ struct NextTrainRow: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             } else {
-                Text("時刻表は未ダウンロードです。右のボタンで一度だけ取得します。")
+                Text(store.capabilities(ofRailway: station.railwayID).stationTimetable
+                     ? "時刻表は未ダウンロードです。右のボタンで一度だけ取得します。"
+                     : "この路線は駅の時刻表が提供されていません。地図の駅をタップすると、列車ごとの時刻表から作った時刻表を出します。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }

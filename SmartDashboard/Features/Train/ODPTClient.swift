@@ -7,7 +7,7 @@ enum ODPTError: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .tokenRequired(let name): return "\(name)の取得にはODPTのアクセストークンが必要です。設定で入力してください。"
-        case .unauthorized: return "ODPTのアクセストークンが正しくないか、権限がありません。"
+        case .unauthorized: return "ODPTのアクセストークンが無効か、期限が切れています。ODPTのサイトで確かめて、設定で入力し直してください。"
         }
     }
 }
@@ -27,6 +27,14 @@ protocol ODPTAPI: Sendable {
     func trainTimetables(railwayID: String, calendarID: String, directionID: String?, op: TrainOperator) async throws -> [ODPTTrainTimetable]
     /// 列車のリアルタイム情報。登録した路線だけに絞る(カンマ区切りでOR指定)。
     func trains(op: TrainOperator, railwayIDs: [String]) async throws -> [ODPTTrain]
+
+    // 事業者の検出(OperatorDiscoveryStore)。どれも1回のリクエストで、複数の事業者・IDをカンマ区切りでまとめる。
+    func operators(endpoint: ODPTEndpoint) async throws -> [ODPTOperator]
+    func railways(operatorIDs: [String], endpoint: ODPTEndpoint) async throws -> [ODPTRailway]
+    func trainInformation(operatorIDs: [String], endpoint: ODPTEndpoint) async throws -> [ODPTTrainInformation]
+    func trains(operatorIDs: [String], endpoint: ODPTEndpoint) async throws -> [ODPTTrain]
+    func stationTimetables(ids: [String], endpoint: ODPTEndpoint) async throws -> [ODPTStationTimetable]
+    func trainTimetables(trainIDs: [String], endpoint: ODPTEndpoint) async throws -> [ODPTTrainTimetable]
 }
 
 struct ODPTClient: ODPTAPI {
@@ -80,6 +88,35 @@ struct ODPTClient: ODPTAPI {
     func trains(op: TrainOperator, railwayIDs: [String]) async throws -> [ODPTTrain] {
         guard !railwayIDs.isEmpty else { return [] }
         return try await get("odpt:Train", [("odpt:railway", railwayIDs.joined(separator: ","))], op.endpoint, op.name)
+    }
+
+    func operators(endpoint: ODPTEndpoint) async throws -> [ODPTOperator] {
+        try await get("odpt:Operator", [], endpoint, "事業者の一覧")
+    }
+
+    func railways(operatorIDs: [String], endpoint: ODPTEndpoint) async throws -> [ODPTRailway] {
+        guard !operatorIDs.isEmpty else { return [] }
+        return try await get("odpt:Railway", [("odpt:operator", operatorIDs.joined(separator: ","))], endpoint, "路線の一覧")
+    }
+
+    func trainInformation(operatorIDs: [String], endpoint: ODPTEndpoint) async throws -> [ODPTTrainInformation] {
+        guard !operatorIDs.isEmpty else { return [] }
+        return try await get("odpt:TrainInformation", [("odpt:operator", operatorIDs.joined(separator: ","))], endpoint, "運行情報")
+    }
+
+    func trains(operatorIDs: [String], endpoint: ODPTEndpoint) async throws -> [ODPTTrain] {
+        guard !operatorIDs.isEmpty else { return [] }
+        return try await get("odpt:Train", [("odpt:operator", operatorIDs.joined(separator: ","))], endpoint, "列車の情報")
+    }
+
+    func stationTimetables(ids: [String], endpoint: ODPTEndpoint) async throws -> [ODPTStationTimetable] {
+        guard !ids.isEmpty else { return [] }
+        return try await get("odpt:StationTimetable", [("owl:sameAs", ids.joined(separator: ","))], endpoint, "駅の時刻表")
+    }
+
+    func trainTimetables(trainIDs: [String], endpoint: ODPTEndpoint) async throws -> [ODPTTrainTimetable] {
+        guard !trainIDs.isEmpty else { return [] }
+        return try await get("odpt:TrainTimetable", [("odpt:train", trainIDs.joined(separator: ","))], endpoint, "列車の時刻表")
     }
 
     private func get<T: Decodable>(_ type: String, _ query: [(String, String)], _ endpoint: ODPTEndpoint, _ name: String) async throws -> [T] {

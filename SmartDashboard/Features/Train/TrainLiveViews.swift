@@ -597,7 +597,9 @@ struct TrainLiveStatusView: View {
     var body: some View {
         let live = env.live
         let needed = env.trains.neededRailways
-        let missing = needed.filter { live.schedules[$0.railwayID] == nil }
+        let missing = live.scheduleRailways.filter { live.schedules[$0.railwayID] == nil }
+        // 列車ごとの時刻表が提供されていない路線(検出で分かったもの)
+        let noSchedule = needed.filter { !env.trains.capabilities(ofRailway: $0.railwayID).trainTimetable }
         VStack(alignment: .leading, spacing: 4) {
             if !live.downloadingSchedules.isEmpty {
                 HStack(spacing: 8) {
@@ -611,6 +613,10 @@ struct TrainLiveStatusView: View {
                     Task { await live.ensureSchedules(manual: true) }
                 }
                 .buttonStyle(.bordered)
+            }
+            if !noSchedule.isEmpty {
+                Text("\(noSchedule.map { name(of: $0.railwayID) }.joined(separator: "、"))は列車ごとの時刻表が提供されていないため、列車の位置・駅に重ねる電車・経路の検索は使えません。")
+                    .fixedSize(horizontal: false, vertical: true)
             }
             if let error = live.scheduleError ?? live.delayError {
                 Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.red)
@@ -627,13 +633,23 @@ struct TrainLiveStatusView: View {
     }
 
     private func delayText(live: TrainLiveStore, needed: [String]) -> String {
-        guard let last = live.lastDelayFetch else { return "列車の遅れ: 未取得" }
         let unsupported = needed.filter { live.delaySupport[$0] == false }
-        var text = "列車の遅れ: \(Formatters.age(of: last))に取得"
+        var text: String
+        if let last = live.lastDelayFetch {
+            text = "列車の遅れ: \(Formatters.age(of: last))に取得"
+        } else if !unsupported.isEmpty {
+            text = "列車の遅れ: 取得していません"
+        } else {
+            return "列車の遅れ: 未取得"
+        }
         if !unsupported.isEmpty {
-            let names = unsupported.map { id in env.trains.lines.first { $0.railwayID == id }?.railwayName ?? ODPTID.tail(id) }
+            let names = unsupported.map { name(of: $0) }
             text += "。\(names.joined(separator: "、"))は列車ごとの遅れが提供されていないため、運行情報で路線全体の状況を表示します"
         }
         return text
+    }
+
+    private func name(of railwayID: String) -> String {
+        env.trains.railwayNames[railwayID] ?? ODPTID.tail(railwayID)
     }
 }

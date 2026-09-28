@@ -79,6 +79,8 @@ final class TrainStore {
     private(set) var directory: TransitDirectory?
     private(set) var isLoadingDirectory = false
     private(set) var directoryError: String?
+    /// 駅の一覧に、まだ入れていない事業者(Wi-Fi接続時か、行きたい駅の検索を開いたときに取得する)
+    private(set) var directoryPendingOperators: [String] = []
     private(set) var info: CachedValue<[TrainInfoItem]>?
     private(set) var timetables: [UUID: StoredTimetable] = [:]
     /// 地図に描く路線の形。キーは路線ID。
@@ -94,6 +96,8 @@ final class TrainStore {
     private(set) var autoRefreshNote: String?
 
     @ObservationIgnored let api: ODPTAPI
+    /// 事業者の検出の結果(事業者を引く、路線で使えるデータを調べる)
+    @ObservationIgnored let discovery: OperatorDiscoveryStore
     @ObservationIgnored private let cache: DiskCache
     @ObservationIgnored private let timetableStorage: DiskCache
     @ObservationIgnored private let shapeStorage: DiskCache
@@ -109,10 +113,12 @@ final class TrainStore {
     private static let infoKey = "trainInfo"
     private static let captureKey = "debug.trainInformation"
 
-    init(api: ODPTAPI, cache: DiskCache, timetableStorage: DiskCache, shapeStorage: DiskCache, settings: AppSettings, network: NetworkMonitor,
+    init(api: ODPTAPI, discovery: OperatorDiscoveryStore, cache: DiskCache, timetableStorage: DiskCache, shapeStorage: DiskCache,
+         settings: AppSettings, network: NetworkMonitor,
          hasToken: @escaping @MainActor () -> Bool, onFetched: @escaping @MainActor (DataKind, Date) -> Void,
          defaults: UserDefaults = .standard) {
         self.api = api
+        self.discovery = discovery
         self.cache = cache
         self.timetableStorage = timetableStorage
         self.shapeStorage = shapeStorage
@@ -151,6 +157,18 @@ final class TrainStore {
     func clearCachedInfo() {
         info = nil
         lastCapture = nil
+    }
+
+    // MARK: - 事業者と、路線で使えるデータ
+
+    /// 事業者を引く(検出の結果、なければ予備の定義)。見つからないIDでも、トークンが必要な事業者として返す。
+    func operatorInfo(_ id: String) -> TrainOperator {
+        discovery.operatorInfo(id)
+    }
+
+    /// 路線で使えるデータ。検出していない路線は、すべて使えるものとして扱う(取得して空なら、その旨を表示する)。
+    func capabilities(ofRailway id: String) -> ODPTCapabilities {
+        discovery.capabilities(ofRailway: id) ?? .assumed
     }
 
     // MARK: - 登録
@@ -260,23 +278,33 @@ final class TrainStore {
 
     // MARK: - 駅の一覧と乗り換えの関係
 
-    /// 使っている事業者の、すべての駅(乗り換えの関係と緯度経度を含む)を読み込む。30日間キャッシュする(都営で約13KB)。
+    /// 経路の検索に使う駅の一覧(乗り換えの関係と緯度経度を含む)を読み込む。事業者ごとに30日間キャッシュする(都営で約13KB)。
+    /// 対象は、使っている事業者と、検出した事業者のうち列車ごとの時刻表があるもの(事業者をまたぐ経路のため)。
+    /// 使っていない事業者の駅は、手動(行きたい駅の検索を開いたとき)か、従量制でない回線のときだけ取得する。
     func ensureDirectory(manual: Bool) async {
         await loadIfNeeded()
-        let operators = Set(neededRailways.map(\.operatorID)).compactMap { OperatorCatalog.find($0) }.sorted { $0.id < $1.id }
+        let used = Set(neededRailways.map(\.operatorID))
+        let others = discovery.operators.filter { !used.contains($0.id) && !$0.isFallback && $0.capabilities.trainTimetable }.map(\.id)
+        let operators = (used.sorted() + others.sorted()).map { operatorInfo($0) }
         guard !operators.isEmpty, !isLoadingDirectory else { return }
         isLoadingDirectory = true
         defer { isLoadingDirectory = false }
         var stationsList: [TransitStation] = []
         var names: [String: String] = [:]
         var failed = false
+        var pending: [String] = []
         for op in operators {
+            let key = "operatorStations.\(op.id)"
+            let cached = await cache.load([ODPTStation].self, key: key)
+            let isUsed = used.contains(op.id)
+            if !isUsed, cached == nil, !manual, !MapMode.canDownloadTiles(network: network.status) {
+                pending.append(op.name)
+                continue
+            }
             if let list = try? await railways(of: op) {
                 for railway in list { names[railway.sameAs] = railway.name }
             }
-            let key = "operatorStations.\(op.id)"
-            if let cached = await cache.load([ODPTStation].self, key: key),
-               Date().timeIntervalSince(cached.fetchedAt) < DataKind.railwayCatalog.minimumInterval {
+            if let cached, Date().timeIntervalSince(cached.fetchedAt) < DataKind.railwayCatalog.minimumInterval {
                 stationsList += cached.value.compactMap { TransitStation($0) }
                 continue
             }
@@ -288,13 +316,16 @@ final class TrainStore {
                 try? await cache.save(list, key: key, fetchedAt: now)
                 onFetched(.railwayCatalog, now)
                 stationsList += list.compactMap { TransitStation($0) }
-            } else if let cached = await cache.load([ODPTStation].self, key: key) {
+            } else if let cached {
                 // 古くても、ないよりはよい
                 stationsList += cached.value.compactMap { TransitStation($0) }
-            } else {
+            } else if isUsed {
                 failed = true
+            } else {
+                pending.append(op.name)
             }
         }
+        directoryPendingOperators = pending
         directoryError = failed && stationsList.isEmpty ? "駅の一覧を取得できませんでした" : nil
         if !stationsList.isEmpty { directory = TransitDirectory(stations: stationsList, railwayNames: names) }
     }
@@ -308,7 +339,8 @@ final class TrainStore {
     /// manual が false のときは自動更新のポリシーに従う(従量制の回線などでは取得しない)。
     func ensureShapes(manual: Bool) async {
         await loadIfNeeded()
-        let missing = neededRailways.filter { shapes[$0.railwayID] == nil }
+        // 駅の位置が提供されていない路線は、取得しても線を描けないので取得しない
+        let missing = neededRailways.filter { shapes[$0.railwayID] == nil && capabilities(ofRailway: $0.railwayID).stationLocation }
         guard !missing.isEmpty, !isLoadingShapes else { return }
         let decision = manual
             ? settings.refreshPolicy.manualDecision(network: network.status)
@@ -318,7 +350,7 @@ final class TrainStore {
         defer { isLoadingShapes = false }
         shapeError = nil
         for target in missing {
-            guard let op = OperatorCatalog.find(target.operatorID) else { continue }
+            let op = operatorInfo(target.operatorID)
             do {
                 guard let railway = try await railways(of: op).first(where: { $0.sameAs == target.railwayID }) else { continue }
                 let list = try await stationsWithCoordinates(of: railway, op: op)
@@ -354,11 +386,16 @@ final class TrainStore {
 
     // MARK: - 運行情報
 
+    /// 運行情報を取得する路線(運行情報が提供されていない路線は除く)
+    var infoLines: [RegisteredLine] {
+        lines.filter { capabilities(ofRailway: $0.railwayID).trainInformation }
+    }
+
     func refreshInfoIfStale() async {
         await loadIfNeeded()
-        guard !lines.isEmpty else { return }
+        guard !infoLines.isEmpty else { return }
         let cachedIDs = Set(info?.value.map(\.railwayID) ?? [])
-        let covered = Set(lines.map(\.railwayID)).isSubset(of: cachedIDs)
+        let covered = Set(infoLines.map(\.railwayID)).isSubset(of: cachedIDs)
         let decision = settings.refreshPolicy.autoDecision(
             kind: .trainInfo, fetchedAt: covered ? info?.fetchedAt : nil, now: Date(), network: network.status)
         autoRefreshNote = decision.note
@@ -367,7 +404,7 @@ final class TrainStore {
 
     func refreshInfoManually() async {
         await loadIfNeeded()
-        guard !lines.isEmpty else { return }
+        guard !infoLines.isEmpty else { return }
         guard settings.refreshPolicy.manualDecision(network: network.status) == .refresh else {
             infoError = "オフラインのため更新できません"
             return
@@ -383,9 +420,10 @@ final class TrainStore {
         var items: [TrainInfoItem] = []
         var errors: [String] = []
         // 事業者ごとに1リクエスト。路線はカンマ区切りで絞る。
-        let grouped = Dictionary(grouping: lines, by: \.operatorID)
+        let targets = infoLines
+        let grouped = Dictionary(grouping: targets, by: \.operatorID)
         for (operatorID, group) in grouped {
-            guard let op = OperatorCatalog.find(operatorID) else { continue }
+            let op = operatorInfo(operatorID)
             do {
                 let data = try await api.trainInformationData(op: op, railwayIDs: group.map(\.railwayID))
                 // デコードに失敗した応答こそ調べたいので、先に保存する。追加の通信はしない。
@@ -404,7 +442,7 @@ final class TrainStore {
         }
         if !errors.isEmpty { infoError = errors.joined(separator: "\n") }
         guard errors.count < grouped.count || grouped.isEmpty else { return }
-        let order = lines.map(\.railwayID)
+        let order = targets.map(\.railwayID)
         items.sort { (order.firstIndex(of: $0.railwayID) ?? 0) < (order.firstIndex(of: $1.railwayID) ?? 0) }
         let now = Date()
         info = CachedValue(value: items, fetchedAt: now)
@@ -413,10 +451,12 @@ final class TrainStore {
         autoRefreshNote = nil
     }
 
-    /// 応答に含まれない路線は「情報なし(平常)」として扱う
+    /// 応答に含まれない路線は「情報なし(平常)」として扱う。
+    /// 路線を持たない運行情報(事業者全体のお知らせ)は、その事業者の路線に使う。
     nonisolated static func makeItems(lines: [RegisteredLine], response: [ODPTTrainInformation]) -> [TrainInfoItem] {
         lines.map { line in
             let match = response.first { $0.railway == line.railwayID }
+                ?? response.first { $0.railway == nil && $0.operatorID == line.operatorID }
             return TrainInfoItem(
                 railwayID: line.railwayID,
                 railwayName: line.railwayName,
@@ -434,6 +474,12 @@ final class TrainStore {
         if let cached = await cache.load([ODPTRailway].self, key: key),
            Date().timeIntervalSince(cached.fetchedAt) < DataKind.railwayCatalog.minimumInterval {
             return cached.value
+        }
+        // 事業者の検出で取得した応答があれば、取り直さない
+        if let detected = discovery.railwayData(of: op.id) {
+            let list = detected.sorted { $0.name < $1.name }
+            try? await cache.save(list, key: key, fetchedAt: discovery.result?.detectedAt ?? Date())
+            return list
         }
         let list = try await api.railways(of: op).sorted { $0.name < $1.name }
         let now = Date()
@@ -483,7 +529,11 @@ final class TrainStore {
 
     func downloadTimetable(for station: RegisteredStation) async {
         guard !downloadingTimetables.contains(station.id) else { return }
-        guard let op = OperatorCatalog.find(station.operatorID) else { return }
+        let op = operatorInfo(station.operatorID)
+        guard capabilities(ofRailway: station.railwayID).stationTimetable else {
+            timetableError = "\(station.railwayName)は駅の時刻表が提供されていません"
+            return
+        }
         guard network.status.isOnline else {
             timetableError = "オフラインのためダウンロードできません"
             return

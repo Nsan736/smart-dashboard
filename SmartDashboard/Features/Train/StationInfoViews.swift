@@ -134,6 +134,15 @@ struct StationInfoSections: View {
             } footer: {
                 Text("→の時刻は、リアルタイムの遅れを反映した予定です。番線は、提供されている駅(終点・折り返しの駅など)だけに出ます。")
             }
+        } else if let railwayID = info.railwayID, !env.trains.capabilities(ofRailway: railwayID).trainTimetable {
+            Section {
+                Text("この路線は列車ごとの時刻表が提供されていないため、方面ごとの時刻表と経路の検索は使えません。駅の時刻表を登録すると、次の電車を出せます(設定の「電車の路線・駅」)。")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } header: {
+                Text("時刻表")
+            }
         } else {
             Section {
                 Text("この路線の列車ごとの時刻表がまだありません。")
@@ -147,7 +156,9 @@ struct StationInfoSections: View {
             }
         }
 
-        JourneySearchSections(stationID: stationID)
+        if info.railwayID.map({ env.trains.capabilities(ofRailway: $0).trainTimetable }) ?? true {
+            JourneySearchSections(stationID: stationID)
+        }
     }
 
     static func minutes(_ seconds: TimeInterval) -> Int {
@@ -500,6 +511,12 @@ struct StationSearchSheet: View {
         NavigationStack {
             List {
                 let directory = env.trains.directory
+                if !env.trains.directoryPendingOperators.isEmpty {
+                    Text("\(env.trains.directoryPendingOperators.joined(separator: "、"))の駅は、まだ一覧にありません(通信できるときに開き直すと取得します)。")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 if directory == nil {
                     if env.trains.isLoadingDirectory {
                         ProgressView("駅の一覧を読み込んでいます")

@@ -83,12 +83,17 @@ final class TrainLiveStore {
 
     // MARK: - 列車ごとの時刻表
 
+    /// 列車ごとの時刻表を保存する路線(列車ごとの時刻表が提供されていない路線は除く)
+    var scheduleRailways: [(operatorID: String, railwayID: String)] {
+        trains.neededRailways.filter { trains.capabilities(ofRailway: $0.railwayID).trainTimetable }
+    }
+
     /// 保存していない(または30日を過ぎた)路線の時刻表をダウンロードする。
     /// 自動(manual = false)は、従量制でも省データでもない回線(Wi-Fiなど)のときだけ。モバイル通信では手動でだけ実行できる。
     func ensureSchedules(manual: Bool) async {
         await loadIfNeeded()
         let now = Date()
-        let targets = trains.neededRailways.filter { schedules[$0.railwayID]?.isExpired(now: now) ?? true }
+        let targets = scheduleRailways.filter { schedules[$0.railwayID]?.isExpired(now: now) ?? true }
         // 使わなくなった路線の時刻表は消す
         let needed = Set(trains.neededRailways.map(\.railwayID))
         for id in schedules.keys where !needed.contains(id) {
@@ -100,7 +105,7 @@ final class TrainLiveStore {
         guard allowed else { return }
         scheduleError = nil
         for target in targets where !downloadingSchedules.contains(target.railwayID) {
-            guard let op = OperatorCatalog.find(target.operatorID) else { continue }
+            let op = trains.operatorInfo(target.operatorID)
             downloadingSchedules.insert(target.railwayID)
             do {
                 let schedule = try await downloadSchedule(railwayID: target.railwayID, op: op)
@@ -171,8 +176,14 @@ final class TrainLiveStore {
 
     /// 最短の間隔(Wi-Fiで2分、モバイル通信で5分)を過ぎていて、自動更新が許されているときだけ取得する。
     /// 省データモードのとき、月のモバイル通信量の上限を超えたときは、手動更新だけになる。
+    /// 遅れを取得する路線。列車ごとの遅れが提供されていない路線(検出で分かったもの)は、通信せずに「提供なし」にする。
+    var delayRailways: [(operatorID: String, railwayID: String)] {
+        trains.registeredRailways.filter { trains.capabilities(ofRailway: $0.railwayID).delay != false }
+    }
+
     func fetchDelaysIfDue() async {
-        guard !trains.registeredRailways.isEmpty else { return }
+        markUnsupportedDelays()
+        guard !delayRailways.isEmpty else { return }
         let now = Date()
         let decision = settings.refreshPolicy.autoDecision(kind: .trainDelay, fetchedAt: lastDelayFetch, now: now, network: network.status)
         autoFetchNote = decision.note
@@ -182,6 +193,8 @@ final class TrainLiveStore {
     }
 
     func fetchDelaysManually() async {
+        markUnsupportedDelays()
+        guard !delayRailways.isEmpty else { return }
         guard network.status.isOnline else {
             delayError = "オフラインのため更新できません"
             return
@@ -196,9 +209,9 @@ final class TrainLiveStore {
         delayError = nil
         let now = Date()
         // 事業者ごとに1リクエスト。登録した路線だけに絞る(経路の検索のために足した路線の遅れは取らない)。
-        let grouped = Dictionary(grouping: trains.registeredRailways, by: \.operatorID)
+        let grouped = Dictionary(grouping: delayRailways, by: \.operatorID)
         for (operatorID, group) in grouped {
-            guard let op = OperatorCatalog.find(operatorID) else { continue }
+            let op = trains.operatorInfo(operatorID)
             let railwayIDs = group.map(\.railwayID)
             do {
                 let response = try await api.trains(op: op, railwayIDs: railwayIDs)
@@ -213,6 +226,14 @@ final class TrainLiveStore {
         }
         lastDelayFetch = now
         onFetched(now)
+    }
+
+    /// 検出で「列車ごとの遅れが提供されていない」と分かった路線は、取得せずに提供なしとする(都営の荒川線と同じ扱い)
+    private func markUnsupportedDelays() {
+        for railway in trains.registeredRailways where trains.capabilities(ofRailway: railway.railwayID).delay == false {
+            if delaySupport[railway.railwayID] != false { delaySupport[railway.railwayID] = false }
+            if delays[railway.railwayID] != nil { delays[railway.railwayID] = nil }
+        }
     }
 
     /// 応答から遅れだけを取り出す。遅れの項目を持つ列車が1本もない路線は「列車ごとの遅れは取れない」とする。

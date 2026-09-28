@@ -99,10 +99,24 @@ struct SettingsView: View {
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
+                    if env.discovery.isDetecting {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                            Text("使える事業者を調べています")
+                        }
+                        .font(.footnote)
+                    }
+                    if let failure = env.discovery.failure {
+                        Label(failure.message, systemImage: "exclamationmark.triangle")
+                            .font(.footnote)
+                            .foregroundStyle(.orange)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    NavigationLink("使える事業者(自動検出)") { OperatorDiscoveryView() }
                 } header: {
                     Text("APIトークン")
                 } footer: {
-                    Text("トークンはこの端末のKeychainだけに保存します。空にして保存すると削除します。")
+                    Text("トークンはこの端末のKeychainだけに保存します。空にして保存すると削除します。保存すると、そのトークンで使える事業者・路線・データの種類を調べます(約50KB)。")
                 }
 
                 Section {

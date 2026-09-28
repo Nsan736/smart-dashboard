@@ -42,6 +42,21 @@ struct ODPTTrainInformation: Decodable {
     }
 }
 
+/// 事業者 (odpt:Operator)
+struct ODPTOperator: Codable, Equatable {
+    let sameAs: String
+    let title: String?
+    let operatorTitle: ODPTTitle?
+
+    var name: String { operatorTitle?.text ?? title ?? ODPTID.tail(sameAs) }
+
+    enum CodingKeys: String, CodingKey {
+        case sameAs = "owl:sameAs"
+        case title = "dc:title"
+        case operatorTitle = "odpt:operatorTitle"
+    }
+}
+
 struct ODPTRailway: Codable, Equatable, Identifiable {
     struct StationOrder: Codable, Equatable {
         let index: Int
@@ -92,6 +107,8 @@ struct ODPTStation: Codable, Equatable {
     var railway: String? = nil
     /// 乗り換えできる駅(他社の駅を含む)。提供されない駅もある。
     var connectingStation: [String]? = nil
+    /// この駅の駅時刻表のID。駅時刻表を提供していない事業者では空(事業者の検出に使う)。
+    var stationTimetables: [String]? = nil
 
     var name: String { stationTitle?.text ?? title ?? ODPTID.tail(sameAs) }
 
@@ -103,6 +120,7 @@ struct ODPTStation: Codable, Equatable {
         case longitude = "geo:long"
         case railway = "odpt:railway"
         case connectingStation = "odpt:connectingStation"
+        case stationTimetables = "odpt:stationTimetable"
     }
 }
 
@@ -140,12 +158,15 @@ struct ODPTStationTimetable: Decodable {
         let trainType: String?
         let destinationStation: [String]?
         let isLast: Bool?
+        /// 列車のID。列車ごとの時刻表を提供していない事業者(ゆりかもめなど)では入っていない。
+        var train: String? = nil
 
         enum CodingKeys: String, CodingKey {
             case departureTime = "odpt:departureTime"
             case trainType = "odpt:trainType"
             case destinationStation = "odpt:destinationStation"
             case isLast = "odpt:isLast"
+            case train = "odpt:train"
         }
     }
 
@@ -192,9 +213,11 @@ struct ODPTTrainTimetable: Decodable {
     let trainType: String?
     let destinationStation: [String]?
     let objects: [Object]
+    var operatorID: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case sameAs = "owl:sameAs"
+        case operatorID = "odpt:operator"
         case trainNumber = "odpt:trainNumber"
         case calendar = "odpt:calendar"
         case railDirection = "odpt:railDirection"
@@ -215,8 +238,13 @@ struct ODPTTrain: Decodable {
     /// データの生成時刻と有効期限 (ISO 8601)
     let date: String?
     let valid: String?
+    /// 列車のID (odpt.Train:...)。列車ごとの時刻表の odpt:train と同じ形(事業者の検出に使う)。
+    var sameAs: String? = nil
+    var operatorID: String? = nil
 
     enum CodingKeys: String, CodingKey {
+        case sameAs = "owl:sameAs"
+        case operatorID = "odpt:operator"
         case trainNumber = "odpt:trainNumber"
         case railway = "odpt:railway"
         case railDirection = "odpt:railDirection"
@@ -230,5 +258,13 @@ enum ODPTID {
     /// "odpt.Station:Keisei.Oshiage.Aoto" -> "Aoto"。名前が引けないときの代替表示。
     static func tail(_ id: String) -> String {
         id.split(whereSeparator: { $0 == "." || $0 == ":" }).last.map(String.init) ?? id
+    }
+
+    /// IDの事業者の部分から事業者IDを求める(例: odpt.Railway:Toei.Mita → odpt.Operator:Toei)。
+    /// 路線・駅・列車・時刻表のIDは、どれも「種類:事業者.…」の形。
+    static func operatorID(of id: String) -> String? {
+        guard let body = id.split(separator: ":", maxSplits: 1).last, id.contains(":"),
+              let name = body.split(separator: ".").first, !name.isEmpty else { return nil }
+        return "odpt.Operator:" + name
     }
 }

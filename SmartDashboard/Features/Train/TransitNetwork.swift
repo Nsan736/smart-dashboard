@@ -168,14 +168,17 @@ struct TransitDirectory: Equatable {
         return best
     }
 
-    /// 路線どうしのつながり(乗り換えできる路線)
-    func railwayGraph() -> [String: Set<String>] {
+    /// 路線どうしのつながり(乗り換えできる路線)。allowed を指定したときは、その路線だけ(列車ごとの時刻表がある路線など)。
+    /// 事業者をまたぐ乗り換えも、駅の乗り換えの関係(odpt:connectingStation と、同じ名前で500m以内)から作る。
+    func railwayGraph(allowed: Set<String>? = nil) -> [String: Set<String>] {
         var graph: [String: Set<String>] = [:]
-        for station in stations.values { graph[station.railwayID, default: []] = graph[station.railwayID, default: []] }
+        for station in stations.values where allowed?.contains(station.railwayID) ?? true {
+            graph[station.railwayID, default: []] = graph[station.railwayID, default: []]
+        }
         for (id, targets) in links {
-            guard let a = stations[id]?.railwayID else { continue }
+            guard let a = stations[id]?.railwayID, allowed?.contains(a) ?? true else { continue }
             for target in targets {
-                guard let b = stations[target]?.railwayID, a != b else { continue }
+                guard let b = stations[target]?.railwayID, a != b, allowed?.contains(b) ?? true else { continue }
                 graph[a, default: []].insert(b)
             }
         }
@@ -183,8 +186,10 @@ struct TransitDirectory: Equatable {
     }
 
     /// 出発の路線から到着の路線まで、乗り換えの少ない経路に出てくる路線(出発に近い順)。つながらなければ空。
-    func railwaysOnShortestPaths(from origins: Set<String>, to destinations: Set<String>) -> [String] {
-        let graph = railwayGraph()
+    func railwaysOnShortestPaths(from origins: Set<String>, to destinations: Set<String>, allowed: Set<String>? = nil) -> [String] {
+        let graph = railwayGraph(allowed: allowed)
+        let starts = allowed.map { origins.intersection($0) } ?? origins
+        let goals = allowed.map { destinations.intersection($0) } ?? destinations
         func distances(from starts: Set<String>) -> [String: Int] {
             var result: [String: Int] = [:]
             var queue: [String] = []
@@ -203,9 +208,9 @@ struct TransitDirectory: Equatable {
             }
             return result
         }
-        let fromOrigin = distances(from: origins)
-        let toDestination = distances(from: destinations)
-        guard let shortest = destinations.compactMap({ fromOrigin[$0] }).min() else { return [] }
+        let fromOrigin = distances(from: starts)
+        let toDestination = distances(from: goals)
+        guard let shortest = goals.compactMap({ fromOrigin[$0] }).min() else { return [] }
         return fromOrigin.keys
             .filter { railway in
                 guard let a = fromOrigin[railway], let b = toDestination[railway] else { return false }

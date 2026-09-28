@@ -38,6 +38,8 @@ final class AppEnvironment {
     let weather: WeatherStore
     let exchange: ExchangeStore
     let timers: TimerStore
+    /// ODPTの事業者の自動検出(トークンで使える事業者・路線・データの種類)
+    let discovery: OperatorDiscoveryStore
     let trains: TrainStore
     let tiles: TileDownloader
     let radar: RadarStore
@@ -94,8 +96,17 @@ final class AppEnvironment {
         self.http = http
         let keychain = KeychainStore()
         self.keychain = keychain
+        let tokenPresent = !(keychain.string(for: KeychainAccount.odptToken) ?? "").isEmpty
+        // 検出の結果は、キャッシュの削除では消さない(登録した路線の事業者を引くのに使うため)
+        let discovery = OperatorDiscoveryStore(
+            api: ODPTClient(http: http, tokenProvider: { keychain.string(for: KeychainAccount.odptToken) }),
+            storage: DiskCache(directory: support.appendingPathComponent("odpt-discovery", isDirectory: true)),
+            settings: settings, network: network, hasToken: tokenPresent,
+            onFetched: { fetchLog.mark(.operatorDiscovery, at: $0) })
+        self.discovery = discovery
         let trainStore = TrainStore(
             api: ODPTClient(http: http, tokenProvider: { keychain.string(for: KeychainAccount.odptToken) }),
+            discovery: discovery,
             cache: cache,
             timetableStorage: DiskCache(directory: support.appendingPathComponent("timetables", isDirectory: true)),
             shapeStorage: DiskCache(directory: support.appendingPathComponent("railway-shapes", isDirectory: true)),
@@ -155,7 +166,7 @@ final class AppEnvironment {
         exchange = ExchangeStore(
             api: ERAPIClient(http: http), cache: cache, settings: settings, network: network,
             onFetched: { fetchLog.mark(.exchange, at: $0) })
-        hasODPTToken = !(keychain.string(for: KeychainAccount.odptToken) ?? "").isEmpty
+        hasODPTToken = tokenPresent
         // 天気を取得するたびに、気圧の1時間値(過去24時間〜今後24時間)を追記する。通信は増えない。
         weather.onSnapshot = { [weak pressureHistory] snapshot in
             pressureHistory?.ingest(snapshot)
@@ -173,6 +184,8 @@ final class AppEnvironment {
         if layout.needsWarnings { await refreshWarningsIfStale() }
         if layout.needsQuakes { await quakes.refreshIfStale() } else { await quakes.loadCacheIfNeeded() }
         if layout.needsExchange { await exchange.refreshIfStale() }
+        // 事業者の検出は30日ごと。期限が切れていても、自動ではWi-Fiなど従量制でない回線のときだけ。
+        await discovery.detectIfNeeded()
         if layout.needsTrainInfo { await trains.refreshInfoIfStale() }
         await updateCacheSize()
     }
@@ -254,10 +267,13 @@ final class AppEnvironment {
     }
 
     /// トークンはKeychainだけに保存する。空文字なら削除する。
+    /// 保存したら、そのトークンで使える事業者を検出し直す(削除したときは、公開エンドポイントで検出し直す)。
     @discardableResult
     func setODPTToken(_ token: String) -> Bool {
         let ok = keychain.set(token, for: KeychainAccount.odptToken)
         hasODPTToken = !(keychain.string(for: KeychainAccount.odptToken) ?? "").isEmpty
+        discovery.setHasToken(hasODPTToken)
+        if ok { Task { await discovery.detect(manual: true) } }
         return ok
     }
 
