@@ -394,13 +394,13 @@ final class TrainStore {
         }
         stationCatalogPending = operators.filter { lists[$0.id] == nil }.map(\.name)
         // 路線の名前・英語名・色(検出のときの応答か、保存した一覧を使う)
-        var railways: [ODPTRailway] = []
+        var collected: [ODPTRailway] = []
         for op in operators where lists[op.id] != nil {
-            if let list = try? await railways(of: op, allowFetch: allowed) { railways += list }
+            if let list = try? await railways(of: op, allowFetch: allowed) { collected += list }
         }
         let names = Dictionary(operators.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
         let catalog = lists
-        let railwayList = railways
+        let railwayList = collected
         stationSearch = await Task.detached(priority: .userInitiated) {
             StationSearchIndex.make(stations: catalog, railways: railwayList, operatorNames: names)
         }.value
