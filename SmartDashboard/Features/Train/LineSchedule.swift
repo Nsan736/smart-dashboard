@@ -8,11 +8,14 @@ struct LineSchedule: Codable, Equatable {
         var station: Int
         var arrival: Int?
         var departure: Int?
+        /// 番線(提供されている駅だけ)
+        var platform: String? = nil
 
         enum CodingKeys: String, CodingKey {
             case station = "s"
             case arrival = "a"
             case departure = "d"
+            case platform = "pl"
         }
 
         /// 到着・出発のどちらかは必ずある
@@ -85,7 +88,7 @@ struct LineSchedule: Codable, Equatable {
                 let arrival = minute(object.arrivalTime)
                 let departure = minute(object.departureTime)
                 guard arrival != nil || departure != nil, let station = index[stationID] else { continue }
-                stops.append(Stop(station: station, arrival: arrival, departure: departure))
+                stops.append(Stop(station: station, arrival: arrival, departure: departure, platform: object.platformNumber))
             }
             guard stops.count >= 2 else { continue }
             let destinationID = table.destinationStation?.first
@@ -167,6 +170,8 @@ struct TrainPosition: Equatable, Identifiable {
         var station: Int
         /// 遅れを補正した到着予定
         var arrival: Date
+        /// 番線(提供されている駅だけ)
+        var platform: String? = nil
     }
 
     var id: String
@@ -186,6 +191,8 @@ struct TrainPosition: Equatable, Identifiable {
     var isWaitingToDepart: Bool
     /// これから止まる駅(今いる駅は含まない)
     var upcoming: [UpcomingStop]
+    /// 停車中の駅の番線(提供されている駅だけ)
+    var currentPlatform: String? = nil
 }
 
 /// ある駅に向かっている列車
@@ -202,6 +209,11 @@ enum TrainPositionCalculator {
     static let minimumDwell = 0.4
     /// 始発駅での発車待ちとして扱う時間(分)。「駅に向かっている列車」の一覧に使う。
     static let waitingWindow = 30.0
+
+    /// 列車1本の、ある運行日の運行を表すID。経路の検索と乗車中の判定で、同じ列車かを比べるのに使う。
+    static func tripID(number: String, calendar: String, day: Date) -> String {
+        "\(number)|\(calendar)|\(Int(day.timeIntervalSince1970))"
+    }
 
     /// 時刻表から、今走っている列車の位置を求める。
     /// - delays: 列車番号 → 遅れ(秒)。odpt:Train から得たもの。
@@ -246,13 +258,14 @@ enum TrainPositionCalculator {
         }
         func make(from: Int, to: Int, fraction: Double, stopped: Bool, nextIndex: Int) -> TrainPosition {
             let upcoming = train.stops[nextIndex...].map {
-                TrainPosition.UpcomingStop(station: $0.station, arrival: date($0.arrivalMinute))
+                TrainPosition.UpcomingStop(station: $0.station, arrival: date($0.arrivalMinute), platform: $0.platform)
             }
             return TrainPosition(
-                id: "\(train.number)|\(train.calendar)|\(Int(day.timeIntervalSince1970))",
+                id: tripID(number: train.number, calendar: train.calendar, day: day),
                 number: train.number, direction: train.direction, trainType: train.trainType, destination: train.destination,
                 delay: delay, fromStation: train.stops[from].station, toStation: train.stops[to].station,
-                fraction: fraction, isStopped: stopped, isWaitingToDepart: isWaiting, upcoming: Array(upcoming))
+                fraction: fraction, isStopped: stopped, isWaitingToDepart: isWaiting, upcoming: Array(upcoming),
+                currentPlatform: stopped ? train.stops[from].platform : nil)
         }
 
         if isWaiting { return make(from: 0, to: min(1, train.stops.count - 1), fraction: 0, stopped: true, nextIndex: 1) }

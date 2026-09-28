@@ -30,7 +30,8 @@ final class TrainPositionTests: XCTestCase {
         XCTAssertEqual(first.direction, northbound)
         XCTAssertEqual(first.trainType, "普通")
         XCTAssertEqual(first.destination, "ImbaNihonIdai")
-        XCTAssertEqual(first.stops.first, LineSchedule.Stop(station: 0, arrival: nil, departure: 10 * 60 + 54))
+        // 番線は、提供されている駅(西馬込など)だけに入る
+        XCTAssertEqual(first.stops.first, LineSchedule.Stop(station: 0, arrival: nil, departure: 10 * 60 + 54, platform: "2"))
         XCTAssertEqual(first.stops[1], LineSchedule.Stop(station: 1, arrival: 10 * 60 + 55, departure: 10 * 60 + 56))
         XCTAssertEqual(schedule.trains[1].destination, "西馬込")
 

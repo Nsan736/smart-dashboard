@@ -88,6 +88,10 @@ struct ODPTStation: Codable, Equatable {
     /// 緯度経度 (geo:lat / geo:long)。提供されない駅もありうる。
     let latitude: Double?
     let longitude: Double?
+    /// 駅の属する路線
+    var railway: String? = nil
+    /// 乗り換えできる駅(他社の駅を含む)。提供されない駅もある。
+    var connectingStation: [String]? = nil
 
     var name: String { stationTitle?.text ?? title ?? ODPTID.tail(sameAs) }
 
@@ -97,6 +101,8 @@ struct ODPTStation: Codable, Equatable {
         case stationTitle = "odpt:stationTitle"
         case latitude = "geo:lat"
         case longitude = "geo:long"
+        case railway = "odpt:railway"
+        case connectingStation = "odpt:connectingStation"
     }
 }
 
@@ -167,12 +173,15 @@ struct ODPTTrainTimetable: Decodable {
         let departureTime: String?
         let arrivalStation: String?
         let departureStation: String?
+        /// 番線。都営では終点・折り返しの駅にだけ入っている(2026-09-28に確認)。
+        let platformNumber: String?
 
         enum CodingKeys: String, CodingKey {
             case arrivalTime = "odpt:arrivalTime"
             case departureTime = "odpt:departureTime"
             case arrivalStation = "odpt:arrivalStation"
             case departureStation = "odpt:departureStation"
+            case platformNumber = "odpt:platformNumber"
         }
     }
 

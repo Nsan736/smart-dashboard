@@ -16,6 +16,8 @@ protocol ODPTAPI: Sendable {
     func railways(of op: TrainOperator) async throws -> [ODPTRailway]
     func stations(ofRailway railwayID: String, op: TrainOperator) async throws -> [ODPTStation]
     func stations(ids: [String], endpoint: ODPTEndpoint) async throws -> [ODPTStation]
+    /// 事業者のすべての駅(乗り換えの関係と緯度経度を含む)。経路の検索と駅の検索に使う。
+    func stations(ofOperator op: TrainOperator) async throws -> [ODPTStation]
     /// 運行情報の応答を、デコードせずにそのまま返す(遅延時のサンプル収集にも使うため)
     func trainInformationData(op: TrainOperator, railwayIDs: [String]) async throws -> Data
     func stationTimetables(stationID: String, directionID: String, op: TrainOperator) async throws -> [ODPTStationTimetable]
@@ -40,6 +42,10 @@ struct ODPTClient: ODPTAPI {
 
     func stations(ofRailway railwayID: String, op: TrainOperator) async throws -> [ODPTStation] {
         try await get("odpt:Station", [("odpt:railway", railwayID)], op.endpoint, op.name)
+    }
+
+    func stations(ofOperator op: TrainOperator) async throws -> [ODPTStation] {
+        try await get("odpt:Station", [("odpt:operator", op.id)], op.endpoint, op.name)
     }
 
     func stations(ids: [String], endpoint: ODPTEndpoint) async throws -> [ODPTStation] {
