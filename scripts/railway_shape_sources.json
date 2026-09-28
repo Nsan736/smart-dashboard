@@ -1,5 +1,5 @@
 {
-  "description": "線路の形(update_railway_shapes.py)で使う、ODPT の事業者・路線と、国土数値情報(鉄道データ N02)の運営会社・路線名の対応。事業者を増やすときは、ここに足す。",
+  "description": "線路の形(update_railway_shapes.py)で使う、ODPT の事業者・路線と、国土数値情報(鉄道データ N02)の運営会社・路線名の対応。事業者を増やすときは、ここに足す。路線の値は N02 の路線名の配列か、{\"n02\": [...], \"terminals\": [両端の駅名]}(N02 の駅で作るときの両端)。",
   "operators": {
     "Toei": {
       "odptOperator": "odpt.Operator:Toei",
@@ -59,12 +59,77 @@
         "odpt.Railway:TokyoMetro.Namboku": [
           "7号線南北線"
         ],
-        "odpt.Railway:TokyoMetro.Fukutoshin": [
-          "13号線副都心線",
-          "8号線有楽町線"
+        "odpt.Railway:TokyoMetro.Fukutoshin": {
+          "n02": [
+            "13号線副都心線",
+            "8号線有楽町線"
+          ],
+          "terminals": [
+            "和光市",
+            "渋谷"
+          ]
+        }
+      },
+      "verified": "2026-09-28 に N02-25 の駅で作成(ODPT の駅での確認は未実施)"
+    },
+    "YokohamaMunicipal": {
+      "odptOperator": "odpt.Operator:YokohamaMunicipal",
+      "endpoint": "token",
+      "n02Company": "横浜市",
+      "railways": {
+        "odpt.Railway:YokohamaMunicipal.Blue": [
+          "1号線",
+          "3号線"
+        ],
+        "odpt.Railway:YokohamaMunicipal.Green": [
+          "4号線"
         ]
       },
-      "verified": "未確認(トークンで駅を取得して、初めて実行するときに確かめる)"
+      "verified": "2026-09-28 に N02-25 の駅で作成(ODPT の駅での確認は未実施)"
+    },
+    "MIR": {
+      "odptOperator": "odpt.Operator:MIR",
+      "endpoint": "token",
+      "n02Company": "首都圏新都市鉄道",
+      "railways": {
+        "odpt.Railway:MIR.TsukubaExpress": [
+          "常磐新線"
+        ]
+      },
+      "verified": "2026-09-28 に N02-25 の駅で作成(ODPT の駅での確認は未実施)"
+    },
+    "TWR": {
+      "odptOperator": "odpt.Operator:TWR",
+      "endpoint": "token",
+      "n02Company": "東京臨海高速鉄道",
+      "railways": {
+        "odpt.Railway:TWR.Rinkai": [
+          "臨海副都心線"
+        ]
+      },
+      "verified": "2026-09-28 に N02-25 の駅で作成(ODPT の駅での確認は未実施)"
+    },
+    "TamaMonorail": {
+      "odptOperator": "odpt.Operator:TamaMonorail",
+      "endpoint": "token",
+      "n02Company": "多摩都市モノレール",
+      "railways": {
+        "odpt.Railway:TamaMonorail.TamaMonorail": [
+          "多摩都市モノレール線"
+        ]
+      },
+      "verified": "2026-09-28 に N02-25 の駅で作成(ODPT の駅での確認は未実施)"
+    },
+    "Yurikamome": {
+      "odptOperator": "odpt.Operator:Yurikamome",
+      "endpoint": "token",
+      "n02Company": "ゆりかもめ",
+      "railways": {
+        "odpt.Railway:Yurikamome.Yurikamome": [
+          "東京臨海新交通臨海線"
+        ]
+      },
+      "verified": "2026-09-28 に N02-25 の駅で作成(ODPT の駅での確認は未実施)"
     }
   }
 }

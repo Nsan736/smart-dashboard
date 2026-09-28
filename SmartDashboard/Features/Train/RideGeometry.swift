@@ -214,7 +214,7 @@ struct RideLine: Equatable {
         self.railwayID = railwayID
         self.name = name
         if let track, track.count >= 2 {
-            let path = GeoPath(track)
+            let path = GeoPath(Self.oriented(track, first: stations.first?.point, last: stations.last?.point))
             var previous = 0.0
             var list: [RideStation] = []
             for station in stations {
@@ -236,6 +236,15 @@ struct RideLine: Equatable {
             self.stations = stations.enumerated().map { RideStation(stationID: $0.element.id, name: $0.element.name, along: path.cumulative[$0.offset]) }
             usesTrack = false
         }
+    }
+
+    /// 線路の形の向きを、駅の順(最初の駅が始点の側)にそろえる。
+    /// N02 の駅だけで作った線路の形は、ODPT の駅の順と逆向きのことがあるため。
+    static func oriented(_ track: [GeoPoint], first: GeoPoint?, last: GeoPoint?) -> [GeoPoint] {
+        guard let first, let last, track.count >= 2 else { return track }
+        let path = GeoPath(track)
+        guard let a = path.project(first), let b = path.project(last), a.along > b.along else { return track }
+        return track.reversed()
     }
 
     /// track: 同梱した線路の形(RailwayTrackCatalog)。なければ駅を結んだ直線。

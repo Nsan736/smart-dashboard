@@ -1,7 +1,8 @@
 import Foundation
 
 /// アプリに同梱した線路の形(Resources/railway_shapes.json)。国土数値情報(鉄道データ)を加工したもの。
-/// 路線ID(ODPT)→ 駅の順に並んだ線路の点。作り直すときは手元で `python scripts/update_railway_shapes.py Toei` を実行する。通信では取得しない。
+/// 路線ID(ODPT)→ 線路の点。作り直すときは手元で `python scripts/update_railway_shapes.py Toei` を実行する。通信では取得しない。
+/// 都営は ODPT の駅の順に並べてある。N02 の駅だけで作った路線(トークンが必要な事業者)は向きが逆のことがあり、RideLine が駅の順に合わせる。
 struct RailwayTrackCatalog: Equatable {
     /// 出典(加工したことを含む)
     var source: String

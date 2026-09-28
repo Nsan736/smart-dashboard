@@ -10,7 +10,11 @@
   利用条件は CC BY 4.0(2020年度以降の版)。出典の表記と、加工したことの明記が必要(アプリ内と README に書いてある)。
 - 事業者と路線の対応は scripts/railway_shape_sources.json(ODPT の路線ID → N02 の運営会社と路線名)。事業者を増やすときは、そこに足す。
 - 駅の順と位置は ODPT から取る(都営は公開エンドポイント。トークンが必要な事業者は、環境変数 ODPT_TOKEN にトークンを入れる)。
-- 路線ごとに、N02 の線をつないだ網の上で、隣り合う駅の間の最短の道をつなぎ、駅の順に並んだ1本の線にする(大江戸線のように、同じ駅を2回通る路線も駅の順のまま)。
+  路線ごとに、N02 の線をつないだ網の上で、隣り合う駅の間の最短の道をつなぎ、駅の順に並んだ1本の線にする(大江戸線のように、同じ駅を2回通る路線も駅の順のまま)。
+- トークンが必要な事業者で ODPT_TOKEN がないとき(または --n02-stations を付けたとき)は、N02 の駅(Station)を使う。
+  網の上で一番遠い2つの駅(対応表に terminals があれば、その2つの駅)の間の最短の道を1本の線にする。
+  線の向き(どちらの端から始まるか)は ODPT の駅の順と合わないことがあるが、アプリが駅の順に合わせて向きを直す(RideLine)。
+  環状の区間がある路線(大江戸線など)には使えない。
 - 点は、線からのずれが5m以内になるように間引く(Douglas-Peucker)。
 - SmartDashboard/Resources/railway_shapes.json に書く。取得日(fetched)と元のデータの版(source)を記録する。
 - 年に1回程度(N02 の新しい版が出たとき)、手元で実行してコミットする。アプリは通信で取得しない。
@@ -77,10 +81,75 @@ def simplify(points, tolerance):
     return [p for p, k in zip(points, keep) if k]
 
 
-def load_n02(zip_path):
+def load_n02(zip_path, kind="RailroadSection"):
     with zipfile.ZipFile(zip_path) as archive:
-        name = next(n for n in archive.namelist() if n.endswith("RailroadSection.geojson") and "UTF-8" in n)
+        name = next(n for n in archive.namelist() if n.endswith(kind + ".geojson") and "UTF-8" in n)
         return json.loads(archive.read(name).decode("utf-8"))["features"]
+
+
+def n02_stations(features, company, names):
+    """N02 の駅。駅は短い線なので、その中点を位置にする。同じ名前の駅は1つにまとめる。(名前, (経度, 緯度)) の一覧。"""
+    result = {}
+    for feature in features:
+        props = feature["properties"]
+        if props.get("N02_004") != company or props.get("N02_003") not in names:
+            continue
+        lines = feature["geometry"]["coordinates"]
+        if feature["geometry"]["type"] == "LineString":
+            lines = [lines]
+        points = [p for line in lines for p in line]
+        middle = points[len(points) // 2]
+        result.setdefault(props["N02_005"], (middle[0], middle[1]))
+    return sorted(result.items())
+
+
+def distances_from(graph, start):
+    best = {start: 0.0}
+    queue = [(0.0, start)]
+    while queue:
+        cost, node = heapq.heappop(queue)
+        if cost > best.get(node, math.inf):
+            continue
+        for neighbor, d in graph[node].items():
+            value = cost + d
+            if value < best.get(neighbor, math.inf):
+                best[neighbor] = value
+                heapq.heappush(queue, (value, neighbor))
+    return best
+
+
+def build_railway_from_n02(graph, stations, terminals):
+    """N02 の駅だけで線を作る。terminals(駅名2つ)がなければ、網の上で一番遠い2つの駅を両端にする。
+    返すのは、線の点と、線の上の駅(線に沿った順)。"""
+    nodes = list(graph.keys())
+    anchor = {name: min(nodes, key=lambda n: distance(point, n)) for name, point in stations}
+    if terminals:
+        missing = [t for t in terminals if t not in anchor]
+        if missing:
+            raise SystemExit("N02 に駅がありません: " + ", ".join(missing))
+        start, goal = anchor[terminals[0]], anchor[terminals[1]]
+    else:
+        best = (-1.0, None, None)
+        for name_a, node_a in anchor.items():
+            reach = distances_from(graph, node_a)
+            for name_b, node_b in anchor.items():
+                d = reach.get(node_b, -1.0)
+                if d > best[0]:
+                    best = (d, node_a, node_b)
+        _, start, goal = best
+    points = shortest_path(graph, start, goal)
+    if points is None:
+        raise SystemExit("両端の駅が、線路の網でつながっていません")
+    cumulative = [0.0]
+    for a, b in zip(points, points[1:]):
+        cumulative.append(cumulative[-1] + distance(a, b))
+    on_line = []
+    for name, point in stations:
+        best = min(range(len(points) - 1), key=lambda i: segment_distance(point, points[i], points[i + 1])) if len(points) > 1 else 0
+        lateral = segment_distance(point, points[best], points[best + 1]) if len(points) > 1 else distance(point, points[0])
+        if lateral <= 150:
+            on_line.append((cumulative[best], (name, name, point)))
+    return points, [s for _, s in sorted(on_line)]
 
 
 def fetch_json(url):
@@ -219,6 +288,7 @@ def main():
     parser.add_argument("operators", nargs="*", help="事業者のキー(railway_shape_sources.json の operators)")
     parser.add_argument("--all", action="store_true", help="対応表のすべての事業者")
     parser.add_argument("--zip", help="ダウンロード済みの N02 の zip(省略するとダウンロードする)")
+    parser.add_argument("--n02-stations", action="store_true", help="ODPT を使わず、N02 の駅で線を作る")
     args = parser.parse_args()
 
     with open(SOURCES, encoding="utf-8") as file:
@@ -238,6 +308,7 @@ def main():
         with urllib.request.urlopen(request, timeout=300) as response:
             zip_path = io.BytesIO(response.read())
     features = load_n02(zip_path)
+    station_features = load_n02(zip_path, "Station")
 
     output = {"railways": {}}
     if os.path.exists(OUTPUT):
@@ -249,9 +320,31 @@ def main():
         source = sources[key]
         endpoint = source["endpoint"]
         operator_id = source["odptOperator"]
+        if args.n02_stations or (endpoint == "token" and not os.environ.get("ODPT_TOKEN")):
+            print(f"{key}: ODPT を使わず、N02 の駅で作ります")
+            for railway_id, entry in source["railways"].items():
+                names, terminals = (entry, None) if isinstance(entry, list) else (entry["n02"], entry.get("terminals"))
+                graph = build_graph(features, source["n02Company"], set(names))
+                stations = n02_stations(station_features, source["n02Company"], set(names))
+                if not graph or len(stations) < 2:
+                    print(f"  {railway_id}: N02 に {names} がないか、駅が足りません。飛ばします")
+                    continue
+                points, on_line = build_railway_from_n02(graph, stations, terminals)
+                simplified = simplify(points, TOLERANCE_METERS)
+                length = sum(distance(a, b) for a, b in zip(points, points[1:]))
+                worst, ordered = check_stations(simplified, on_line)
+                railways_out[railway_id] = {
+                    "n02": names,
+                    "points": [[round(p[1], 6), round(p[0], 6)] for p in simplified],
+                }
+                print(f"  {railway_id}: {len(points)}点 → {len(simplified)}点、{length / 1000:.1f}km、"
+                      f"駅{len(on_line)}(N02 の駅 {len(stations)})、{on_line[0][1]}〜{on_line[-1][1]}、"
+                      f"駅と線路のずれの最大 {worst[0]:.0f}m({worst[1]})")
+            continue
         stations = {s["owl:sameAs"]: s for s in odpt(endpoint, "odpt:Station", **{"odpt:operator": operator_id})}
         railways = {r["owl:sameAs"]: r for r in odpt(endpoint, "odpt:Railway", **{"odpt:operator": operator_id})}
-        for railway_id, names in source["railways"].items():
+        for railway_id, entry in source["railways"].items():
+            names = entry if isinstance(entry, list) else entry["n02"]
             railway = railways.get(railway_id)
             if railway is None:
                 print(f"  {railway_id}: ODPT に路線がありません。飛ばします")
