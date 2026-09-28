@@ -119,6 +119,10 @@ struct DashboardMapView: UIViewRepresentable {
     var onTapCoordinate: ((CLLocationCoordinate2D) -> Void)?
     /// 駅の点のまわりに重ねる電車(拡大したときだけ描く)
     var stationTrains: [MapStationTrain] = []
+    /// 画面全体の縦スクロールの中に置くとき。地図に指が触れている間は、外側のスクロールを止める。
+    var locksParentScroll = false
+    /// 表示範囲を覚えておく名前。地図が作り直されても、同じ範囲で開き直す。
+    var memoryKey: String?
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -136,6 +140,9 @@ struct DashboardMapView: UIViewRepresentable {
         let longPress = UILongPressGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleLongPress(_:)))
         longPress.minimumPressDuration = 0.5
         map.addGestureRecognizer(longPress)
+        if locksParentScroll {
+            map.addGestureRecognizer(ParentScrollLockRecognizer(target: nil, action: nil))
+        }
         if let center {
             map.setRegion(MKCoordinateRegion(center: center, latitudinalMeters: spanMeters, longitudinalMeters: spanMeters), animated: false)
             context.coordinator.lastCenter = center
@@ -143,6 +150,12 @@ struct DashboardMapView: UIViewRepresentable {
             // 位置が分からないときは日本全体を表示する
             map.setRegion(MKCoordinateRegion(center: CLLocationCoordinate2D(latitude: 36.5, longitude: 138),
                                              span: MKCoordinateSpan(latitudeDelta: 16, longitudeDelta: 16)), animated: false)
+        }
+        context.coordinator.memoryKey = memoryKey
+        if let memoryKey, let region = MapRegionMemory.regions[memoryKey] {
+            // 前に見ていた範囲で開き直す(最初の範囲合わせはしない)
+            map.setRegion(region, animated: false)
+            context.coordinator.restoredFitKey = fitKey
         }
         return map
     }
@@ -155,6 +168,7 @@ struct DashboardMapView: UIViewRepresentable {
         coordinator.onLongPress = onLongPress
         coordinator.onTrackingLost = onTrackingLost
         coordinator.onTapCoordinate = onTapCoordinate
+        coordinator.memoryKey = memoryKey
         coordinator.applyTracking(tracking, key: trackingKey, on: map)
         map.isScrollEnabled = isInteractive
         map.isZoomEnabled = isInteractive
@@ -643,8 +657,17 @@ struct DashboardMapView: UIViewRepresentable {
 
         // MARK: 表示範囲
 
+        /// 覚えていた範囲で開き直したときの fitKey(その範囲合わせは飛ばす)
+        var restoredFitKey: String?
+        var memoryKey: String?
+
         func fitIfNeeded(key: String?, lines: [MapLine], markers: [MapMarker], on map: MKMapView) {
             guard let key, key != lastFitKey else { return }
+            if key == restoredFitKey {
+                lastFitKey = key
+                restoredFitKey = nil
+                return
+            }
             let coordinates = lines.flatMap(\.coordinates) + markers.map(\.coordinate)
             guard !coordinates.isEmpty else { return }
             lastFitKey = key
@@ -767,6 +790,7 @@ struct DashboardMapView: UIViewRepresentable {
             }
             onRegionChange?(bounds, zoom)
             rotateDirectionArrow(on: mapView)
+            if let memoryKey { MapRegionMemory.regions[memoryKey] = region }
         }
     }
 }
@@ -799,6 +823,8 @@ struct MapContainerView: View {
     var movingMarks: [MapMovingMark] = []
     var onTapCoordinate: ((CLLocationCoordinate2D) -> Void)?
     var stationTrains: [MapStationTrain] = []
+    var locksParentScroll = false
+    var memoryKey: String?
 
     static let gsiURL = URL(string: "https://maps.gsi.go.jp/development/ichiran.html")!
 
@@ -837,7 +863,9 @@ struct MapContainerView: View {
             circles: circles,
             movingMarks: movingMarks,
             onTapCoordinate: onTapCoordinate,
-            stationTrains: stationTrains
+            stationTrains: stationTrains,
+            locksParentScroll: locksParentScroll,
+            memoryKey: memoryKey
         )
         .overlay(alignment: .topLeading) {
             Text(mode.label)
