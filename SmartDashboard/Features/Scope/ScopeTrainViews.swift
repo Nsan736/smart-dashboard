@@ -353,8 +353,7 @@ struct ScopeTrainsView: View {
                     Label("コンパスで見る", systemImage: "safari")
                 }
             } footer: {
-                Text("列車の位置は、移動タブと同じく、保存した時刻表から計算して遅れで補正したものです(実際の在線位置ではありません)。新しい通信はなく、遅れの取得も移動タブと同じ規則です。電車の形は、各社の公式サイトで調べた両数で、線路の高さ(高架・地上・地下)に置きます。地下の区間の車両は、破線の輪郭だけで描きます。
-\(ODPTAttributionView.heightAttribution)")
+                Text("列車の位置は、移動タブと同じく、保存した時刻表から計算して遅れで補正したものです(実際の在線位置ではありません)。新しい通信はなく、遅れの取得も移動タブと同じ規則です。電車の形は、各社の公式サイトで調べた両数で、線路の高さ(高架・地上・地下)に置きます。地下の区間の車両は、破線の輪郭だけで描きます。\n\(ODPTAttributionView.heightAttribution)")
             }
             Section {
                 Picker("対象の路線", selection: $settings.scopeTrainTarget) {
