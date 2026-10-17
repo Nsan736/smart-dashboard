@@ -102,7 +102,8 @@ struct RouteGuidanceView: View {
     /// 高精度のGPSは、この画面(と、ここから開くカメラ表示)を表示している間だけ。表示中は画面を消さない。
     private func start() {
         ScreenAwake.set("route", true)
-        tracker.onLocation = { [store = env.waypoints, route = env.route] coordinate in
+        tracker.onLocation = { [store = env.waypoints, route = env.route] location in
+            let coordinate = location.coordinate
             store.setOrigin(latitude: coordinate.latitude, longitude: coordinate.longitude)
             route.updateLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
         }
