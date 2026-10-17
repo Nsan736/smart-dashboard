@@ -2,6 +2,18 @@ import CoreGraphics
 import Foundation
 import SwiftUI
 
+/// 地点の標高の状態
+enum WaypointElevationState: String, Codable {
+    /// まだ取得していない(登録したときに取れなかった、v0.9.14 以前に保存した地点)。Wi-Fi接続中に自動で取得する。
+    case unset
+    /// 国土地理院の標高APIで取得した
+    case fetched
+    /// 手で入力した(自動では取り直さない)
+    case manual
+    /// 標高のデータがない場所(海上、国外など)。自動では取り直さない。
+    case noData
+}
+
 /// 登録した地点
 struct Waypoint: Codable, Equatable, Identifiable {
     var id = UUID()
@@ -13,6 +25,73 @@ struct Waypoint: Codable, Equatable, Identifiable {
     var memo = ""
     /// ホームのカードに出す地点(1つだけ)
     var isPinned = false
+    /// 非表示(削除せずに、カメラ表示・コンパス表示・地図・ホームの「一番近い地点」から外す)
+    var isHidden = false
+    /// 標高(m)。nil は未設定。
+    var groundElevation: Double? = nil
+    var elevationState: WaypointElevationState = .unset
+    /// 地面からの高さ(m)。タワーの展望台なら250など。
+    var heightAboveGround = 0.0
+
+    /// 地点の高さ(標高+地面からの高さ)。標高が未設定なら nil。
+    var altitude: Double? { groundElevation.map { $0 + heightAboveGround } }
+
+    init(id: UUID = UUID(), name: String, latitude: Double, longitude: Double, colorIndex: Int = 0, memo: String = "",
+         isPinned: Bool = false, isHidden: Bool = false, groundElevation: Double? = nil,
+         elevationState: WaypointElevationState = .unset, heightAboveGround: Double = 0) {
+        self.id = id
+        self.name = name
+        self.latitude = latitude
+        self.longitude = longitude
+        self.colorIndex = colorIndex
+        self.memo = memo
+        self.isPinned = isPinned
+        self.isHidden = isHidden
+        self.groundElevation = groundElevation
+        self.elevationState = elevationState
+        self.heightAboveGround = heightAboveGround
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, latitude, longitude, colorIndex, memo, isPinned, isHidden, groundElevation, elevationState, heightAboveGround
+    }
+
+    /// 以前の版で保存した地点(表示・非表示と高さの項目がない)も読めるように、ない項目は初期値にする。
+    /// 保存済みの地点は「表示」、標高は「未設定」として引き継ぐ。
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        name = try c.decode(String.self, forKey: .name)
+        latitude = try c.decode(Double.self, forKey: .latitude)
+        longitude = try c.decode(Double.self, forKey: .longitude)
+        colorIndex = try c.decodeIfPresent(Int.self, forKey: .colorIndex) ?? 0
+        memo = try c.decodeIfPresent(String.self, forKey: .memo) ?? ""
+        isPinned = try c.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false
+        isHidden = try c.decodeIfPresent(Bool.self, forKey: .isHidden) ?? false
+        groundElevation = try c.decodeIfPresent(Double.self, forKey: .groundElevation)
+        // 知らない値(新しい版で増えた状態など)は未設定として読む
+        elevationState = (try? c.decodeIfPresent(WaypointElevationState.self, forKey: .elevationState)) ?? .unset
+        heightAboveGround = try c.decodeIfPresent(Double.self, forKey: .heightAboveGround) ?? 0
+    }
+}
+
+/// 地点の一覧の絞り込み
+enum WaypointListFilter: String, CaseIterable, Identifiable {
+    case visible
+    case all
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .visible: return "表示中だけ"
+        case .all: return "すべて"
+        }
+    }
+
+    static func apply(_ waypoints: [Waypoint], filter: WaypointListFilter) -> [Waypoint] {
+        filter == .all ? waypoints : waypoints.filter { !$0.isHidden }
+    }
 }
 
 enum WaypointPalette {
@@ -31,6 +110,8 @@ struct WaypointOrigin: Codable, Equatable {
     var latitude: Double
     var longitude: Double
     var time: Date
+    /// そのときの自分の高さ(m)。一覧の高低差の表示に使う。分からなければ nil。
+    var height: Double? = nil
 }
 
 /// 方位と距離の計算
@@ -82,6 +163,89 @@ enum WaypointMath {
     /// 「北東 2.3km」
     static func summary(bearing: Double, distance: Double) -> String {
         "\(compassPoint(bearing)) \(distanceText(distance))"
+    }
+
+    /// 高低差の表示「↑120m」「↓35m」。1m未満は「高さ同じ」。
+    static func heightText(_ difference: Double) -> String {
+        let meters = Int(difference.rounded())
+        if meters > 0 { return "↑\(meters)m" }
+        if meters < 0 { return "↓\(-meters)m" }
+        return "高さ同じ"
+    }
+
+    /// 「2.3km ↑120m」(高低差が分からなければ距離だけ)
+    static func distanceText(_ meters: Double, heightDifference: Double?) -> String {
+        guard let heightDifference else { return distanceText(meters) }
+        return "\(distanceText(meters)) \(heightText(heightDifference))"
+    }
+}
+
+/// 地点の高さと、見上げる・見下ろす角度(仰角)
+enum WaypointElevation {
+    static let earthRadius = 6_371_000.0
+    /// 大気の屈折の係数。光が地表に沿って少し曲がるので、地球の丸みによる見かけの低下が、この割合だけ小さくなる。
+    static let refraction = 0.13
+
+    /// 地球の丸みによる見かけの低下(m)。距離²÷(2×地球の半径) を、大気の屈折の分(1−0.13)だけ小さくしたもの。
+    /// 1kmで約7cm、10kmで約6.8m、100kmで約683m。
+    static func curvatureDrop(distance: Double) -> Double {
+        distance * distance / (2 * earthRadius) * (1 - refraction)
+    }
+
+    /// 仰角(度)。上向きが正。
+    /// 仰角 = atan((地点の高さ − 自分の高さ − 見かけの低下) / 水平距離)
+    static func angle(targetAltitude: Double, observerAltitude: Double, distance: Double) -> Double {
+        let horizontal = max(distance, 1)
+        let rise = targetAltitude - observerAltitude - curvatureDrop(distance: horizontal)
+        return atan(rise / horizontal) * 180 / .pi
+    }
+}
+
+/// 自分の高さの決め方(設定)
+enum ObserverHeightSource: String, CaseIterable, Identifiable {
+    /// 現在地の地面の標高(国土地理院の標高API)+ 手の高さ。取れないときはGPSの高度。
+    case groundPlusHand
+    /// GPSの高度(CLLocation.altitude)
+    case gps
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .groundPlusHand: return "地面の標高+手の高さ"
+        case .gps: return "GPSの高度"
+        }
+    }
+}
+
+/// 自分の高さ(m)と、その出どころ
+struct ObserverHeight: Equatable {
+    enum Method: Equatable {
+        case ground
+        case gps
+    }
+
+    var meters: Double
+    var method: Method
+
+    /// 設定と、今わかっている値から決める。地面の標高が取れないときはGPSの高度を使う。どちらもなければ nil。
+    static func resolve(source: ObserverHeightSource, gpsAltitude: Double?, groundElevation: Double?, handHeight: Double) -> ObserverHeight? {
+        switch source {
+        case .groundPlusHand:
+            if let groundElevation { return ObserverHeight(meters: groundElevation + handHeight, method: .ground) }
+            return gpsAltitude.map { ObserverHeight(meters: $0, method: .gps) }
+        case .gps:
+            return gpsAltitude.map { ObserverHeight(meters: $0, method: .gps) }
+        }
+    }
+
+    /// 精度の表示の近くに出す文字(「自分の高さ 25m(地面の標高+手の高さ1.5m)」)
+    func text(handHeight: Double, source: ObserverHeightSource) -> String {
+        let value = "自分の高さ \(Int(meters.rounded()))m"
+        switch method {
+        case .ground: return value + "(地面の標高+手の高さ" + String(format: "%.1fm", handHeight) + ")"
+        case .gps: return value + (source == .gps ? "(GPSの高度)" : "(GPSの高度。地面の標高が取れないため)")
+        }
     }
 }
 
@@ -187,12 +351,14 @@ enum WaypointProjection {
         return (tanShort, tanShort * viewAspect)
     }
 
-    /// 地点の方向を、画面上の位置に変換する。仰角は0度(地平線上)に置く。
+    /// 地点の方向を、画面上の位置に変換する。elevation は仰角(度。0なら地平線上)。
     /// カメラの後ろ側にあるときと、画面の外にあるときは nil。
-    static func point(bearing: Double, attitude: CameraAttitude, tangents: (horizontal: Double, vertical: Double), viewSize: CGSize) -> CGPoint? {
+    static func point(bearing: Double, elevation: Double = 0, attitude: CameraAttitude,
+                      tangents: (horizontal: Double, vertical: Double), viewSize: CGSize) -> CGPoint? {
         let rad = bearing * .pi / 180
+        let up = elevation * .pi / 180
         // 基準の座標系(x=北、y=西、z=上)での地点の方向
-        let target = Vector3(x: cos(rad), y: -sin(rad), z: 0)
+        let target = Vector3(x: cos(up) * cos(rad), y: -cos(up) * sin(rad), z: sin(up))
         let depth = Vector3.dot(target, attitude.forward)
         guard depth > 0.01 else { return nil }
         let nx = Vector3.dot(target, attitude.right) / depth / max(tangents.horizontal, 0.0001)

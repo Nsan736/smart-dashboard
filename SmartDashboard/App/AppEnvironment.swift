@@ -54,6 +54,8 @@ final class AppEnvironment {
     let pressure: PressureRecorder
     let pressureHistory: PressureHistoryStore
     let waypoints: WaypointStore
+    /// 地点の標高と、自分の地面の標高(国土地理院の標高API)
+    let elevation: ElevationStore
     /// 小ツール(お気に入り、最近使った、JSONで読み込んだツール)
     let tools: ToolLibrary
     /// スコープの「周辺」と「経路」(どちらも MapKit が通信する)
@@ -148,7 +150,15 @@ final class AppEnvironment {
                                                    settings: settings, network: network,
                                                    onFetched: { fetchLog.mark(.pressureHistory, at: $0) })
         self.pressureHistory = pressureHistory
-        waypoints = WaypointStore(fileURL: support.appendingPathComponent("waypoints.json"))
+        let waypointStore = WaypointStore(fileURL: support.appendingPathComponent("waypoints.json"))
+        waypoints = waypointStore
+        let elevationStore = ElevationStore(http: http, network: network, settings: settings, waypoints: waypointStore,
+                                            onFetched: { fetchLog.mark(.elevation, at: $0) })
+        elevation = elevationStore
+        // 登録した地点・座標を変えた地点の標高を取る(オフラインなら未設定のまま。Wi-Fi接続中に取り直す)
+        waypointStore.onNeedsElevation = { [weak elevationStore] id in
+            Task { await elevationStore?.fetchElevation(for: id) }
+        }
         tools = ToolLibrary(fileURL: support.appendingPathComponent("custom-tools.json"))
         let keeper = BackgroundKeeper(settings: settings)
         self.keeper = keeper
@@ -191,6 +201,8 @@ final class AppEnvironment {
         // 事業者の検出は30日ごと。期限が切れていても、自動ではWi-Fiなど従量制でない回線のときだけ。
         await discovery.detectIfNeeded()
         if layout.needsTrainInfo { await trains.refreshInfoIfStale() }
+        // 標高が未設定の地点(以前の版で保存した地点など)は、Wi-Fi接続中に取る(1地点約70バイト)
+        await elevation.fillMissing()
         await updateCacheSize()
     }
 

@@ -48,6 +48,9 @@ final class WaypointTracker: NSObject, CLLocationManagerDelegate {
     private(set) var motionAvailability: SensorAvailability = .unknown
     private(set) var coordinate: CLLocationCoordinate2D?
     private(set) var horizontalAccuracy: Double?
+    /// GPSの高度(m、CLLocation.altitude。平均海面から)。高さの精度が無効なら nil。
+    private(set) var gpsAltitude: Double?
+    private(set) var verticalAccuracy: Double?
     /// 端末の上端が向いている方位(真北基準)。コンパス表示に使う。端末を水平に持っていても使える。
     private(set) var compassHeading: Double?
     private(set) var headingAccuracy: Double?
@@ -60,7 +63,7 @@ final class WaypointTracker: NSObject, CLLocationManagerDelegate {
     @ObservationIgnored private let motion = CMMotionManager()
     @ObservationIgnored private var isRunning = false
     /// 位置が変わったとき(一覧とホームの距離の表示用に保存する)
-    @ObservationIgnored var onLocation: (@MainActor (CLLocationCoordinate2D) -> Void)?
+    @ObservationIgnored var onLocation: (@MainActor (CLLocation) -> Void)?
 
     /// 平滑化の重み(30fpsで、約0.15秒で追従する)
     static let smoothingWeight = 0.25
@@ -153,7 +156,11 @@ final class WaypointTracker: NSObject, CLLocationManagerDelegate {
             locationAvailability = .available
             coordinate = location.coordinate
             horizontalAccuracy = location.horizontalAccuracy
-            onLocation?(location.coordinate)
+            if location.verticalAccuracy > 0 {
+                gpsAltitude = location.altitude
+                verticalAccuracy = location.verticalAccuracy
+            }
+            onLocation?(location)
         }
     }
 

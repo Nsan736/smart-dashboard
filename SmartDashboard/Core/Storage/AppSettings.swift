@@ -124,6 +124,18 @@ final class AppSettings {
     var waypointShowsHeading: Bool {
         didSet { defaults.set(waypointShowsHeading, forKey: Keys.waypointShowsHeading) }
     }
+    /// スコープ: 地点の高さを、カメラ表示の印の上下の位置(仰角)に反映する(初期値はオン)
+    var scopeUsesHeight: Bool {
+        didSet { defaults.set(scopeUsesHeight, forKey: Keys.scopeUsesHeight) }
+    }
+    /// スコープ: 自分の高さの決め方(初期値は「地面の標高+手の高さ」)
+    var scopeHeightSource: ObserverHeightSource {
+        didSet { defaults.set(scopeHeightSource.rawValue, forKey: Keys.scopeHeightSource) }
+    }
+    /// スコープ: 手の高さ(m、初期値1.5)
+    var scopeHandHeight: Double {
+        didSet { defaults.set(scopeHandHeight, forKey: Keys.scopeHandHeight) }
+    }
     /// 気圧: 無音のオーディオでアプリを起こしておき、バックグラウンドでも記録する(初期値はオフ)
     var backgroundPressureEnabled: Bool {
         didSet { defaults.set(backgroundPressureEnabled, forKey: Keys.backgroundPressureEnabled) }
@@ -189,6 +201,9 @@ final class AppSettings {
         pressureAlertDrop = defaults.object(forKey: Keys.pressureAlertDrop) as? Double ?? 4
         backgroundPressureEnabled = defaults.bool(forKey: Keys.backgroundPressureEnabled)
         waypointShowsHeading = defaults.bool(forKey: Keys.waypointShowsHeading)
+        scopeUsesHeight = defaults.object(forKey: Keys.scopeUsesHeight) as? Bool ?? true
+        scopeHeightSource = defaults.string(forKey: Keys.scopeHeightSource).flatMap(ObserverHeightSource.init(rawValue:)) ?? .groundPlusHand
+        scopeHandHeight = defaults.object(forKey: Keys.scopeHandHeight) as? Double ?? 1.5
         nearbyRadius = NearbyRadius.clamped(defaults.object(forKey: Keys.nearbyRadius) as? Int ?? NearbyRadius.initial)
         nearbyCategories = NearbyCategory.normalizedOrder(defaults.stringArray(forKey: Keys.nearbyCategories))
         tabOrder = TabOrder.decode(defaults.stringArray(forKey: Keys.tabOrder))
@@ -243,6 +258,9 @@ final class AppSettings {
         static let pressureAlertDrop = "pressure.alertDrop"
         static let backgroundPressureEnabled = "pressure.backgroundEnabled"
         static let waypointShowsHeading = "waypoint.showsHeading"
+        static let scopeUsesHeight = "scope.usesHeight"
+        static let scopeHeightSource = "scope.heightSource"
+        static let scopeHandHeight = "scope.handHeight"
         static let nearbyRadius = "scope.nearbyRadius"
         static let nearbyCategories = "scope.nearbyCategories"
         static let tabOrder = "tabs.order"

@@ -26,6 +26,8 @@ enum UsageCategory: String, Codable, CaseIterable, Sendable {
     case radar
     case mapTiles
     case alerts
+    /// スコープ(国土地理院の標高API)
+    case scope
     case other
     /// 機能別の記録を始める前の記録
     case legacy
@@ -38,6 +40,7 @@ enum UsageCategory: String, Codable, CaseIterable, Sendable {
         case .radar: return "レーダー・雨の要約"
         case .mapTiles: return "地図タイル(地理院)"
         case .alerts: return "警報・地震"
+        case .scope: return "スコープ"
         case .other: return "その他"
         case .legacy: return "以前の記録"
         }
@@ -48,6 +51,8 @@ enum UsageCategory: String, Codable, CaseIterable, Sendable {
         let host = url?.host?.lowercased() ?? ""
         if host.hasSuffix("p2pquake.net") { return .alerts }
         if host.hasSuffix("jma.go.jp"), url?.path.contains("/bosai/warning/") == true { return .alerts }
+        // 国土地理院は、地図タイルと標高APIでホストが同じ系統なので、パスで分ける
+        if host.hasSuffix("gsi.go.jp"), url?.path.contains("/general/dem/") == true { return .scope }
         return from(host: url?.host)
     }
 

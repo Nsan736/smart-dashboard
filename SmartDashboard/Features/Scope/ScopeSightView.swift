@@ -49,12 +49,14 @@ struct ScopeSightView: View {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 Menu {
                     if case .places(let selectedID) = source {
+                        // 「選んだ1つ」は、非表示の地点も選べる(選んだ地点は一時的に表示する)
                         Picker("表示する地点", selection: Binding(get: { selectedID }, set: { source = .places(selectedID: $0) })) {
-                            Text("すべての地点").tag(UUID?.none)
-                            ForEach(env.waypoints.waypoints) { Text($0.name).tag(UUID?.some($0.id)) }
+                            Text("すべての地点(表示中)").tag(UUID?.none)
+                            ForEach(env.waypoints.waypoints) { Text($0.isHidden ? "\($0.name)(非表示)" : $0.name).tag(UUID?.some($0.id)) }
                         }
                     }
                     Toggle("向いている方角を表示", isOn: $settings.waypointShowsHeading)
+                    Toggle("高さを反映する", isOn: $settings.scopeUsesHeight)
                 } label: {
                     Label("表示の設定", systemImage: "line.3.horizontal.decrease.circle")
                 }
@@ -67,8 +69,15 @@ struct ScopeSightView: View {
         }
         .onAppear {
             isVisible = true
-            tracker.onLocation = { [store = env.waypoints, route = env.route] coordinate in
-                store.setOrigin(latitude: coordinate.latitude, longitude: coordinate.longitude)
+            tracker.onLocation = { [store = env.waypoints, route = env.route, elevation = env.elevation, settings = env.settings] location in
+                let coordinate = location.coordinate
+                // 自分の高さ: 地面の標高は、100m以上動いたときだけ取り直す
+                if settings.scopeHeightSource == .groundPlusHand {
+                    elevation.updateGround(latitude: coordinate.latitude, longitude: coordinate.longitude)
+                }
+                let gps: Double? = location.verticalAccuracy > 0 ? location.altitude : nil
+                let height = elevation.observerHeight(latitude: coordinate.latitude, longitude: coordinate.longitude, gpsAltitude: gps)
+                store.setOrigin(latitude: coordinate.latitude, longitude: coordinate.longitude, height: height?.meters)
                 // 経路の案内: 次の曲がり角の切り替えと、経路から外れたかの判定
                 route.updateLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
             }
@@ -99,7 +108,9 @@ struct ScopeSightView: View {
     private var currentMarks: [ScopeMark] {
         switch source {
         case .places(let selectedID):
-            return env.waypoints.waypoints.filter { selectedID == nil || $0.id == selectedID }.map { ScopeMark($0) }
+            // すべて: 表示中の地点だけ。選んだ1つ: 非表示の地点でも出す。
+            guard let selectedID else { return env.waypoints.visibleWaypoints.map { ScopeMark($0) } }
+            return env.waypoints.waypoints.filter { $0.id == selectedID }.map { ScopeMark($0) }
         case .nearby:
             return env.nearby.marks
         case .route:
@@ -114,9 +125,16 @@ struct ScopeSightView: View {
         }
     }
 
+    /// 自分の高さ(設定で選んだ方法。地面の標高が取れないときはGPSの高度)
+    private var observer: ObserverHeight? {
+        guard let coordinate = tracker.coordinate else { return nil }
+        return env.elevation.observerHeight(latitude: coordinate.latitude, longitude: coordinate.longitude, gpsAltitude: tracker.gpsAltitude)
+    }
+
     private var currentTargets: [ScopeTarget] {
         guard let coordinate = tracker.coordinate else { return [] }
-        return ScopeTarget.make(currentMarks, latitude: coordinate.latitude, longitude: coordinate.longitude)
+        return ScopeTarget.make(currentMarks, latitude: coordinate.latitude, longitude: coordinate.longitude,
+                                observerAltitude: observer?.meters, usesHeight: env.settings.scopeUsesHeight)
     }
 
     /// カメラ・GPS・モーションは、この画面を表示している間だけ動かす。表示中は画面を消さない。
@@ -240,7 +258,8 @@ struct ScopeSightView: View {
             Circle().fill(target.mark.color).frame(width: 14, height: 14)
             VStack(alignment: .leading, spacing: 0) {
                 Text(target.mark.name).font(.headline).fixedSize(horizontal: false, vertical: true)
-                Text(WaypointMath.summary(bearing: target.bearing, distance: target.distance))
+                Text(WaypointMath.summary(bearing: target.bearing, distance: target.distance)
+                     + (target.heightDifference.map { " " + WaypointMath.heightText($0) } ?? ""))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -291,6 +310,16 @@ struct ScopeSightView: View {
 
     // MARK: - 精度の表示
 
+    /// 自分の高さと、その決め方(精度の表示の近くに小さく出す)
+    private var observerText: String {
+        let settings = env.settings
+        guard let observer else { return tracker.coordinate == nil ? "自分の高さ: 測位中" : "自分の高さ: 取得中(地点は地平線の高さに置きます)" }
+        var text = observer.text(handHeight: settings.scopeHandHeight, source: settings.scopeHeightSource)
+        if observer.method == .gps, let accuracy = tracker.verticalAccuracy { text += " ±\(Int(accuracy.rounded()))m" }
+        if !settings.scopeUsesHeight { text += "。高さは反映していません" }
+        return text
+    }
+
     private var statusBar: some View {
         let quality = HeadingQuality.make(accuracy: tracker.headingAccuracy)
         return VStack(alignment: .leading, spacing: 2) {
@@ -301,6 +330,9 @@ struct ScopeSightView: View {
             }
             if quality.needsCalibration {
                 Text(HeadingQuality.calibrationHint).foregroundStyle(.orange)
+            }
+            if case .places = source {
+                Text(observerText)
             }
             if tracker.usesMagneticNorth, mode == .camera {
                 Text("真北が使えないため、磁北を基準にしています(数度ずれます)")
@@ -324,7 +356,8 @@ struct ScopeOverlay: View {
     var body: some View {
         Canvas(rendersAsynchronously: false) { context, size in
             for target in targets {
-                guard let point = WaypointProjection.point(bearing: target.bearing, attitude: attitude, tangents: tangents, viewSize: size) else { continue }
+                guard let point = WaypointProjection.point(bearing: target.bearing, elevation: target.elevationAngle, attitude: attitude,
+                                                           tangents: tangents, viewSize: size) else { continue }
                 Self.drawMark(&context, at: point, target: target)
             }
         }
@@ -342,8 +375,8 @@ struct ScopeOverlay: View {
         context.fill(Path(ellipseIn: innerRect), with: .color(target.mark.color))
         context.stroke(Path(ellipseIn: ringRect.insetBy(dx: -0.5, dy: -0.5)), with: .color(Color.white.opacity(0.9)), lineWidth: 1)
         context.stroke(Path(ellipseIn: ringRect.insetBy(dx: line / 2, dy: line / 2)), with: .color(.black), lineWidth: line)
-        // 名前と距離(薄い背景を付ける)
-        let label = context.resolve(Text("\(target.mark.name)  \(WaypointMath.distanceText(target.distance))")
+        // 名前と距離・高低差(薄い背景を付ける)
+        let label = context.resolve(Text("\(target.mark.name)  \(WaypointMath.distanceText(target.distance, heightDifference: target.heightDifference))")
             .font(.system(size: 12, weight: .semibold))
             .foregroundColor(.white))
         let labelSize = label.measure(in: CGSize(width: 220, height: 40))

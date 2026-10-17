@@ -335,6 +335,22 @@ struct AlertSettingsSections: View {
         }
 
         Section {
+            Toggle("地点の高さを反映する", isOn: $settings.scopeUsesHeight)
+            Picker("自分の高さ", selection: $settings.scopeHeightSource) {
+                ForEach(ObserverHeightSource.allCases) { Text($0.label).tag($0) }
+            }
+            if settings.scopeHeightSource == .groundPlusHand {
+                Stepper(value: $settings.scopeHandHeight, in: 0...3, step: 0.1) {
+                    Text("手の高さ: \(String(format: "%.1f", settings.scopeHandHeight))m")
+                }
+            }
+        } header: {
+            Text("スコープの高さ")
+        } footer: {
+            Text("カメラ表示で、地点の高さ(標高+地面からの高さ)と自分の高さの差から、印の上下の位置を決めます(遠くでは地球の丸みと大気の屈折も考えます)。オフにすると、すべての地点を地平線の高さに置きます。「地面の標高+手の高さ」は、現在地の標高を国土地理院の標高APIで取得し(100m以上動いたときだけ、1回約70バイト)、取れないときはGPSの高度を使います。")
+        }
+
+        Section {
             Toggle("バックグラウンドで気圧を記録", isOn: Binding(
                 get: { settings.backgroundPressureEnabled },
                 set: { isOn in

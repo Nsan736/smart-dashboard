@@ -12,6 +12,8 @@ enum DataKind: String, CaseIterable, Codable {
     case trainDelay
     case railwayCatalog
     case operatorDiscovery
+    /// 国土地理院の標高(スコープの自分の高さ・地点の標高)。100m以上動いたときだけ取るので、間隔はない。
+    case elevation
 
     var minimumInterval: TimeInterval {
         switch self {
@@ -25,6 +27,7 @@ enum DataKind: String, CaseIterable, Codable {
         case .trainDelay: return 2 * 60
         case .railwayCatalog: return 30 * 24 * 60 * 60
         case .operatorDiscovery: return 30 * 24 * 60 * 60
+        case .elevation: return 0
         }
     }
 
@@ -40,6 +43,7 @@ enum DataKind: String, CaseIterable, Codable {
         case .trainDelay: return "列車の遅れ"
         case .railwayCatalog: return "路線・駅の一覧"
         case .operatorDiscovery: return "ODPTの事業者の検出"
+        case .elevation: return "標高(スコープ)"
         }
     }
 }

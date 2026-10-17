@@ -20,7 +20,10 @@ struct WaypointHomeCard: View {
                                 Text(featured.waypoint.name).font(.headline).fixedSize(horizontal: false, vertical: true)
                                 if featured.waypoint.isPinned { Image(systemName: "pin.fill").font(.caption).foregroundStyle(.orange) }
                             }
-                            Text(featured.waypoint.isPinned ? "ピン留めした地点" : "一番近い地点").font(.caption).foregroundStyle(.secondary)
+                            // ピン留めした地点は、非表示にしてもピン留めのまま出す(「非表示中」と添える)
+                            Text(featured.waypoint.isPinned ? (featured.waypoint.isHidden ? "ピン留めした地点(非表示中)" : "ピン留めした地点") : "一番近い地点")
+                                .font(.caption)
+                                .foregroundStyle(featured.waypoint.isHidden ? Color.orange : Color.secondary)
                         }
                         Spacer(minLength: 8)
                         Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
@@ -33,6 +36,11 @@ struct WaypointHomeCard: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
+                } else if store.origin != nil, !store.waypoints.isEmpty {
+                    Text("表示中の地点がありません(「スコープ」のタブの「地点」で表示に切り替え)")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 } else if store.waypoints.isEmpty {
                     Text("地点が登録されていません(「スコープ」のタブの「地点」で登録)")
                         .font(.footnote)

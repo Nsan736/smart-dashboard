@@ -11,6 +11,7 @@ struct WaypointListView: View {
     @State private var isLocating = false
     @State private var message: String?
     @State private var editMode: EditMode = .inactive
+    @AppStorage("waypoint.listFilter") private var filterRaw = WaypointListFilter.all.rawValue
 
     init(section: Binding<ScopeSection>) {
         _section = section
@@ -32,7 +33,7 @@ struct WaypointListView: View {
                         Label("コンパスで見る", systemImage: "safari")
                     }
                 } footer: {
-                    Text("カメラ・GPS・方位のセンサーは、表示している間だけ動かします。通信はしません。")
+                    Text("カメラ・GPS・方位のセンサーは、表示している間だけ動かします。表示中の地点だけを出します。自分の高さを「地面の標高+手の高さ」にしているときは、100m以上動いたときだけ標高を取得します(1回約70バイト)。")
                 }
                 .disabled(store.waypoints.isEmpty)
 
@@ -63,11 +64,38 @@ struct WaypointListView: View {
                 Section {
                     if store.waypoints.isEmpty {
                         Text("まだ登録がありません").foregroundStyle(.secondary)
+                    } else {
+                        // 表示・非表示の一括切り替えと、絞り込み
+                        Picker("一覧に出す地点", selection: $filterRaw) {
+                            ForEach(WaypointListFilter.allCases) { Text($0.label).tag($0.rawValue) }
+                        }
+                        .pickerStyle(.segmented)
+                        HStack {
+                            Button {
+                                store.setAllHidden(false)
+                            } label: {
+                                Label("すべて表示", systemImage: "eye")
+                            }
+                            .disabled(!store.waypoints.contains { $0.isHidden })
+                            Spacer(minLength: 8)
+                            Button {
+                                store.setAllHidden(true)
+                            } label: {
+                                Label("すべて非表示", systemImage: "eye.slash")
+                            }
+                            .disabled(store.waypoints.allSatisfy(\.isHidden))
+                        }
+                        .buttonStyle(.borderless)
                     }
-                    ForEach(store.waypoints) { waypoint in
+                    let shown = WaypointListFilter.apply(store.waypoints, filter: filter)
+                    if !store.waypoints.isEmpty, shown.isEmpty {
+                        Text("表示中の地点はありません(「すべて」で非表示の地点も出ます)").font(.footnote).foregroundStyle(.secondary)
+                    }
+                    ForEach(shown) { waypoint in
                         row(waypoint)
                     }
                     .onMove { store.move(fromOffsets: $0, toOffset: $1) }
+                    .moveDisabled(filter != .all)
                 } header: {
                     Text("登録した地点")
                 } footer: {
@@ -102,8 +130,16 @@ struct WaypointListView: View {
             } message: { waypoint in
                 Text(waypoint.name)
             }
-            .task { await refreshOrigin() }
+            .task {
+                await refreshOrigin()
+                // 標高が未設定の地点(以前の版で保存した地点など)は、Wi-Fi接続中に自動で取得する
+                await env.elevation.fillMissing()
+            }
         }
+    }
+
+    private var filter: WaypointListFilter {
+        WaypointListFilter(rawValue: filterRaw) ?? .all
     }
 
     private func row(_ waypoint: Waypoint) -> some View {
@@ -114,22 +150,38 @@ struct WaypointListView: View {
                 HStack(spacing: 4) {
                     Text(waypoint.name).font(.headline).fixedSize(horizontal: false, vertical: true)
                     if waypoint.isPinned { Image(systemName: "pin.fill").font(.caption).foregroundStyle(.orange) }
+                    if waypoint.isHidden { Text("非表示").font(.caption2.weight(.semibold)).foregroundStyle(.secondary) }
                 }
                 if let origin = store.origin {
-                    Text(WaypointMath.summary(
+                    let summary = WaypointMath.summary(
                         bearing: WaypointMath.bearing(fromLatitude: origin.latitude, longitude: origin.longitude,
                                                       toLatitude: waypoint.latitude, longitude: waypoint.longitude),
                         distance: WaypointMath.distance(fromLatitude: origin.latitude, longitude: origin.longitude,
-                                                        toLatitude: waypoint.latitude, longitude: waypoint.longitude)))
+                                                        toLatitude: waypoint.latitude, longitude: waypoint.longitude))
+                    let difference = WaypointHeightText.difference(waypoint: waypoint, observerHeight: origin.height)
+                    Text(difference.map { "\(summary) \($0)" } ?? summary)
                         .font(.subheadline.weight(.semibold))
                         .monospacedDigit()
                 }
+                Text(WaypointHeightText.summary(waypoint, isFetching: env.elevation.fetching.contains(waypoint.id)))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 if !waypoint.memo.isEmpty {
                     Text(waypoint.memo).font(.footnote).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
             }
+            .opacity(waypoint.isHidden ? 0.45 : 1)
             Spacer(minLength: 4)
             if editMode != .active {
+                Button {
+                    store.setHidden(id: waypoint.id, !waypoint.isHidden)
+                } label: {
+                    Image(systemName: waypoint.isHidden ? "eye.slash" : "eye")
+                        .foregroundStyle(waypoint.isHidden ? Color.secondary : Color.accentColor)
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel(waypoint.isHidden ? "表示する" : "非表示にする")
                 Button {
                     env.route.setDestination(ScopeDestination(name: waypoint.name, latitude: waypoint.latitude, longitude: waypoint.longitude))
                     section = .route
@@ -166,7 +218,13 @@ struct WaypointListView: View {
     /// 一覧の距離の表示用に、現在地を1回だけ取得する(取得したら測位は止まる)
     private func refreshOrigin() async {
         guard !env.waypoints.waypoints.isEmpty, let location = try? await env.location.currentLocation() else { return }
-        env.waypoints.setOrigin(latitude: location.coordinate.latitude, longitude: location.coordinate.longitude)
+        let coordinate = location.coordinate
+        if env.settings.scopeHeightSource == .groundPlusHand {
+            env.elevation.updateGround(latitude: coordinate.latitude, longitude: coordinate.longitude)
+        }
+        let gps: Double? = location.verticalAccuracy > 0 ? location.altitude : nil
+        let height = env.elevation.observerHeight(latitude: coordinate.latitude, longitude: coordinate.longitude, gpsAltitude: gps)
+        env.waypoints.setOrigin(latitude: coordinate.latitude, longitude: coordinate.longitude, height: height?.meters)
     }
 
     private func saveHere() async {
@@ -188,14 +246,63 @@ struct WaypointListView: View {
     }
 }
 
-/// 名前・色・メモ・座標の編集
+/// 地点の高さの表示
+enum WaypointHeightText {
+    /// 「標高 18m + 地面から250m = 268m」「標高 未設定」
+    static func summary(_ waypoint: Waypoint, isFetching: Bool = false) -> String {
+        guard let elevation = waypoint.groundElevation else {
+            if isFetching { return "標高: 取得中" }
+            switch waypoint.elevationState {
+            case .noData: return "標高: 未設定(この場所の標高のデータはありません。編集で入力できます)"
+            default: return "標高: 未設定(Wi-Fi接続中に自動で取得します)"
+            }
+        }
+        var text = "標高 \(meters(elevation))"
+        if waypoint.heightAboveGround != 0 {
+            text += " + 地面から\(meters(waypoint.heightAboveGround)) = \(meters(elevation + waypoint.heightAboveGround))"
+        }
+        if waypoint.elevationState == .manual { text += "(手入力)" }
+        return text
+    }
+
+    /// 自分との高低差「↑120m」。どちらかが分からなければ nil。
+    static func difference(waypoint: Waypoint, observerHeight: Double?) -> String? {
+        guard let altitude = waypoint.altitude, let observerHeight else { return nil }
+        return WaypointMath.heightText(altitude - observerHeight)
+    }
+
+    static func meters(_ value: Double) -> String {
+        abs(value) >= 100 ? "\(Int(value.rounded()))m" : String(format: "%.1fm", value)
+    }
+
+    /// 入力欄の文字を数にする(全角の数字・マイナスも受ける)。空なら nil。
+    static func parse(_ text: String) -> Double? {
+        var cleaned = ""
+        for character in text.trimmingCharacters(in: .whitespaces) {
+            switch character {
+            case "０"..."９": if let value = character.wholeNumberValue { cleaned.append(String(value)) }
+            case "．": cleaned.append(".")
+            case "−", "－", "ー": cleaned.append("-")
+            default: cleaned.append(character)
+            }
+        }
+        return Double(cleaned)
+    }
+}
+
+/// 名前・色・メモ・座標・高さの編集
 struct WaypointEditor: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(AppEnvironment.self) private var env
     @State var waypoint: Waypoint
     let isNew: Bool
     let onSave: (Waypoint) -> Void
     @State private var coordinateText = ""
     @State private var didLoad = false
+    @State private var elevationText = ""
+    @State private var heightText = ""
+    @State private var isFetchingElevation = false
+    @State private var elevationMessage: String?
 
     var body: some View {
         let parsed = WaypointCoordinateParser.parse(coordinateText)
@@ -239,6 +346,39 @@ struct WaypointEditor: View {
                     }
                     .padding(.vertical, 4)
                 }
+                Section {
+                    HStack {
+                        Text("標高")
+                        TextField("未設定", text: Binding(get: { elevationText }, set: { text in
+                            // 手で入力したら「手入力」にする(再取得で入れた値は「取得」のまま)
+                            elevationText = text
+                            waypoint.elevationState = WaypointHeightText.parse(text) == nil ? .unset : .manual
+                        }))
+                        .keyboardType(.numbersAndPunctuation)
+                        .multilineTextAlignment(.trailing)
+                        Text("m").foregroundStyle(.secondary)
+                    }
+                    Button {
+                        Task { await refetchElevation(parsed) }
+                    } label: {
+                        Label(isFetchingElevation ? "取得中…" : "標高を取得し直す(国土地理院)", systemImage: "arrow.clockwise")
+                    }
+                    .disabled(parsed == nil || isFetchingElevation)
+                    if let elevationMessage {
+                        Text(elevationMessage).font(.footnote).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
+                    HStack {
+                        Text("地面からの高さ")
+                        TextField("0", text: $heightText)
+                            .keyboardType(.numbersAndPunctuation)
+                            .multilineTextAlignment(.trailing)
+                        Text("m").foregroundStyle(.secondary)
+                    }
+                } header: {
+                    Text("高さ")
+                } footer: {
+                    Text("地点の高さ = 標高 + 地面からの高さ(タワーの展望台なら、地面から250mなど)。カメラ表示で、印の上下の位置と高低差に使います。標高は登録したときに国土地理院の標高APIで自動で取得します(海上など、データがない場所は未設定)。")
+                }
                 Section("メモ") {
                     TextField("メモ", text: $waypoint.memo, axis: .vertical)
                         .lineLimit(2...5)
@@ -255,6 +395,10 @@ struct WaypointEditor: View {
                         var result = waypoint
                         result.latitude = parsed.latitude
                         result.longitude = parsed.longitude
+                        let elevation = WaypointHeightText.parse(elevationText)
+                        result.groundElevation = elevation
+                        if elevation == nil, result.elevationState != .noData { result.elevationState = .unset }
+                        result.heightAboveGround = WaypointHeightText.parse(heightText) ?? 0
                         if result.name.trimmingCharacters(in: .whitespaces).isEmpty { result.name = "名前のない地点" }
                         onSave(result)
                         dismiss()
@@ -269,7 +413,31 @@ struct WaypointEditor: View {
                 if waypoint.latitude != 0 || waypoint.longitude != 0 {
                     coordinateText = String(format: "%.6f, %.6f", waypoint.latitude, waypoint.longitude)
                 }
+                elevationText = waypoint.groundElevation.map { String(format: "%.1f", $0) } ?? ""
+                heightText = waypoint.heightAboveGround == 0 ? "" : String(format: "%.1f", waypoint.heightAboveGround)
+                if waypoint.elevationState == .noData { elevationMessage = "この場所の標高のデータはありません(海上など)。手で入力できます。" }
             }
+        }
+    }
+}
+
+extension WaypointEditor {
+    /// 入力欄の座標で、標高を取得し直す
+    private func refetchElevation(_ coordinate: (latitude: Double, longitude: Double)?) async {
+        guard let coordinate else { return }
+        isFetchingElevation = true
+        defer { isFetchingElevation = false }
+        switch await env.elevation.lookup(latitude: coordinate.latitude, longitude: coordinate.longitude) {
+        case .value(let value):
+            elevationText = String(format: "%.1f", value)
+            waypoint.elevationState = .fetched
+            elevationMessage = nil
+        case .noData:
+            elevationText = ""
+            waypoint.elevationState = .noData
+            elevationMessage = "この場所の標高のデータはありません(海上など)。手で入力できます。"
+        case .failed(let text):
+            elevationMessage = text
         }
     }
 }
@@ -283,7 +451,7 @@ struct WaypointMapPicker: View {
         let store = env.waypoints
         let center = store.origin.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
         MapContainerView(center: center, spanMeters: 3000, isInteractive: true, showsUserLocation: true,
-                         markers: store.waypoints.map {
+                         markers: store.visibleWaypoints.map {
                              MapMarker(id: $0.id.uuidString, title: $0.name,
                                        coordinate: CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude), style: .place)
                          },
