@@ -156,6 +156,18 @@ final class AppSettings {
     func scopeCars(for kind: RailwayKind) -> Int {
         scopeCarCounts[kind.rawValue] ?? kind.defaultCars
     }
+    /// スコープの電車: 路線ごとの両数の上書き(路線ID → 両数)。ない路線は、同梱した両数の表の値。
+    var scopeCarOverrides: [String: Int] {
+        didSet { defaults.set(scopeCarOverrides, forKey: Keys.scopeCarOverrides) }
+    }
+    /// スコープの電車: 高架の線路の、地面からの高さの目安(m、初期値8)
+    var scopeElevatedHeight: Double {
+        didSet { defaults.set(scopeElevatedHeight, forKey: Keys.scopeElevatedHeight) }
+    }
+    /// スコープの電車: 地下の線路の、地面からの深さの目安(m、初期値15)
+    var scopeUndergroundDepth: Double {
+        didSet { defaults.set(scopeUndergroundDepth, forKey: Keys.scopeUndergroundDepth) }
+    }
     /// 気圧: 無音のオーディオでアプリを起こしておき、バックグラウンドでも記録する(初期値はオフ)
     var backgroundPressureEnabled: Bool {
         didSet { defaults.set(backgroundPressureEnabled, forKey: Keys.backgroundPressureEnabled) }
@@ -228,6 +240,9 @@ final class AppSettings {
         scopeTrainRadiusKm = defaults.object(forKey: Keys.scopeTrainRadiusKm) as? Double ?? 3
         scopeTrainMaxCount = defaults.object(forKey: Keys.scopeTrainMaxCount) as? Int ?? 20
         scopeCarCounts = defaults.dictionary(forKey: Keys.scopeCarCounts) as? [String: Int] ?? [:]
+        scopeCarOverrides = defaults.dictionary(forKey: Keys.scopeCarOverrides) as? [String: Int] ?? [:]
+        scopeElevatedHeight = defaults.object(forKey: Keys.scopeElevatedHeight) as? Double ?? 8
+        scopeUndergroundDepth = defaults.object(forKey: Keys.scopeUndergroundDepth) as? Double ?? 15
         nearbyRadius = NearbyRadius.clamped(defaults.object(forKey: Keys.nearbyRadius) as? Int ?? NearbyRadius.initial)
         nearbyCategories = NearbyCategory.normalizedOrder(defaults.stringArray(forKey: Keys.nearbyCategories))
         tabOrder = TabOrder.decode(defaults.stringArray(forKey: Keys.tabOrder))
@@ -289,6 +304,9 @@ final class AppSettings {
         static let scopeTrainRadiusKm = "scope.trainRadiusKm"
         static let scopeTrainMaxCount = "scope.trainMaxCount"
         static let scopeCarCounts = "scope.carCounts"
+        static let scopeCarOverrides = "scope.carOverrides"
+        static let scopeElevatedHeight = "scope.elevatedHeight"
+        static let scopeUndergroundDepth = "scope.undergroundDepth"
         static let nearbyRadius = "scope.nearbyRadius"
         static let nearbyCategories = "scope.nearbyCategories"
         static let tabOrder = "tabs.order"

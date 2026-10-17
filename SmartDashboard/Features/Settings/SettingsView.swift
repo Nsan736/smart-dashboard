@@ -344,22 +344,28 @@ struct AlertSettingsSections: View {
                     Text("手の高さ: \(String(format: "%.1f", settings.scopeHandHeight))m")
                 }
             }
+            Stepper(value: $settings.scopeElevatedHeight, in: 3...30, step: 1) {
+                Text("高架の線路の高さ: 地面から\(Int(settings.scopeElevatedHeight))m")
+            }
+            Stepper(value: $settings.scopeUndergroundDepth, in: 5...50, step: 1) {
+                Text("地下の線路の深さ: 地面から\(Int(settings.scopeUndergroundDepth))m")
+            }
         } header: {
             Text("スコープの高さ")
         } footer: {
-            Text("カメラ表示で、地点の高さ(標高+地面からの高さ)と自分の高さの差から、印の上下の位置を決めます(遠くでは地球の丸みと大気の屈折も考えます)。オフにすると、すべての地点を地平線の高さに置きます。「地面の標高+手の高さ」は、現在地の標高を国土地理院の標高APIで取得し(100m以上動いたときだけ、1回約70バイト)、取れないときはGPSの高度を使います。")
+            Text("カメラ表示で、地点の高さ(標高+地面からの高さ)と自分の高さの差から、印の上下の位置を決めます(遠くでは地球の丸みと大気の屈折も考えます)。オフにすると、すべての地点と電車を地平線(電車は地面)の高さに置きます。「地面の標高+手の高さ」は、現在地の標高を国土地理院の標高APIで取得し(100m以上動いたときだけ、1回約70バイト)、取れないときはGPSの高度を使います。電車は、線路の下の地面の標高に、高架・地下の区間ごとの値を足して置きます(高架の高さと地下の深さは、路線ごとのデータがないので目安です)。")
         }
 
         Section {
-            ForEach(RailwayKind.allCases) { kind in
-                Stepper(value: Binding(get: { settings.scopeCars(for: kind) }, set: { settings.scopeCarCounts[kind.rawValue] = $0 }), in: 1...16) {
-                    Text("\(kind.label): \(settings.scopeCars(for: kind))両")
-                }
+            NavigationLink {
+                TrainCarSettingsView()
+            } label: {
+                LabeledContent("路線ごとの両数", value: settings.scopeCarOverrides.isEmpty ? "表の値" : "\(settings.scopeCarOverrides.count)路線を上書き")
             }
         } header: {
             Text("スコープの電車の両数")
         } footer: {
-            Text("カメラ表示で電車の形を描くときの両数の目安です。データに両数がある列車は、その両数を使います。路線の種類は路線名から判断します(地下鉄の路線の列車には「地下鉄」と表示します)。")
+            Text("カメラ表示で電車の形を描くときの両数です。各社の公式サイトで調べた表の値を使い、路線ごとに上書きできます。")
         }
 
         Section {
