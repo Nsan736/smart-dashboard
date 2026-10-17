@@ -209,12 +209,20 @@ struct RideLine: Equatable {
     var stations: [RideStation]
     /// 実際の線路の形を使っているか
     var usesTrack: Bool
+    /// 線路に沿った高さ(同梱した線路の形の向きの距離で引く)。ない路線は nil。
+    var profile: TrackProfile? = nil
+    /// 線路の形を、駅の順に合わせて逆向きにしたか(高さを引くときに、距離を逆にする)
+    var isReversed = false
 
-    init(railwayID: String, name: String, stations: [(id: String, name: String, point: GeoPoint)], track: [GeoPoint]? = nil) {
+    init(railwayID: String, name: String, stations: [(id: String, name: String, point: GeoPoint)], track: [GeoPoint]? = nil,
+         profile: TrackProfile? = nil) {
         self.railwayID = railwayID
         self.name = name
         if let track, track.count >= 2 {
-            let path = GeoPath(Self.oriented(track, first: stations.first?.point, last: stations.last?.point))
+            let reversed = Self.shouldReverse(track, first: stations.first?.point, last: stations.last?.point)
+            let path = GeoPath(reversed ? Array(track.reversed()) : track)
+            self.profile = profile
+            isReversed = reversed
             var previous = 0.0
             var list: [RideStation] = []
             for station in stations {
@@ -241,18 +249,30 @@ struct RideLine: Equatable {
     /// 線路の形の向きを、駅の順(最初の駅が始点の側)にそろえる。
     /// N02 の駅だけで作った線路の形は、ODPT の駅の順と逆向きのことがあるため。
     static func oriented(_ track: [GeoPoint], first: GeoPoint?, last: GeoPoint?) -> [GeoPoint] {
-        guard let first, let last, track.count >= 2 else { return track }
-        let path = GeoPath(track)
-        guard let a = path.project(first), let b = path.project(last), a.along > b.along else { return track }
-        return track.reversed()
+        shouldReverse(track, first: first, last: last) ? Array(track.reversed()) : track
     }
 
-    /// track: 同梱した線路の形(RailwayTrackCatalog)。なければ駅を結んだ直線。
-    static func make(shape: RailwayShape, name: String, track: [GeoPoint]? = nil) -> RideLine? {
+    static func shouldReverse(_ track: [GeoPoint], first: GeoPoint?, last: GeoPoint?) -> Bool {
+        guard let first, let last, track.count >= 2 else { return false }
+        let path = GeoPath(track)
+        guard let a = path.project(first), let b = path.project(last) else { return false }
+        return a.along > b.along
+    }
+
+    /// 線に沿った距離 along(この線の向き)での、線路の高さ。高さのデータがない路線は、地面の標高も区間の種類も分からない(目安)。
+    func trackHeight(atAlong along: Double, elevated: Double, underground: Double) -> TrackHeightModel.Height {
+        guard let profile else { return TrackHeightModel.Height(altitude: nil, section: .unknown, isEstimate: true) }
+        let stored = isReversed ? path.length - along : along
+        let sample = profile.sample(atAlong: stored)
+        return TrackHeightModel.height(ground: sample.ground, section: sample.section, elevated: elevated, underground: underground)
+    }
+
+    /// track: 同梱した線路の形(RailwayTrackCatalog)。なければ駅を結んだ直線。profile: 線路に沿った高さ。
+    static func make(shape: RailwayShape, name: String, track: [GeoPoint]? = nil, profile: TrackProfile? = nil) -> RideLine? {
         guard shape.isDrawable else { return nil }
         return RideLine(railwayID: shape.railwayID, name: name,
                         stations: shape.stops.map { (id: $0.stationID, name: $0.name, point: GeoPoint($0.latitude, $0.longitude)) },
-                        track: track)
+                        track: track, profile: profile)
     }
 
     /// 線路の上に合わせた駅の位置(同じ駅が2回出てくる路線では、最初のもの)

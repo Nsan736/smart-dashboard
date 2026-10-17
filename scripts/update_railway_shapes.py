@@ -17,6 +17,11 @@
   環状の区間がある路線(大江戸線など)には使えない。
 - 点は、線からのずれが5m以内になるように間引く(Douglas-Peucker)。
 - SmartDashboard/Resources/railway_shapes.json に書く。取得日(fetched)と元のデータの版(source)を記録する。
+- --heights を付けると、線路の点ごと(25mごと)に、線路の下の地面の標高(国土地理院の標高タイル)と、
+  区間の種類(高架・地上・地下。国土地理院ベクトルタイルの鉄道中心線)を付ける(railway_heights.py)。
+  --heights-only は、線路の形は作り直さず、今のファイルの線路に高さだけを付け直す(N02 はダウンロードしない)。
+    python scripts/update_railway_shapes.py --all --heights-only
+  タイルは一時フォルダにキャッシュする。初回は数百枚のタイルをダウンロードする(数十MB、10分ほど)。
 - 年に1回程度(N02 の新しい版が出たとき)、手元で実行してコミットする。アプリは通信で取得しない。
 """
 import argparse
@@ -30,6 +35,9 @@ import sys
 import urllib.parse
 import urllib.request
 import zipfile
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import railway_heights  # noqa: E402
 
 N02_VERSION = "N02-25"
 N02_URL = "https://nlftp.mlit.go.jp/ksj/gml/data/N02/{v}/{v}_GML.zip"
@@ -289,6 +297,8 @@ def main():
     parser.add_argument("--all", action="store_true", help="対応表のすべての事業者")
     parser.add_argument("--zip", help="ダウンロード済みの N02 の zip(省略するとダウンロードする)")
     parser.add_argument("--n02-stations", action="store_true", help="ODPT を使わず、N02 の駅で線を作る")
+    parser.add_argument("--heights", action="store_true", help="線路の下の地面の標高と、区間の種類(高架・地上・地下)を付ける")
+    parser.add_argument("--heights-only", action="store_true", help="線路の形は作り直さず、高さだけを付け直す")
     args = parser.parse_args()
 
     with open(SOURCES, encoding="utf-8") as file:
@@ -299,6 +309,9 @@ def main():
     unknown = [k for k in keys if k not in sources]
     if unknown:
         parser.error("対応表にない事業者です: " + ", ".join(unknown))
+
+    if args.heights_only:
+        return add_heights(sources, keys)
 
     zip_path = args.zip
     if not zip_path:
@@ -372,6 +385,10 @@ def main():
             print(f"  {railway_id}: {len(points)}点 → {len(simplified)}点、{length / 1000:.1f}km、"
                   f"駅と線路のずれの最大 {worst[0]:.0f}m({worst[1]})")
 
+    if args.heights:
+        targets = {rid for key in keys for rid in sources[key]["railways"]}
+        heights_for(railways_out, targets)
+
     output = {
         "source": f"国土数値情報(鉄道データ){N02_VERSION}(国土交通省)を加工して作成。CC BY 4.0",
         "sourceURL": "https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-N02-2025.html",
@@ -379,9 +396,49 @@ def main():
         "fetched": datetime.date.today().isoformat(),
         "railways": dict(sorted(railways_out.items())),
     }
+    if any("profile" in r for r in railways_out.values()):
+        output.update(HEIGHT_SOURCE)
     with open(OUTPUT, "w", encoding="utf-8", newline="\n") as file:
         json.dump(output, file, ensure_ascii=False, separators=(",", ":"))
     print(f"{len(railways_out)}路線を {OUTPUT} に書きました")
+    if not args.heights and any("profile" not in r for r in railways_out.values()):
+        print("注意: 高さのない路線があります。--heights-only で付けてください")
+    return 0
+
+
+HEIGHT_SOURCE = {
+    "heightSource": "線路の下の地面の標高: 地理院タイル(標高タイル DEM5A・DEM5B・DEM10B)を加工して作成。"
+                    "区間の種類(高架・地上・地下): 国土地理院ベクトルタイル提供実験(鉄道中心線の railState)を加工して作成",
+    "heightSourceURL": "https://maps.gsi.go.jp/development/demtile.html",
+    "heightProcessing": f"線路に沿って{railway_heights.STEP_METERS:.0f}mごとに、その地点の地面の標高と、"
+                        f"{railway_heights.MATCH_METERS:.0f}m以内で向きの近い鉄道中心線の区間の種類を求めた",
+    "heightFetched": datetime.date.today().isoformat(),
+}
+
+
+def heights_for(railways_out, targets):
+    dem = railway_heights.DemReader()
+    states = railway_heights.RailStateReader()
+    for railway_id in sorted(targets):
+        entry = railways_out.get(railway_id)
+        if not entry:
+            continue
+        profile, summary = railway_heights.build_profile(railway_id, entry["points"], dem, states)
+        entry["profile"] = profile
+        missing = sum(1 for g in profile["ground"] if g is None)
+        print(f"  {railway_id}: {len(profile['ground'])}点(地上{summary['g']}・高架{summary['e']}・地下{summary['u']}・不明{summary['?']}、"
+              f"標高なし{missing})", flush=True)
+
+
+def add_heights(sources, keys):
+    with open(OUTPUT, encoding="utf-8") as file:
+        output = json.load(file)
+    targets = {rid for key in keys for rid in sources[key]["railways"]}
+    heights_for(output["railways"], targets)
+    output.update(HEIGHT_SOURCE)
+    with open(OUTPUT, "w", encoding="utf-8", newline="\n") as file:
+        json.dump(output, file, ensure_ascii=False, separators=(",", ":"))
+    print(f"{OUTPUT} に高さを書きました")
     return 0
 
 

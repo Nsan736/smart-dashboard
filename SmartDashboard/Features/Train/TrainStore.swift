@@ -261,7 +261,8 @@ final class TrainStore {
             var built: [String: RideLine] = [:]
             for id in ids {
                 guard let shape = shapes[id],
-                      let line = RideLine.make(shape: shape, name: names[id] ?? ODPTID.tail(id), track: RailwayTrackCatalog.bundled.track(for: id))
+                      let line = RideLine.make(shape: shape, name: names[id] ?? ODPTID.tail(id), track: RailwayTrackCatalog.bundled.track(for: id),
+                                            profile: RailwayTrackCatalog.bundled.profile(for: id))
                 else { continue }
                 built[id] = line
             }
