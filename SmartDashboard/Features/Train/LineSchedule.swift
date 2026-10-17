@@ -31,6 +31,8 @@ struct LineSchedule: Codable, Equatable {
         var trainType: String
         var destination: String
         var stops: [Stop]
+        /// 両数(odpt:carComposition。提供されている列車だけ)
+        var cars: Int? = nil
 
         enum CodingKeys: String, CodingKey {
             case number = "n"
@@ -39,6 +41,7 @@ struct LineSchedule: Codable, Equatable {
             case trainType = "t"
             case destination = "e"
             case stops = "p"
+            case cars = "k"
         }
     }
 
@@ -98,7 +101,8 @@ struct LineSchedule: Codable, Equatable {
                 direction: table.railDirection ?? "",
                 trainType: table.trainType.map { trainTypeNames[$0] ?? ODPTID.tail($0) } ?? "",
                 destination: destinationID.map { stationNames[$0] ?? ODPTID.tail($0) } ?? "",
-                stops: stops
+                stops: stops,
+                cars: table.carComposition.flatMap { $0 > 0 ? $0 : nil }
             ))
         }
         stationIDs = ids

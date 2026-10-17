@@ -227,10 +227,13 @@ struct ODPTTrainTimetable: Decodable {
     let destinationStation: [String]?
     let objects: [Object]
     var operatorID: String? = nil
+    /// 両数(提供している事業者だけ。2026-10-17の時点では、都営・東京メトロ・横浜市交通局などのデータにはない)
+    var carComposition: Int? = nil
 
     enum CodingKeys: String, CodingKey {
         case sameAs = "owl:sameAs"
         case operatorID = "odpt:operator"
+        case carComposition = "odpt:carComposition"
         case trainNumber = "odpt:trainNumber"
         case calendar = "odpt:calendar"
         case railDirection = "odpt:railDirection"
