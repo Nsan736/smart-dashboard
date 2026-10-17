@@ -19,6 +19,9 @@ struct ScopeSightView: View {
     @State private var source: ScopeSightSource
     @State private var tracker = WaypointTracker()
     @State private var isVisible = false
+    /// 電車(source が .trains のときだけ動かす)
+    @State private var trainFeed = ScopeTrainFeed(reason: "scope.sight")
+    @State private var trainDetail: ScopeTrainDetailSheet.Target?
 
     init(mode: ScopeSightMode, source: ScopeSightSource) {
         _mode = State(initialValue: mode)
@@ -94,6 +97,14 @@ struct ScopeSightView: View {
         .onChange(of: mode) { _, _ in
             if isVisible { startAll() }
         }
+        .sheet(item: $trainDetail) { target in
+            ScopeTrainDetailSheet(target: target)
+        }
+    }
+
+    /// 電車の位置を計算する基準の現在地(位置のデバッグの間は、仮想の位置)
+    private var trainUserPoint: GeoPoint? {
+        env.movement.isVirtual ? env.movement.currentPoint : tracker.coordinate.map { GeoPoint($0) }
     }
 
     private var title: String {
@@ -101,6 +112,7 @@ struct ScopeSightView: View {
         case .places: return mode == .camera ? "カメラで見る" : "コンパス"
         case .nearby: return env.nearby.category?.label ?? "周辺"
         case .route: return "経路の案内"
+        case .trains: return mode == .camera ? "電車をカメラで見る" : "電車のコンパス"
         }
     }
 
@@ -122,6 +134,8 @@ struct ScopeSightView: View {
                 marks.append(ScopeMark(id: "turn", name: "次の曲がり角", latitude: turn.latitude, longitude: turn.longitude, color: ScopeRouteStyle.turnColor))
             }
             return marks
+        case .trains:
+            return trainFeed.marks()
         }
     }
 
@@ -132,6 +146,11 @@ struct ScopeSightView: View {
     }
 
     private var currentTargets: [ScopeTarget] {
+        if source == .trains {
+            // 電車は高さを持たない(地面の上に置く)。位置のデバッグの間は、仮想の位置から測る。
+            guard let point = trainUserPoint else { return [] }
+            return ScopeTarget.make(currentMarks, latitude: point.latitude, longitude: point.longitude)
+        }
         guard let coordinate = tracker.coordinate else { return [] }
         return ScopeTarget.make(currentMarks, latitude: coordinate.latitude, longitude: coordinate.longitude,
                                 observerAltitude: observer?.meters, usesHeight: env.settings.scopeUsesHeight)
@@ -143,6 +162,13 @@ struct ScopeSightView: View {
         ScreenAwake.set("scope", true)
         // 位置とモーションは、カメラの準備を待たずに始める(カメラの設定と開始は専用のキューで進む)
         tracker.start(includesMotion: mode == .camera)
+        if source == .trains, !trainFeed.isRunning {
+            // 位置のデバッグの間は、仮想の位置と時刻を進める(移動タブと同じ仕組み)
+            if env.movement.isVirtual { env.movement.setVisible(true) }
+            trainFeed.start(env: env) { [tracker, movement = env.movement] in
+                movement.isVirtual ? movement.currentPoint : tracker.coordinate.map { GeoPoint($0) }
+            }
+        }
         if mode == .camera {
             Task {
                 await camera.start()
@@ -158,6 +184,10 @@ struct ScopeSightView: View {
         ScreenAwake.set("scope", false)
         tracker.stop()
         env.camera.stop()
+        if trainFeed.isRunning {
+            trainFeed.stop(env: env)
+            if env.movement.isVirtual { env.movement.setVisible(false) }
+        }
     }
 
     // MARK: - カメラ越しの表示
@@ -186,8 +216,14 @@ struct ScopeSightView: View {
                         .padding(10)
                         .background(.thinMaterial, in: Capsule())
                 } else if let attitude = tracker.attitude {
-                    ScopeOverlay(targets: targets, attitude: attitude,
-                                 tangents: WaypointProjection.tangents(fieldOfView: env.camera.fieldOfView, videoAspect: env.camera.videoAspect, viewSize: size))
+                    let tangents = WaypointProjection.tangents(fieldOfView: env.camera.fieldOfView, videoAspect: env.camera.videoAspect, viewSize: size)
+                    if source == .trains {
+                        ScopeTrainOverlay(feed: trainFeed, attitude: attitude, tangents: tangents) { id in
+                            trainDetail = ScopeTrainDetailSheet.Target(selection: .train(id))
+                        }
+                    } else {
+                        ScopeOverlay(targets: targets, attitude: attitude, tangents: tangents)
+                    }
                     if env.settings.waypointShowsHeading {
                         VStack {
                             Text("\(WaypointMath.compassPoint(attitude.azimuth)) \(Int(attitude.azimuth.rounded()))°")
@@ -226,8 +262,17 @@ struct ScopeSightView: View {
                         .aspectRatio(1, contentMode: .fit)
                         .frame(maxWidth: 360)
                         .padding(.horizontal)
-                    ForEach(Array(targets.reversed().prefix(12))) { target in
-                        compassRow(target, heading: heading)
+                    ForEach(Array(targets.reversed().prefix(source == .trains ? 40 : 12))) { target in
+                        if source == .trains {
+                            Button {
+                                trainDetail = ScopeTrainDetailSheet.Target(selection: .train(target.id))
+                            } label: {
+                                compassRow(target, heading: heading)
+                            }
+                            .buttonStyle(.plain)
+                        } else {
+                            compassRow(target, heading: heading)
+                        }
                     }
                     if targets.isEmpty {
                         Text(tracker.coordinate == nil ? "現在地を取得中…" : "表示するものがありません").foregroundStyle(.secondary)
@@ -259,9 +304,10 @@ struct ScopeSightView: View {
             VStack(alignment: .leading, spacing: 0) {
                 Text(target.mark.name).font(.headline).fixedSize(horizontal: false, vertical: true)
                 Text(WaypointMath.summary(bearing: target.bearing, distance: target.distance)
-                     + (target.heightDifference.map { " " + WaypointMath.heightText($0) } ?? ""))
+                     + (target.heightDifference.map { " " + WaypointMath.heightText($0) } ?? "")
+                     + (target.mark.note.isEmpty ? "" : " " + target.mark.note))
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(target.mark.note.contains("接近中") ? Color.orange : Color.secondary)
             }
             Spacer(minLength: 8)
             Text(abs(turn) < 5 ? "正面" : "\(turn > 0 ? "右" : "左")へ\(Int(abs(turn).rounded()))°")
@@ -310,6 +356,15 @@ struct ScopeSightView: View {
 
     // MARK: - 精度の表示
 
+    /// 電車の表示の状態(対象の路線と本数)
+    private var trainStatusText: String {
+        let settings = env.settings
+        if trainFeed.railwayIDs.isEmpty {
+            return settings.scopeTrainTarget == .nearby ? "近くを通る路線で、時刻表を保存しているものがありません" : "登録した路線の時刻表がありません(移動タブで取得)"
+        }
+        return "\(settings.scopeTrainTarget.label)の列車 \(trainFeed.trains.count)本(時刻表から計算した位置)。地面は自分の高さ−手の高さ"
+    }
+
     /// 自分の高さと、その決め方(精度の表示の近くに小さく出す)
     private var observerText: String {
         let settings = env.settings
@@ -333,6 +388,12 @@ struct ScopeSightView: View {
             }
             if case .places = source {
                 Text(observerText)
+            }
+            if source == .trains {
+                if env.movement.isVirtual {
+                    Text("デバッグ中(仮想の位置と時刻)").foregroundStyle(.red)
+                }
+                Text(trainStatusText)
             }
             if tracker.usesMagneticNorth, mode == .camera {
                 Text("真北が使えないため、磁北を基準にしています(数度ずれます)")
@@ -429,9 +490,25 @@ struct ScopeCompassDial: View {
             pointer.addLine(to: CGPoint(x: center.x + 8, y: center.y - radius - 4))
             pointer.closeSubpath()
             context.fill(pointer, with: .color(.primary))
-            // 印の方向の矢印(遠いものから描く)
+            // 印の方向の矢印(遠いものから描く)。電車は、方向の位置に、進行方向の矢印の入った印を置く。
             for target in targets {
                 let color = target.mark.color
+                if let travel = target.mark.travelHeading {
+                    let spot = position(target.bearing, radius - 40)
+                    let rect = CGRect(x: spot.x - 11, y: spot.y - 11, width: 22, height: 22)
+                    context.fill(Path(ellipseIn: rect), with: .color(color))
+                    context.stroke(Path(ellipseIn: rect), with: .color(.primary), lineWidth: 1.5)
+                    let rad = (travel - heading) * .pi / 180
+                    let direction = CGPoint(x: CGFloat(sin(rad)), y: -CGFloat(cos(rad)))
+                    let normal = CGPoint(x: -direction.y, y: direction.x)
+                    var arrow = Path()
+                    arrow.move(to: CGPoint(x: spot.x + direction.x * 8, y: spot.y + direction.y * 8))
+                    arrow.addLine(to: CGPoint(x: spot.x - direction.x * 5 + normal.x * 5, y: spot.y - direction.y * 5 + normal.y * 5))
+                    arrow.addLine(to: CGPoint(x: spot.x - direction.x * 5 - normal.x * 5, y: spot.y - direction.y * 5 - normal.y * 5))
+                    arrow.closeSubpath()
+                    context.fill(arrow, with: .color(.white))
+                    continue
+                }
                 let tip = position(target.bearing, radius - 40)
                 var shaft = Path()
                 shaft.move(to: center)

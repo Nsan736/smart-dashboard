@@ -21,6 +21,7 @@ struct ScopeView: View {
                 case .places: WaypointListView(section: section)
                 case .nearby: NearbyView(section: section)
                 case .route: RouteView(section: section)
+                case .trains: ScopeTrainsView()
                 }
             }
             .background(Color(.systemGroupedBackground))

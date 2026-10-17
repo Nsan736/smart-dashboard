@@ -136,6 +136,26 @@ final class AppSettings {
     var scopeHandHeight: Double {
         didSet { defaults.set(scopeHandHeight, forKey: Keys.scopeHandHeight) }
     }
+    /// スコープの電車: 対象の路線(初期値は登録した路線)
+    var scopeTrainTarget: ScopeTrainTarget {
+        didSet { defaults.set(scopeTrainTarget.rawValue, forKey: Keys.scopeTrainTarget) }
+    }
+    /// スコープの電車: 「近くを通る路線」の距離(km、初期値3)
+    var scopeTrainRadiusKm: Double {
+        didSet { defaults.set(scopeTrainRadiusKm, forKey: Keys.scopeTrainRadiusKm) }
+    }
+    /// スコープの電車: 表示する列車の数の上限(近い順、初期値20)
+    var scopeTrainMaxCount: Int {
+        didSet { defaults.set(scopeTrainMaxCount, forKey: Keys.scopeTrainMaxCount) }
+    }
+    /// スコープの電車: 路線の種類ごとの両数の目安(データに両数がないときに使う)。ない種類は初期値。
+    var scopeCarCounts: [String: Int] {
+        didSet { defaults.set(scopeCarCounts, forKey: Keys.scopeCarCounts) }
+    }
+
+    func scopeCars(for kind: RailwayKind) -> Int {
+        scopeCarCounts[kind.rawValue] ?? kind.defaultCars
+    }
     /// 気圧: 無音のオーディオでアプリを起こしておき、バックグラウンドでも記録する(初期値はオフ)
     var backgroundPressureEnabled: Bool {
         didSet { defaults.set(backgroundPressureEnabled, forKey: Keys.backgroundPressureEnabled) }
@@ -204,6 +224,10 @@ final class AppSettings {
         scopeUsesHeight = defaults.object(forKey: Keys.scopeUsesHeight) as? Bool ?? true
         scopeHeightSource = defaults.string(forKey: Keys.scopeHeightSource).flatMap(ObserverHeightSource.init(rawValue:)) ?? .groundPlusHand
         scopeHandHeight = defaults.object(forKey: Keys.scopeHandHeight) as? Double ?? 1.5
+        scopeTrainTarget = defaults.string(forKey: Keys.scopeTrainTarget).flatMap(ScopeTrainTarget.init(rawValue:)) ?? .registered
+        scopeTrainRadiusKm = defaults.object(forKey: Keys.scopeTrainRadiusKm) as? Double ?? 3
+        scopeTrainMaxCount = defaults.object(forKey: Keys.scopeTrainMaxCount) as? Int ?? 20
+        scopeCarCounts = defaults.dictionary(forKey: Keys.scopeCarCounts) as? [String: Int] ?? [:]
         nearbyRadius = NearbyRadius.clamped(defaults.object(forKey: Keys.nearbyRadius) as? Int ?? NearbyRadius.initial)
         nearbyCategories = NearbyCategory.normalizedOrder(defaults.stringArray(forKey: Keys.nearbyCategories))
         tabOrder = TabOrder.decode(defaults.stringArray(forKey: Keys.tabOrder))
@@ -261,6 +285,10 @@ final class AppSettings {
         static let scopeUsesHeight = "scope.usesHeight"
         static let scopeHeightSource = "scope.heightSource"
         static let scopeHandHeight = "scope.handHeight"
+        static let scopeTrainTarget = "scope.trainTarget"
+        static let scopeTrainRadiusKm = "scope.trainRadiusKm"
+        static let scopeTrainMaxCount = "scope.trainMaxCount"
+        static let scopeCarCounts = "scope.carCounts"
         static let nearbyRadius = "scope.nearbyRadius"
         static let nearbyCategories = "scope.nearbyCategories"
         static let tabOrder = "tabs.order"

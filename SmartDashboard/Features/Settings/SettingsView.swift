@@ -346,6 +346,18 @@ struct AlertSettingsSections: View {
             }
         } header: {
             Text("スコープの高さ")
+        }
+
+        Section {
+            ForEach(RailwayKind.allCases) { kind in
+                Stepper(value: Binding(get: { settings.scopeCars(for: kind) }, set: { settings.scopeCarCounts[kind.rawValue] = $0 }), in: 1...16) {
+                    Text("\(kind.label): \(settings.scopeCars(for: kind))両")
+                }
+            }
+        } header: {
+            Text("スコープの電車の両数")
+        } footer: {
+            Text("カメラ表示で電車の形を描くときの両数の目安です。データに両数がある列車は、その両数を使います。路線の種類は路線名から判断します(地下鉄の路線の列車には「地下鉄」と表示します)。")
         } footer: {
             Text("カメラ表示で、地点の高さ(標高+地面からの高さ)と自分の高さの差から、印の上下の位置を決めます(遠くでは地球の丸みと大気の屈折も考えます)。オフにすると、すべての地点を地平線の高さに置きます。「地面の標高+手の高さ」は、現在地の標高を国土地理院の標高APIで取得し(100m以上動いたときだけ、1回約70バイト)、取れないときはGPSの高度を使います。")
         }

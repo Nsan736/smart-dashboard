@@ -50,7 +50,7 @@ struct TrainLiveBoard {
     let nearest: NearestStation?
     let registeredStationIDs: Set<String>
     /// 絞り込みのあとで表示する電車のID。nilならすべて表示する。
-    let visibleTrainIDs: Set<String>?
+    private(set) var visibleTrainIDs: Set<String>?
 
     init(env: AppEnvironment, now: Date, filter: TrainFilter, directionNames: [String: String]) {
         self.now = now
@@ -88,6 +88,13 @@ struct TrainLiveBoard {
         }
         groups = result
         visibleTrainIDs = filter == .all ? nil : Set(result.flatMap { $0.approaches.map(\.id) })
+    }
+
+    /// 表示する電車を、指定したIDだけにしたもの(スコープの地図で、スコープの列車だけを出す)
+    func restricted(to ids: Set<String>) -> TrainLiveBoard {
+        var copy = self
+        copy.visibleTrainIDs = ids
+        return copy
     }
 
     func visiblePositions(in line: BoardLine) -> [TrainPosition] {
@@ -128,6 +135,8 @@ struct TrainLiveMapView: View {
     @Binding var selection: TrainLiveSelection?
     /// 乗車中の判定と、位置のデバッグの表示
     var overlay = RideMapOverlay()
+    /// 表示範囲を覚えておく名前(移動タブとスコープで分ける)
+    var memoryKey = "movement.live"
     @State private var recenterKey = 0
 
     var body: some View {
@@ -202,7 +211,7 @@ struct TrainLiveMapView: View {
                 stationTrains: Self.stationTrains(board: board, selectedRailwayID: selectedRailwayID),
                 // 画面全体の縦スクロールの中にあるので、地図に触れている間は外側のスクロールを止める
                 locksParentScroll: true,
-                memoryKey: "movement.live"
+                memoryKey: memoryKey
             )
             Button {
                 recenterKey += 1

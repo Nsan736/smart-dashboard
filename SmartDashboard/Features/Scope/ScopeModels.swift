@@ -6,6 +6,7 @@ enum ScopeSection: String, CaseIterable, Identifiable {
     case places
     case nearby
     case route
+    case trains
 
     var id: String { rawValue }
 
@@ -14,6 +15,7 @@ enum ScopeSection: String, CaseIterable, Identifiable {
         case .places: return "地点"
         case .nearby: return "周辺"
         case .route: return "経路"
+        case .trains: return "電車"
         }
     }
 }
@@ -27,6 +29,10 @@ struct ScopeMark: Equatable, Identifiable {
     var color: Color
     /// 高さ(m、標高+地面からの高さ)。分からなければ nil(地平線の高さに置く)。
     var altitude: Double?
+    /// 進行方向(度。電車だけ)。コンパス表示で、矢印の印にする。
+    var travelHeading: Double? = nil
+    /// 名前の下に添える短い説明(電車の「接近中・地下鉄」など)
+    var note = ""
 
     init(id: String, name: String, latitude: Double, longitude: Double, color: Color, altitude: Double? = nil) {
         self.id = id
@@ -84,6 +90,8 @@ enum ScopeSightSource: Equatable {
     case nearby
     /// 経路の案内(次の曲がり角と目的地)
     case route
+    /// 電車(移動タブと同じ計算の列車の位置)
+    case trains
 }
 
 /// 経路の目的地(地点、または周辺の施設)
