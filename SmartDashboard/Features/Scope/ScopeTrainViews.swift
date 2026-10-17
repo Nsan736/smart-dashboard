@@ -16,14 +16,36 @@ enum ScopeTrainRenderer {
     struct Face {
         var points: [CGPoint]
         var color: Color
+        /// 地下の車両(半透明の輪郭線だけで描く)
+        var isUnderground = false
+    }
+
+    /// 車両の箱を置く高さを決めるための値
+    struct Heights {
+        /// 自分の目の高さ(m)。分からなければ nil(線路の高さが分かっても、地面の高さに置く)。
+        var observerAltitude: Double?
+        var handHeight: Double
+        var elevated: Double
+        var underground: Double
+
+        /// 目の高さを0とした、車両の箱の下の高さ。線路の高さか自分の高さが分からなければ、地面(手の高さだけ下)。
+        func base(_ height: TrackHeightModel.Height) -> Double {
+            guard let altitude = height.altitude, let observerAltitude else { return -handHeight }
+            return altitude - observerAltitude
+        }
+    }
+
+    /// 半透明の輪郭線だけで描くか(地下の区間。地面の標高が分からなくても、地下と分かっていれば輪郭線にする)
+    static func drawsAsOutline(_ height: TrackHeightModel.Height) -> Bool {
+        height.section == .underground
     }
 
     struct Item: Identifiable {
         enum Kind {
             /// 遠い車両から順に並べた面
             case shape(faces: [Face])
-            /// リングの印。arrow は画面の上での進行方向(ラジアン、右が0、下が正)。
-            case ring(center: CGPoint, inner: CGFloat, arrow: Double?)
+            /// リングの印。arrow は画面の上での進行方向(ラジアン、右が0、下が正)。地下なら半透明の破線。
+            case ring(center: CGPoint, inner: CGFloat, arrow: Double?, isUnderground: Bool = false)
         }
 
         var id: String
@@ -68,13 +90,14 @@ enum ScopeTrainRenderer {
     }
 
     /// 遠い列車から順に並べた配置
-    static func layout(trains: [ScopeTrain], paths: [String: GeoPath], user: GeoPoint, base: Double, attitude: CameraAttitude,
+    static func layout(trains: [ScopeTrain], rides: [String: RideLine], user: GeoPoint, heights: Heights, attitude: CameraAttitude,
                        tangents: (horizontal: Double, vertical: Double), size: CGSize, now: Date) -> [Item] {
         let screen = CGRect(origin: .zero, size: size).insetBy(dx: -40, dy: -40)
         let nearestIDs = Set(trains.sorted { $0.distance < $1.distance }.prefix(maxShapeTrains).map(\.id))
         var items: [Item] = []
         for train in trains.sorted(by: { $0.distance > $1.distance }) {
-            guard let path = paths[train.railwayID] else { continue }
+            guard let ride = rides[train.railwayID] else { continue }
+            let path = ride.path
             let headAlong = min(max(train.headAlong(at: now), 0), path.length)
             let head = path.point(atAlong: headAlong) ?? train.head
             let distance = GeoMath.distance(user, head)
@@ -96,7 +119,10 @@ enum ScopeTrainRenderer {
                 for (index, along) in centers.enumerated() {
                     guard let center = path.point(atAlong: along), let bearing = path.bearing(atAlong: along, forward: train.forward) else { continue }
                     let carDrop = WaypointElevation.curvatureDrop(distance: GeoMath.distance(user, center))
-                    let corners = ScopeTrainGeometry.corners(center: center, bearing: bearing, base: base - carDrop, user: user)
+                    // 車両ごとに、その位置の線路の高さに置く(高架・地上・地下)
+                    let track = ride.trackHeight(atAlong: along, elevated: heights.elevated, underground: heights.underground)
+                    let isUnderground = drawsAsOutline(track)
+                    let corners = ScopeTrainGeometry.corners(center: center, bearing: bearing, base: heights.base(track) - carDrop, user: user)
                     let projected = corners.map { project($0, attitude: attitude, tangents: tangents, size: size) }
                     // 自分の後ろ側に回り込む車両は描かない
                     guard projected.allSatisfy({ $0 != nil }) else { continue }
@@ -117,7 +143,7 @@ enum ScopeTrainRenderer {
                         case .front, .back: color = palette.end
                         case .left, .right: color = isHead ? palette.headSide : palette.side
                         }
-                        faces.append((depth, Face(points: face.indices.map { points[$0] }, color: color)))
+                        faces.append((depth, Face(points: face.indices.map { points[$0] }, color: color, isUnderground: isUnderground)))
                     }
                 }
                 if let headTop, let headCenter, headHeight >= minimumShapeHeight, !faces.isEmpty {
@@ -133,7 +159,8 @@ enum ScopeTrainRenderer {
                 continue
             }
             // 遠い列車は、進行方向の矢印が入ったリングの印(地点の印と同じ大きさの規則)
-            let middle = base + ScopeTrainGeometry.carHeight / 2 - drop
+            let headTrack = ride.trackHeight(atAlong: headAlong, elevated: heights.elevated, underground: heights.underground)
+            let middle = heights.base(headTrack) + ScopeTrainGeometry.carHeight / 2 - drop
             guard let center = project(vector(head, up: middle, user: user), attitude: attitude, tangents: tangents, size: size),
                   CGRect(origin: .zero, size: size).contains(center) else { continue }
             var arrow: Double?
@@ -148,7 +175,8 @@ enum ScopeTrainRenderer {
             }
             let ring = WaypointMarkStyle.ringDiameter
             items.append(Item(id: train.id, distance: distance,
-                              kind: .ring(center: center, inner: WaypointMarkStyle.innerDiameter(distance: distance), arrow: arrow),
+                              kind: .ring(center: center, inner: WaypointMarkStyle.innerDiameter(distance: distance), arrow: arrow,
+                                          isUnderground: drawsAsOutline(headTrack)),
                               color: Color(uiColor: lineColor), isDelayed: delayed, outline: outline, outlineWidth: outlineWidth,
                               labelAnchor: CGPoint(x: center.x, y: center.y + ring / 2 + 4 + 16), hitPoint: center, caption: caption))
         }
@@ -163,10 +191,18 @@ enum ScopeTrainRenderer {
                     var path = Path()
                     path.addLines(face.points)
                     path.closeSubpath()
-                    context.fill(path, with: .color(face.color))
-                    context.stroke(path, with: .color(item.outline), lineWidth: item.outlineWidth)
+                    if face.isUnderground {
+                        // 地下の車両は、塗らずに半透明の破線の輪郭だけ(地面の下にいることが分かるように)
+                        context.stroke(path, with: .color(face.color.opacity(0.7)), style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+                    } else {
+                        context.fill(path, with: .color(face.color))
+                        context.stroke(path, with: .color(item.outline), lineWidth: item.outlineWidth)
+                    }
                 }
-            case .ring(let center, let inner, let arrow):
+            case .ring(let center, let inner, let arrow, let isUnderground):
+                if isUnderground {
+                    context.opacity = 0.55
+                }
                 let ring = WaypointMarkStyle.ringDiameter
                 let line = WaypointMarkStyle.ringLineWidth
                 let ringRect = CGRect(x: center.x - ring / 2, y: center.y - ring / 2, width: ring, height: ring)
@@ -194,6 +230,7 @@ enum ScopeTrainRenderer {
                     context.fill(head, with: .color(.white))
                     context.stroke(head, with: .color(.black), lineWidth: 1)
                 }
+                context.opacity = 1
             }
             let label = context.resolve(Text(item.caption).font(.system(size: 11, weight: .semibold)).foregroundColor(.white))
             let labelSize = label.measure(in: CGSize(width: 240, height: 40))
@@ -224,18 +261,20 @@ struct ScopeTrainOverlay: View {
 
     var body: some View {
         let user = feed.userPoint
-        let base = -env.settings.scopeHandHeight
+        let settings = env.settings
+        let heights = ScopeTrainRenderer.Heights(observerAltitude: feed.observerAltitude, handHeight: settings.scopeHandHeight,
+                                                 elevated: settings.scopeElevatedHeight, underground: settings.scopeUndergroundDepth)
         GeometryReader { geometry in
             Canvas(rendersAsynchronously: false) { context, size in
                 guard let user else { return }
-                let items = ScopeTrainRenderer.layout(trains: feed.trains, paths: feed.paths, user: user, base: base, attitude: attitude,
+                let items = ScopeTrainRenderer.layout(trains: feed.trains, rides: feed.rides, user: user, heights: heights, attitude: attitude,
                                                       tangents: tangents, size: size, now: env.movement.currentTime())
                 ScopeTrainRenderer.draw(&context, items: items)
             }
             .contentShape(Rectangle())
             .gesture(SpatialTapGesture().onEnded { value in
                 guard let user else { return }
-                let items = ScopeTrainRenderer.layout(trains: feed.trains, paths: feed.paths, user: user, base: base, attitude: attitude,
+                let items = ScopeTrainRenderer.layout(trains: feed.trains, rides: feed.rides, user: user, heights: heights, attitude: attitude,
                                                       tangents: tangents, size: geometry.size, now: env.movement.currentTime())
                 if let id = ScopeTrainRenderer.hit(value.location, items: items) { onSelect(id) }
             })
@@ -286,6 +325,7 @@ struct ScopeTrainsView: View {
     @Environment(AppEnvironment.self) private var env
     @State private var feed = ScopeTrainFeed(reason: "scope.list")
     @State private var located: GeoPoint?
+    @State private var locatedAltitude: Double?
     @State private var selection: TrainLiveSelection?
     @State private var detail: ScopeTrainDetailSheet.Target?
 
@@ -313,7 +353,8 @@ struct ScopeTrainsView: View {
                     Label("コンパスで見る", systemImage: "safari")
                 }
             } footer: {
-                Text("列車の位置は、移動タブと同じく、保存した時刻表から計算して遅れで補正したものです(実際の在線位置ではありません)。新しい通信はなく、遅れの取得も移動タブと同じ規則です。")
+                Text("列車の位置は、移動タブと同じく、保存した時刻表から計算して遅れで補正したものです(実際の在線位置ではありません)。新しい通信はなく、遅れの取得も移動タブと同じ規則です。電車の形は、各社の公式サイトで調べた両数で、線路の高さ(高架・地上・地下)に置きます。地下の区間の車両は、破線の輪郭だけで描きます。
+\(ODPTAttributionView.heightAttribution)")
             }
             Section {
                 Picker("対象の路線", selection: $settings.scopeTrainTarget) {
@@ -362,9 +403,12 @@ struct ScopeTrainsView: View {
         .onAppear {
             // 位置のデバッグの間は、仮想の位置と時刻を進める(移動タブと同じ仕組み)
             if env.movement.isVirtual { env.movement.setVisible(true) }
-            feed.start(env: env) { [movement = env.movement] in
+            feed.start(env: env, user: { [movement = env.movement] in
                 movement.isVirtual ? movement.currentPoint : located
-            }
+            }, observer: { [elevation = env.elevation, settings = env.settings] in
+                guard settings.scopeUsesHeight, let located else { return nil }
+                return elevation.observerHeight(latitude: located.latitude, longitude: located.longitude, gpsAltitude: locatedAltitude)?.meters
+            })
         }
         .onDisappear {
             feed.stop(env: env)
@@ -374,6 +418,11 @@ struct ScopeTrainsView: View {
             // 一覧と地図の距離のために、現在地を1回だけ取る(取ったら測位は止まる)
             if let location = try? await env.location.currentLocation() {
                 located = GeoPoint(location.coordinate)
+                locatedAltitude = location.verticalAccuracy > 0 ? location.altitude : nil
+                // 高低差のために、地面の標高を取る(100m以内で取った値があれば使う。自動更新の規則に従う)
+                if env.settings.scopeUsesHeight, env.settings.scopeHeightSource == .groundPlusHand {
+                    env.elevation.updateGround(latitude: location.coordinate.latitude, longitude: location.coordinate.longitude)
+                }
                 feed.compute(env: env)
             }
         }
@@ -406,12 +455,16 @@ struct ScopeTrainRow: View {
             RailwayColorBar(colorHex: train.colorHex, height: 34)
             VStack(alignment: .leading, spacing: 2) {
                 Text(train.label).font(.headline).foregroundStyle(Color.primary).fixedSize(horizontal: false, vertical: true)
-                Text(train.lineName + (train.kind == .subway ? "・地下鉄" : "")).font(.caption).foregroundStyle(.secondary)
+                Text(train.lineName + (train.kind == .subway ? "・地下鉄" : "") + (train.section == .unknown ? "" : "・" + train.section.label))
+                    .font(.caption).foregroundStyle(.secondary)
                 Text(train.delay.label).font(.caption).foregroundStyle(TrainColors.color(train.delay.tone))
             }
             Spacer(minLength: 4)
             VStack(alignment: .trailing, spacing: 2) {
                 Text(WaypointMath.distanceText(train.distance)).font(.headline).monospacedDigit().foregroundStyle(Color.primary)
+                if let height = train.heightCaption {
+                    Text(height).font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                }
                 if train.isApproaching {
                     Text("接近中").font(.caption.weight(.bold)).foregroundStyle(.orange)
                 }

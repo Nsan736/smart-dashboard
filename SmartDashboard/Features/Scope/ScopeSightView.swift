@@ -147,7 +147,7 @@ struct ScopeSightView: View {
 
     private var currentTargets: [ScopeTarget] {
         if source == .trains {
-            // 電車は高さを持たない(地面の上に置く)。位置のデバッグの間は、仮想の位置から測る。
+            // コンパス表示の電車の印は、方角だけを出す(高さは印の文字で出す)。位置のデバッグの間は、仮想の位置から測る。
             guard let point = trainUserPoint else { return [] }
             return ScopeTarget.make(currentMarks, latitude: point.latitude, longitude: point.longitude)
         }
@@ -165,9 +165,13 @@ struct ScopeSightView: View {
         if source == .trains, !trainFeed.isRunning {
             // 位置のデバッグの間は、仮想の位置と時刻を進める(移動タブと同じ仕組み)
             if env.movement.isVirtual { env.movement.setVisible(true) }
-            trainFeed.start(env: env) { [tracker, movement = env.movement] in
+            trainFeed.start(env: env, user: { [tracker, movement = env.movement] in
                 movement.isVirtual ? movement.currentPoint : tracker.coordinate.map { GeoPoint($0) }
-            }
+            }, observer: { [tracker, elevation = env.elevation, settings = env.settings] in
+                // 自分の高さ(地点と同じ決め方)。高さを使わない設定なら、電車も地面の高さに置く
+                guard settings.scopeUsesHeight, let coordinate = tracker.coordinate else { return nil }
+                return elevation.observerHeight(latitude: coordinate.latitude, longitude: coordinate.longitude, gpsAltitude: tracker.gpsAltitude)?.meters
+            })
         }
         if mode == .camera {
             Task {

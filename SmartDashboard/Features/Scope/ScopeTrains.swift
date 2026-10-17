@@ -92,6 +92,16 @@ struct ScopeTrain: Equatable, Identifiable {
     var isApproaching: Bool
     var isStopped: Bool
     var computedAt: Date
+    /// 先頭のいる区間の種類(高架・地上・地下・不明)
+    var section: TrackSection = .unknown
+    /// 先頭の線路の高さ(m)。分からなければ nil。
+    var trackAltitude: Double? = nil
+    /// 区間の種類か地面の標高が分からず、地面の高さに置いている
+    var heightIsEstimate = true
+    /// 高低差(m、線路の高さ − 自分の目の高さ)。自分の高さか線路の高さが分からなければ nil。
+    var heightDifference: Double? = nil
+    /// 両数を列車ごとに見分けられず、目安の両数を使っている
+    var carsAreEstimate = true
 
     /// 「急 西馬込行」
     var label: String {
@@ -99,12 +109,28 @@ struct ScopeTrain: Equatable, Identifiable {
         return (badge.isEmpty ? "" : badge + " ") + (destination.isEmpty ? "行先不明" : destination + "行")
     }
 
-    /// 印の近くに出す文字「急 西馬込行 1.2km 接近中・地下鉄」
+    /// 高さの表示「↑8m」「地下 ↓15m」「地下」。分からなければ nil。
+    var heightCaption: String? {
+        if let heightDifference {
+            return (section == .underground ? "地下 " : "") + WaypointMath.heightText(heightDifference)
+        }
+        return section == .underground ? "地下" : nil
+    }
+
+    /// 「高さは目安」「接近中」「地下鉄」
+    var notes: [String] {
+        var notes: [String] = []
+        if heightIsEstimate { notes.append("高さは目安") }
+        if isApproaching { notes.append("接近中") }
+        // 地下にいるかが分からない地下鉄の列車には、地下鉄と添える
+        if kind == .subway, section == .unknown || heightIsEstimate { notes.append("地下鉄") }
+        return notes
+    }
+
+    /// 印の近くに出す文字「急 西馬込行 350m ↑8m 接近中」「各停 渋谷行 1.2km 地下 ↓15m」
     var caption: String {
         var text = "\(label) \(WaypointMath.distanceText(distance))"
-        var notes: [String] = []
-        if isApproaching { notes.append("接近中") }
-        if kind == .subway { notes.append("地下鉄") }
+        if let heightCaption { text += " " + heightCaption }
         if !notes.isEmpty { text += " " + notes.joined(separator: "・") }
         return text
     }
@@ -224,15 +250,19 @@ enum ScopeTrainGeometry {
 @Observable
 final class ScopeTrainFeed {
     private(set) var trains: [ScopeTrain] = []
-    /// 路線ID → 路線の線(車両を線路に沿って並べるのに使う)
-    private(set) var paths: [String: GeoPath] = [:]
+    /// 路線ID → 路線の線(車両を線路に沿って並べ、線路の高さを引くのに使う)
+    private(set) var rides: [String: RideLine] = [:]
     private(set) var railwayIDs: [String] = []
     private(set) var userPoint: GeoPoint?
+    /// 自分の目の高さ(m)。分からなければ nil(高低差を出さず、車両は地面の高さに置く)。
+    private(set) var observerAltitude: Double?
     /// 対象の路線はあるが、列車ごとの時刻表がない路線の数
     private(set) var missingSchedules = 0
 
     @ObservationIgnored private var loop: Task<Void, Never>?
     @ObservationIgnored private var userProvider: (@MainActor () -> GeoPoint?)?
+    /// 自分の目の高さ(m)。分からなければ nil(高低差を出さない)。
+    @ObservationIgnored private var observerProvider: (@MainActor () -> Double?)?
     /// 遅れの取得を「表示中」にする理由の名前(一覧とカメラ表示で分ける)
     @ObservationIgnored private let reason: String
 
@@ -242,8 +272,9 @@ final class ScopeTrainFeed {
         self.reason = reason
     }
 
-    func start(env: AppEnvironment, user: @escaping @MainActor () -> GeoPoint?) {
+    func start(env: AppEnvironment, user: @escaping @MainActor () -> GeoPoint?, observer: @escaping @MainActor () -> Double? = { nil }) {
         userProvider = user
+        observerProvider = observer
         guard loop == nil else { return }
         env.live.setVisible(reason, true)
         loop = Task { [weak self, weak env] in
@@ -281,19 +312,25 @@ final class ScopeTrainFeed {
             ? trainsStore.registeredRailwayIDs.filter { live.schedules[$0] == nil }.count : 0
         let previous = Dictionary(trains.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         var found: [ScopeTrain] = []
-        var newPaths: [String: GeoPath] = [:]
+        var newRides: [String: RideLine] = [:]
         guard let user else {
+            observerAltitude = nil
             trains = []
             return
         }
+        // 位置のデバッグの間は、仮想の位置の近くの線路の地面の標高から決める(通信しない)
+        let observerAltitude = env.movement.isVirtual
+            ? Self.trackGroundAltitude(near: user, rides: targets.compactMap { trainsStore.rideLine(for: $0) }, handHeight: settings.scopeHandHeight)
+            : observerProvider?()
+        self.observerAltitude = observerAltitude
         for railwayID in targets {
             guard let schedule = live.schedules[railwayID], let ride = trainsStore.rideLine(for: railwayID) else { continue }
-            newPaths[railwayID] = ride.path
+            newRides[railwayID] = ride
             let name = names[railwayID] ?? ODPTID.tail(railwayID)
             let line = BoardLine(railwayID: railwayID, name: name, schedule: schedule, shape: trainsStore.shapes[railwayID],
                                  positions: [], ride: ride)
             let kind = RailwayKind.classify(railwayID: railwayID, name: name)
-            let defaultCars = settings.scopeCars(for: kind)
+            let carRule = TrainCarResolver.Context(railwayID: railwayID, kind: kind, settings: settings)
             for position in live.positions(for: railwayID, now: now) where !position.isWaitingToDepart {
                 guard let fromID = line.stationID(position.fromStation), let toID = line.stationID(position.toStation),
                       let pair = ride.alongPair(fromID, toID) else { continue }
@@ -302,21 +339,37 @@ final class ScopeTrainFeed {
                 guard let head = ride.path.point(atAlong: along) else { continue }
                 let heading = ride.path.bearing(atAlong: along, forward: forward)
                 let distance = GeoMath.distance(user, head)
-                let cars = schedule.trains.first { $0.number == position.number }?.cars ?? defaultCars
+                let cars = TrainCarResolver.cars(for: schedule.trains.first { $0.number == position.number }, schedule: schedule, context: carRule)
+                let height = ride.trackHeight(atAlong: along, elevated: settings.scopeElevatedHeight, underground: settings.scopeUndergroundDepth)
                 let old = previous[position.id]
                 found.append(ScopeTrain(
                     id: position.id, railwayID: railwayID, lineName: name, colorHex: trainsStore.shapes[railwayID]?.colorHex,
                     number: position.number, trainType: position.trainType, destination: position.destination, delay: position.delay,
-                    kind: kind, cars: cars, along: along,
+                    kind: kind, cars: cars.cars, along: along,
                     speed: ScopeTrainSelection.speed(previousAlong: old?.along, previousTime: old?.computedAt, along: along, time: now,
                                                      isStopped: position.isStopped),
                     forward: forward, head: head, heading: heading, distance: distance,
                     isApproaching: ScopeTrainSelection.isApproaching(heading: heading, train: head, user: user, isStopped: position.isStopped),
-                    isStopped: position.isStopped, computedAt: now))
+                    isStopped: position.isStopped, computedAt: now, section: height.section, trackAltitude: height.altitude,
+                    // 自分の高さが分からないときも、地面の高さに置くので目安(高さを使わない設定では書かない)
+                    heightIsEstimate: height.isEstimate || (observerAltitude == nil && settings.scopeUsesHeight),
+                    heightDifference: height.altitude.flatMap { altitude in observerAltitude.map { altitude - $0 } },
+                    carsAreEstimate: cars.isEstimate))
             }
         }
-        paths = newPaths
+        rides = newRides
         trains = ScopeTrainSelection.nearest(found, limit: settings.scopeTrainMaxCount)
+    }
+
+    /// 近くの線路(300m以内)の地面の標高 + 手の高さ。仮想の位置で、自分の高さの代わりに使う。
+    nonisolated static func trackGroundAltitude(near point: GeoPoint, rides: [RideLine], handHeight: Double) -> Double? {
+        var best: (lateral: Double, ground: Double)?
+        for ride in rides {
+            guard let projection = ride.path.project(point), projection.lateral <= 300,
+                  let ground = ride.trackHeight(atAlong: projection.along, elevated: 0, underground: 0).altitude else { continue }
+            if best == nil || projection.lateral < best!.lateral { best = (projection.lateral, ground) }
+        }
+        return best.map { $0.ground + handHeight }
     }
 
     /// コンパス表示の印(進行方向つき)
@@ -325,7 +378,7 @@ final class ScopeTrainFeed {
             var mark = ScopeMark(id: train.id, name: "\(train.lineName) \(train.label)", latitude: train.head.latitude, longitude: train.head.longitude,
                                  color: Color(uiColor: UIColor(hex: train.colorHex) ?? .systemGray))
             mark.travelHeading = train.heading
-            mark.note = [train.isApproaching ? "接近中" : nil, train.kind == .subway ? "地下鉄" : nil].compactMap { $0 }.joined(separator: "・")
+            mark.note = ([train.heightCaption].compactMap { $0 } + train.notes).joined(separator: "・")
             return mark
         }
     }

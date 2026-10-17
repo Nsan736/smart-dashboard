@@ -102,7 +102,16 @@ struct ODPTAttributionView: View {
         都営のデータ: 東京都交通局・公共交通オープンデータ協議会 (CC BY 4.0)
         そのほかの事業者(東京メトロ、横浜市交通局など)のデータ: 各事業者・公共交通オープンデータ協議会(公共交通オープンデータ基本ライセンス)
         \(Self.trackAttribution)
+        \(Self.heightAttribution)
         """)
+    }
+
+    /// 同梱した線路の高さの出典と、加工していること
+    static var heightAttribution: String {
+        let catalog = RailwayTrackCatalog.bundled
+        let made = catalog.heightFetched.isEmpty ? "" : "(\(catalog.heightFetched)作成)"
+        return RailwayTrackCatalog.heightAttribution + "。線路に沿って25mごとに、地面の標高と、高架・地上・地下の区間を取り出しています" + made
+            + "。高架の高さと地下の深さは、路線ごとのデータがないので目安の値です。"
     }
 
     /// 同梱した線路の形の出典と、加工していること

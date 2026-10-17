@@ -466,6 +466,10 @@ struct TrainSelectionCard: View {
             Text(Self.whereText(position, line: line) + (position.currentPlatform.map { "(\($0)番線)" } ?? ""))
                 .font(.subheadline)
                 .fixedSize(horizontal: false, vertical: true)
+            Text(Self.trackText(position, line: line, settings: env.settings))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             if position.upcoming.isEmpty {
                 Text("終点に到着").font(.subheadline)
             } else {
@@ -488,6 +492,25 @@ struct TrainSelectionCard: View {
                     }
                 }
             }
+        }
+    }
+
+    /// 「高架(地面から約8m)・10両」「地下(約15m)・6両(両数は目安)」「区間: 不明(高さは目安)・10両」
+    static func trackText(_ position: TrainPosition, line: BoardLine, settings: AppSettings) -> String {
+        let cars = line.cars(of: position, settings: settings)
+        let carsText = "\(cars.cars)両" + (cars.isEstimate ? "(両数は目安)" : "")
+        guard let height = line.trackHeight(of: position, elevated: settings.scopeElevatedHeight, underground: settings.scopeUndergroundDepth) else {
+            return "区間: 不明・" + carsText
+        }
+        return sectionText(height, elevated: settings.scopeElevatedHeight, underground: settings.scopeUndergroundDepth) + "・" + carsText
+    }
+
+    static func sectionText(_ height: TrackHeightModel.Height, elevated: Double, underground: Double) -> String {
+        switch height.section {
+        case .elevated: return "高架(地面から約\(Int(elevated.rounded()))m)" + (height.isEstimate ? "(高さは目安)" : "")
+        case .underground: return "地下(約\(Int(underground.rounded()))m)" + (height.isEstimate ? "(高さは目安)" : "")
+        case .ground: return "地上" + (height.isEstimate ? "(高さは目安)" : "")
+        case .unknown: return "区間: 不明(高さは目安)"
         }
     }
 
