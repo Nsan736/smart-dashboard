@@ -86,8 +86,25 @@ final class ScopeTrainTests: XCTestCase {
     }
 
     func testCaption() {
-        XCTAssertEqual(train("a", distance: 1234, approaching: true).caption, "急 西馬込行 1.2km 接近中・地下鉄")
-        XCTAssertEqual(train("a", distance: 850, kind: .railway).caption, "急 西馬込行 850m")
+        // 高さのデータがない列車は、地面の高さに置き「高さは目安」
+        XCTAssertEqual(train("a", distance: 1234, approaching: true).caption, "急 西馬込行 1.2km 高さは目安・接近中・地下鉄")
+        XCTAssertEqual(train("a", distance: 850, kind: .railway).caption, "急 西馬込行 850m 高さは目安")
+        // 高架: 高低差を出す。地下と分かっている地下鉄には「地下鉄」と添えない
+        var elevated = train("a", distance: 350, kind: .railway, approaching: true)
+        elevated.section = .elevated
+        elevated.heightIsEstimate = false
+        elevated.heightDifference = 8.2
+        XCTAssertEqual(elevated.caption, "急 西馬込行 350m ↑8m 接近中")
+        var underground = train("a", distance: 1234)
+        underground.section = .underground
+        underground.heightIsEstimate = false
+        underground.heightDifference = -15.4
+        XCTAssertEqual(underground.caption, "急 西馬込行 1.2km 地下 ↓15m")
+        XCTAssertEqual(underground.heightCaption, "地下 ↓15m")
+        // 自分の高さが分からない地下の列車
+        underground.heightDifference = nil
+        underground.heightIsEstimate = true
+        XCTAssertEqual(underground.caption, "急 西馬込行 1.2km 地下 高さは目安・地下鉄")
     }
 
     func testCarCenters() {
