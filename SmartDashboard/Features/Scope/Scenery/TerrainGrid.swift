@@ -93,13 +93,28 @@ struct TerrainGrid {
         return .missing
     }
 
+    /// これより粗いタイル(ズーム10以下)では、周り3×3のセルの最大値を使う(v0.9.29)。粗いタイルは細かい値をならした値なので、
+    /// そのままでは尾根や頂が低く出て、景色が平たく見えるため。保存するデータの量は変わらない
+    static let maxPoolZoom = 10
+
     func sample(latitude: Double, longitude: Double, zoom: Int) -> Sample {
         let (key, fx, fy) = TileKey.locate(latitude: latitude, longitude: longitude, zoom: zoom)
         guard let values = tiles[key] else { return .missing }
-        let i = min(Self.tileSize - 1, max(0, Int(fx * Double(Self.tileSize))))
-        let j = min(Self.tileSize - 1, max(0, Int(fy * Double(Self.tileSize))))
-        let value = values[j * Self.tileSize + i]
-        return value.isNaN ? .sea : .elevation(Double(value))
+        let size = Self.tileSize
+        let i = min(size - 1, max(0, Int(fx * Double(size))))
+        let j = min(size - 1, max(0, Int(fy * Double(size))))
+        let value = values[j * size + i]
+        // 海のセルは海のまま(海岸を沖へ広げない)
+        guard !value.isNaN else { return .sea }
+        guard zoom <= Self.maxPoolZoom else { return .elevation(Double(value)) }
+        var highest = value
+        for y in max(0, j - 1)...min(size - 1, j + 1) {
+            for x in max(0, i - 1)...min(size - 1, i + 1) {
+                let neighbor = values[y * size + x]
+                if !neighbor.isNaN, neighbor > highest { highest = neighbor }
+            }
+        }
+        return .elevation(Double(highest))
     }
 
     /// その場所に必要なタイル(半径 radius まで)

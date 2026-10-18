@@ -58,11 +58,13 @@ struct SceneryView: View {
             }
             Section {
                 SceneryLayerToggles()
-                Toggle("地点・周辺・経路・電車にも重ねる", isOn: $settings.sceneryOverlaysOthers)
+                Toggle("スコープのカメラ表示に重ねる", isOn: Binding(get: { settings.scopeLayers.contains(.scenery) }, set: { on in
+                    if on { settings.scopeLayers.insert(.scenery) } else { settings.scopeLayers.remove(.scenery) }
+                }))
             } header: {
                 Text("表示する層")
             } footer: {
-                Text("選んだ層は、景色のカメラ表示のほか、地点・周辺・経路・電車のカメラ表示にも重ねます(切り替えでオフにできます)。")
+                Text("選んだ層は、スコープのカメラ表示に重ねます(上部の「表示」でも選べます)。")
             }
             Section {
                 Picker("範囲", selection: Binding(get: { settings.sceneryRadiusKm }, set: { new in

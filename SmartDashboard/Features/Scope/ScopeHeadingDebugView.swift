@@ -11,6 +11,8 @@ struct ScopeHeadingDebugView: View {
     let viewSize: CGSize
     /// 表示している印(遠い順)。近いものの方向と、位置の誤差による方向のずれの目安を出す
     var targets: [ScopeTarget] = []
+    /// 画角と縦の目盛り、山の頂の仰角など(カメラ表示の側で作る)
+    var extraLines: [String] = []
 
     /// 表示する1行
     struct Line: Identifiable {
@@ -20,7 +22,7 @@ struct ScopeHeadingDebugView: View {
     }
 
     var body: some View {
-        let report = Self.report(tracker: tracker, attitude: attitude, viewSize: viewSize, targets: targets)
+        let report = Self.report(tracker: tracker, attitude: attitude, viewSize: viewSize, targets: targets, extraLines: extraLines)
         VStack(alignment: .leading, spacing: 2) {
             ForEach(report.lines) { line in
                 Text(line.text)
@@ -40,7 +42,7 @@ struct ScopeHeadingDebugView: View {
 
     /// 表示する行と、コンパスと30°以上違うか
     static func report(tracker: WaypointTracker, attitude: CameraAttitude, viewSize: CGSize,
-                       targets: [ScopeTarget] = []) -> (lines: [Line], warns: Bool) {
+                       targets: [ScopeTarget] = [], extraLines: [String] = []) -> (lines: [Line], warns: Bool) {
         var texts: [(String, Bool)] = []
         let diagnostics = tracker.diagnostics
 
@@ -98,6 +100,7 @@ struct ScopeHeadingDebugView: View {
         texts.append((orientation, false))
 
         texts += locationLines(tracker: tracker, attitude: attitude, targets: targets)
+        texts += extraLines.map { ($0, false) }
 
         let lines = texts.enumerated().map { Line(id: $0.offset, text: $0.element.0, emphasized: $0.element.1) }
         return (lines, warns)

@@ -4,6 +4,17 @@ import SwiftUI
 struct SceneryDrawOptions: Equatable {
     var layers: Set<SceneryLayer>
     var showsHiddenMountains: Bool
+    /// 山の高さの強調(仰角に掛ける倍率。1 なら実際の見え方)
+    var heightScale: Double = 1
+}
+
+/// 設定の「山の高さの強調」(景色の稜線・山・水面・地名の仰角に掛ける)
+enum SceneryHeightScale {
+    static let choices: [Double] = [1, 1.5, 2]
+
+    static func label(_ value: Double) -> String {
+        value == 1 ? "1倍(実際の見え方)" : String(format: "%.1f倍", value).replacingOccurrences(of: ".0倍", with: "倍")
+    }
 }
 
 /// カメラ表示の Canvas に、景色(稜線・水面の帯・川と地名・山)を描く。毎コマ、画面に入るものだけを投影して描く。
@@ -42,8 +53,9 @@ enum SceneryRenderer {
         let center = attitude.azimuth
         let limit = viewLimit(tangents: tangents)
         func inView(_ bearing: Double) -> Bool { abs(WaypointMath.difference(from: center, to: bearing)) <= limit }
+        let scale = options.heightScale
         func project(_ bearing: Double, _ angle: Double) -> CGPoint? {
-            WaypointProjection.point(bearing: bearing, elevation: angle, attitude: attitude, tangents: tangents, viewSize: size)
+            WaypointProjection.point(bearing: bearing, elevation: angle * scale, attitude: attitude, tangents: tangents, viewSize: size)
         }
 
         if options.layers.contains(.skyline) {

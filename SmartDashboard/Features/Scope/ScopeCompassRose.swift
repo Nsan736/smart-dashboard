@@ -55,7 +55,42 @@ enum ScopeCompassRose {
         return "中央 \(Int(WaypointMath.normalized(azimuth).rounded()))° → \(names[index])(\(Int(bearing))°)" + side
     }
 
+    /// 仰角の目盛り(−2°〜+10°、1°ごと。v0.9.29)。地平線(0°)は黄色の線で別に描く
+    static let rulerDegrees = Array(-2...10).filter { $0 != 0 }
+
+    /// 仰角 elevation の横線(今の向きの左右60°の範囲で、画面に入る部分)
+    static func elevationLine(_ elevation: Double, attitude: CameraAttitude, tangents: (horizontal: Double, vertical: Double), size: CGSize) -> Path {
+        var path = Path()
+        var penDown = false
+        for step in -60...60 {
+            let bearing = attitude.azimuth + Double(step)
+            guard let point = WaypointProjection.point(bearing: bearing, elevation: elevation, attitude: attitude, tangents: tangents, viewSize: size) else {
+                penDown = false
+                continue
+            }
+            if penDown { path.addLine(to: point) } else { path.move(to: point); penDown = true }
+        }
+        return path
+    }
+
+    /// 画面の中央の方角での、仰角 elevation の高さ(画面の y。画面の外なら nil)
+    static func elevationY(_ elevation: Double, attitude: CameraAttitude, tangents: (horizontal: Double, vertical: Double), size: CGSize) -> CGFloat? {
+        WaypointProjection.point(bearing: attitude.azimuth, elevation: elevation, attitude: attitude, tangents: tangents, viewSize: size)?.y
+    }
+
+    static func drawRuler(_ context: inout GraphicsContext, attitude: CameraAttitude, tangents: (horizontal: Double, vertical: Double), size: CGSize) {
+        for degrees in rulerDegrees {
+            let path = elevationLine(Double(degrees), attitude: attitude, tangents: tangents, size: size)
+            context.stroke(path, with: .color(Color.white.opacity(degrees % 5 == 0 ? 0.7 : 0.4)),
+                           style: StrokeStyle(lineWidth: degrees % 5 == 0 ? 1 : 0.6, dash: [4, 3]))
+            guard let y = elevationY(Double(degrees), attitude: attitude, tangents: tangents, size: size) else { continue }
+            let label = context.resolve(Text(String(format: "%+d°", degrees)).font(.system(size: 10, weight: .semibold)).foregroundColor(.white))
+            context.draw(label, at: CGPoint(x: size.width - 20, y: y), anchor: .center)
+        }
+    }
+
     static func draw(_ context: inout GraphicsContext, attitude: CameraAttitude, tangents: (horizontal: Double, vertical: Double), size: CGSize) {
+        drawRuler(&context, attitude: attitude, tangents: tangents, size: size)
         let line = horizon(attitude: attitude, tangents: tangents, size: size)
         context.stroke(line, with: .color(Color.black.opacity(0.5)), lineWidth: 3)
         context.stroke(line, with: .color(Color.yellow.opacity(0.9)), lineWidth: 1)

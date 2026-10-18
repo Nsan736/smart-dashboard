@@ -388,6 +388,21 @@ enum WaypointProjection {
         return (tanShort, tanShort * viewAspect)
     }
 
+    /// 映像の長辺の画角(度)。activeFormat.videoFieldOfView は歪みの補正の前の値なので、補正(geometricDistortionCorrection)が
+    /// 効いているときは、補正のあとの値(geometricDistortionCorrectedVideoFieldOfView)を使う。ズームしていれば、その分だけ狭くする
+    static func effectiveFieldOfView(format: Double, distortionCorrected: Double?, zoom: Double) -> Double {
+        let base = distortionCorrected.flatMap { $0 > 0 ? $0 : nil } ?? format
+        let half = atan(tan(base / 2 * .pi / 180) / max(zoom, 1)) * 180 / .pi
+        return half * 2
+    }
+
+    /// 画面の中央での、角度1°あたりの長さ(pt)。左右と上下(縦の目盛り)
+    static func pointsPerDegree(tangents: (horizontal: Double, vertical: Double), viewSize: CGSize) -> (horizontal: Double, vertical: Double) {
+        let one = tan(Double.pi / 180)
+        return (Double(viewSize.width) / 2 / max(tangents.horizontal, 0.0001) * one,
+                Double(viewSize.height) / 2 / max(tangents.vertical, 0.0001) * one)
+    }
+
     /// 地点の方向を、画面上の位置に変換する。elevation は仰角(度。0なら地平線上)。
     /// カメラの後ろ側にあるときと、画面の外にあるときは nil。
     static func point(bearing: Double, elevation: Double = 0, attitude: CameraAttitude,

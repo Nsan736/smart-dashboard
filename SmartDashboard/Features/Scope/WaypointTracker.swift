@@ -298,10 +298,15 @@ struct CameraStartTiming: Equatable {
 /// セッションは一度設定したら使い回す(画面を開くたびに作り直さない)。
 final class CameraWorker: @unchecked Sendable {
     struct Configuration: Sendable {
+        /// 計算に使う長辺の画角(歪みの補正とズームを考えたもの)
         var fieldOfView: Double
         var videoAspect: Double
         var seconds: TimeInterval
         var reused: Bool
+        /// デバッグ表示用: activeFormat.videoFieldOfView、補正のあとの画角(補正が効いていなければ nil)、ズーム
+        var formatFieldOfView: Double = 60
+        var correctedFieldOfView: Double?
+        var zoom: Double = 1
     }
 
     let session = AVCaptureSession()
@@ -356,7 +361,15 @@ final class CameraWorker: @unchecked Sendable {
         let format = device.activeFormat
         let dimensions = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
         var result = Configuration(fieldOfView: 60, videoAspect: 16.0 / 9.0, seconds: 0, reused: false)
-        if format.videoFieldOfView > 0 { result.fieldOfView = Double(format.videoFieldOfView) }
+        if format.videoFieldOfView > 0 { result.formatFieldOfView = Double(format.videoFieldOfView) }
+        // 歪みの補正が効いていると、映像は補正の前より少し狭く写る
+        if device.isGeometricDistortionCorrectionSupported, device.isGeometricDistortionCorrectionEnabled,
+           format.geometricDistortionCorrectedVideoFieldOfView > 0 {
+            result.correctedFieldOfView = Double(format.geometricDistortionCorrectedVideoFieldOfView)
+        }
+        result.zoom = Double(device.videoZoomFactor)
+        result.fieldOfView = WaypointProjection.effectiveFieldOfView(format: result.formatFieldOfView, distortionCorrected: result.correctedFieldOfView,
+                                                                     zoom: result.zoom)
         if dimensions.width > 0, dimensions.height > 0 {
             result.videoAspect = Double(max(dimensions.width, dimensions.height)) / Double(min(dimensions.width, dimensions.height))
         }
@@ -382,6 +395,10 @@ final class CameraController {
     /// 映像の長辺の画角(度)と、長辺÷短辺
     private(set) var fieldOfView = 60.0
     private(set) var videoAspect = 16.0 / 9.0
+    /// デバッグ表示用(`CameraWorker.Configuration`)
+    private(set) var formatFieldOfView = 60.0
+    private(set) var correctedFieldOfView: Double?
+    private(set) var zoom = 1.0
     /// 直近の起動にかかった時間(開発者向け)
     private(set) var lastTiming: CameraStartTiming?
 
@@ -421,6 +438,9 @@ final class CameraController {
         }
         fieldOfView = result.configuration.fieldOfView
         videoAspect = result.configuration.videoAspect
+        formatFieldOfView = result.configuration.formatFieldOfView
+        correctedFieldOfView = result.configuration.correctedFieldOfView
+        zoom = result.configuration.zoom
         lastTiming = CameraStartTiming(authorization: authorization, configuration: result.configuration.seconds,
                                        startRunning: result.startSeconds, reusedConfiguration: result.configuration.reused)
         state = .running
