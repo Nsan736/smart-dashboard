@@ -324,9 +324,9 @@ final class ScopeAskTests: XCTestCase {
         // 縦長の映像(720×1280)を、横に広い画面に aspectFill で出したときは、上下が切れる
         XCTAssertEqual(ScopeAskImage.visibleRect(imageSize: CGSize(width: 720, height: 1280), viewSize: CGSize(width: 400, height: 600)),
                        CGRect(x: 0, y: 100, width: 720, height: 1080))
-        // 縦長の画面では、左右が切れる
+        // 映像より縦長の画面では、左右が切れる(倍率は 800÷1280 = 0.625 なので、見える幅は 300÷0.625 = 480)
         XCTAssertEqual(ScopeAskImage.visibleRect(imageSize: CGSize(width: 720, height: 1280), viewSize: CGSize(width: 300, height: 800)),
-                       CGRect(x: 0, y: 0, width: 720, height: 1280).insetBy(dx: 60, dy: 0))
+                       CGRect(x: 120, y: 0, width: 480, height: 1280))
     }
 
     func testShapeBounds() {
