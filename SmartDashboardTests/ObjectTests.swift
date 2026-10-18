@@ -217,7 +217,8 @@ final class ObjectCodecTests: XCTestCase {
             "```json\n{\"format\":1,\"type\":\"scope-object\",\"name\":\"赤い塔\",\"shapes\":[{\"kind\":\"box\",\"width\":4,\"depth\":4,\"height\":30}]}\n```",
         ]
         var requests: [ClaudeRequest] = []
-        let outcome = try await ObjectGenerator.run(description: "高さ30mの赤い塔", model: "claude-haiku-5-5", thinking: false) { request in
+        let outcome = try await ObjectGenerator.run(description: "高さ30mの赤い塔", detail: .normal, webSearch: false,
+                                                    model: "claude-haiku-5-5", thinking: false) { request in
             requests.append(request)
             return ClaudeCallResult(response: ClaudeResponse(text: answers.removeFirst(), usage: ClaudeUsage(input: 1, output: 1),
                                                              stopReason: "end_turn", model: nil), cost: 0)
