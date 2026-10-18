@@ -10,7 +10,7 @@ iOS向けの個人用「手元ダッシュボード」アプリ。SwiftUI製。A
 
 ## 現在の状況と引き継ぎ
 
-- 最新のリリースは **v0.9.23**(2026-10-18)。**v1.0.0 は、利用者が判断したときに付ける。それまでは 0.9.x で進める**(次は v0.9.24)。勝手に 1.0.0 にしない
+- 最新のリリースは **v0.9.24**(2026-10-18)。**v1.0.0 は、利用者が判断したときに付ける。それまでは 0.9.x で進める**(次は v0.9.25)。勝手に 1.0.0 にしない
 - 新しい会話で作業を続けるときは、まず [docs/handoff.md](docs/handoff.md) を読む。次の内容をまとめてある
   - 実装済みの機能の一覧
   - 実機(iPhone SE 第2世代、LiveContainer)で確認済みの点と、まだ未確認の点。開発機は Windows で実機がないので、画面・センサー・MapKit・カメラの動作は、利用者の報告に頼っている。未確認のものを「動く」と書かない
@@ -313,14 +313,19 @@ iOS向けの個人用「手元ダッシュボード」アプリ。SwiftUI製。A
     - 位置のデバッグ: 仮想の移動の間は、仮想の位置と時刻で計算する。移動タブを離れても仮想の移動が進むように、スコープの電車の画面の表示中は `MovementStore.setVisible(true)` にする(仮想の移動の間だけ)
   - 上部の切り替え(v0.9.23): 6つになったので、セグメントではなく横にスクロールできるカプセルのボタン(最小の画面幅でも文字が切れない)
   - オブジェクト(v0.9.23、`Features/Scope/Objects`。6つめ `ScopeSection.objects`、`ScopeSightSource.objects`)
-    - 形(`ObjectShape`): 箱・円柱・円錐・球・角錐・板(縦の板)。大きさ(幅・奥行き・高さ m)、位置(形の底面の中心。x=右、y=前、z=上)、回転(形の中心のまわりに、ロール(右が下がる)→ ピッチ(前が上がる)→ ヨー(上から見て時計回り))、色(#RRGGBB)、不透明度。新しい形の初期値は赤・不透明度0.4(最後の形の色を引き継ぐ)。オブジェクト(`ScopeObject`)は形64個まで
+    - 形(`ObjectShape`): 箱・円柱・円錐・球・角錐・板(縦の板)。大きさ(幅・奥行き・高さ m)、位置(形の底面の中心。x=右、y=前、z=上)、回転(形の中心のまわりに、ロール(右が下がる)→ ピッチ(前が上がる)→ ヨー(上から見て時計回り))、色(#RRGGBB)、不透明度。新しい形の初期値は赤・不透明度0.4(最後の形の色を引き継ぐ)。オブジェクト(`ScopeObject`)は形300個まで(v0.9.24 で64個から増やした)
     - 保存(`ObjectStore`): Application Support/SmartDashboard/objects.json に、作ったものと置いたもの(`ObjectPlacement`: 位置、向き=正面の方角、地面からの高さ、倍率、地面の標高、表示・非表示)を .atomic で。キャッシュの削除では消さない。オブジェクトを消すと置いたものも消す。名前を変えると、名前を変えていない置いたものも合わせる
     - JSON(`ObjectCodec`、docs/objects-format.md): 書き出し(共有)・読み込み(貼り付け、「ファイル」)。項目ごとに確かめて、誤りを場所つきで返す(`ToolIssue`)。省略した項目は初期値
     - 編集の画面(`ObjectEditorView`): 上に SceneKit のプレビュー(`ObjectPreviewView`、allowsCameraControl で指で回す・拡大、地面の板と正面の向きの青い印、選んだ形を明るく)。形の一覧(追加・複製・削除・上へ・下へ。`ObjectShapeEditing`)、選んだ形の設定(数値の入力と、名前を左右にドラッグして変える `NumberScrubField`)、全体の色と不透明度。元に戻す・やり直し(`ObjectEditHistory`、50回まで。ドラッグは始めたときに1回記録)。SceneKit の向きは、カメラ表示の計算(`ObjectGeometry.rotate`)と同じ回転を四元数で作る(`ObjectPreviewView.orientation`)
     - 地図に置く(`ObjectListView`): 地図の長押しで置くオブジェクトを選び、置いたものの編集(`ObjectPlacementEditor`: 地図のタップで移す、向き、地面からの高さ、倍率、表示)。地面の標高は、地点と同じ国土地理院の標高API(`ElevationStore.lookup`)で、置いたとき・移したときに取る(取れなければ未取得のまま、一覧を開いたときにまた試す)。地図には足元の輪郭(全部の頂点の凸包 `ObjectGeometry.footprint` を閉じた線 `MapLine` で)
+    - 簡略化(v0.9.24、`ObjectLOD`): 画面での半径(オブジェクトの一番遠い点までの距離 × 倍率)で段階を決める。80pt以上=すべての形、25pt以上=丸い形を粗く(円柱・円錐は6角形、球は経度6×緯度3)して、画面で一番長い辺が2pt未満の形を省く、10pt以上=全体を囲む1つの箱(色は一番大きい形の色)、それ未満=リングの印。1コマ2,000面の中で、画面で大きく見えるもの(近いもの・大きいもの)から割り当て、入らなければ1段ずつ粗くする(`ObjectLOD.plan`)。面の明るさを段階に丸め、描く順で続く同じ塗りの面を1つの Path にまとめて塗る(`ObjectRenderer.batches`)。縁の線は、すべての形を描くときだけ。形の面は、粗い版・箱もオブジェクトを変えたときだけ作る
+    - 編集の画面のプレビュー(v0.9.24): 形が60個より多いときは、形の種類ごとの立体の部品と色ごとの材質を使い回し、丸い形の分割を減らし(12)、透明の描き方を1回(.aOne)にし、アンチエイリアスを切る。1秒30コマ、動かしたときだけ描く
     - カメラ表示(`ObjectRenderer`): 今の Canvas で面を塗る方法を選んだ(SceneKit を重ねる方法と比べた。理由は docs/handoff.md)。形を面に分け(丸い形は円柱・円錐が12角形、球が経度10×緯度6)、置いた向き・倍率・高さを反映し(`ObjectGeometry.placed`)、電車の車両の箱と同じ投影(`ScopeTrainRenderer.project`、奥行き1m未満の面は描かない)と、地面との高低差・地球の丸み(`WaypointElevation.curvatureDrop`)で画面に置く。全部の面を遠い順に塗る(画家のアルゴリズム。半透明の面は裏側も描くので、奥が透けて見える)。面の明るさは向きで変える(0.62〜1)。1コマ2,000面まで。画面での半径が10pt未満なら、地点と同じリングの印(`ScopeOverlay.drawMark`)。形の面はオブジェクトを変えたときだけ作る(`ObjectStore.drawItems`)。タップで名前・距離・方角・大きさ(`ObjectPlacementInfoSheet`)
     - 重ねる: 景色と同じく `ScopeExtras`(景色 → オブジェクト → 地点・電車の印の順に、同じ Canvas で描く。タップはオブジェクト → 山)。設定 `objectsOverlayOthers`(初期値オン)で、ほかの表示にも重ねる。コンパス表示では印
-    - 文章から作る(`ObjectGenerator`、`ObjectComposeView`。Claude API を設定しているときだけ): system prompt に形式を書き(プロンプトキャッシュ)、`ObjectCodec` で検証し、誤りがあれば1回だけ作り直し。保存する前にプレビュー(`ObjectConfirmSection`)
+    - 文章から作る(`ObjectGenerator`、`ObjectComposeView`。Claude API を設定しているときだけ): system prompt に形式と細かく作るコツ(実物の比率、目立つ部分を優先、くり返す部分は少しずつ変えて並べる、部分ごとの色、細い部材は細長い箱・円柱、値が初期値の項目は書かない)を書き(プロンプトキャッシュ。検索あり・なしの2通り)、`ObjectCodec`(形の数は細かさの上限)で検証し、誤りがあれば1回だけ検索なしで作り直し(長すぎて切れたときは形を減らすように頼む)。保存する前にプレビュー(`ObjectConfirmSection`)と、形の数・面の数・料金・検索の回数・参考にしたページ(タップで SFSafariViewController)
+      - 細かさ(v0.9.24、`ObjectDetail`、選んだものは AppStorage objects.composeDetail): ふつう=30形・出力8,000トークン、細かい(初期値)=100形・24,000、とても細かい=300形・56,000(形1つは省略した書き方で約40〜60トークン。思考と検索の後の文章の分を足した)。上限は依頼の文に書く(system prompt を同じにしてキャッシュを効かせる)
+      - Web 検索(v0.9.24、初期値オン、objects.composeSearch): 「撮って聞く」と同じ web_search_20250305 を max_uses 2 で。送るのは入力した文だけ(位置は送らない)。HTTP 400(このモデル・組織で使えない)なら、検索なしで1回だけ呼び直して、確認の画面に出す。pause_turn の続きと検索なしへの切り替えは、「撮って聞く」と共通の `ClaudeSearchCall` に切り出した
+      - 進み具合(v0.9.24): ストリーミング(stream: true)で受け取る(`HTTPClaudeClient.stream`、`HTTPClient.stream` は URLSession.bytes で1行ずつ、通信量の記録はそのまま)。SSE の data の行を `ClaudeStreamAccumulator` が読み、作り始めた・考えている・検索中(検索の言葉)・結果を読んでいる・形を受け取り中(文章の中の "kind" の数)を出す。受け取り終わったら、今までと同じ ClaudeResponse にまとめる(pause_turn で送り返すブロックも、思考の署名・検索の入力を入れて組み立て直す)。待つ時間は「何も届かない時間」600秒
     - 位置のデバッグ: 仮想の移動の間は、仮想の位置から見る(自分の高さは、オブジェクトの地面 + 手の高さ)
   - 景色(v0.9.22、`Features/Scope/Scenery`。上部の切り替えの5つめ `ScopeSection.scenery`、`ScopeSightSource.scenery`)。山・稜線・海と湖と川・地名の層(`SceneryLayer`、`AppSettings.sceneryLayers`。初期値は地名以外オン)。選んだ層は、景色のカメラ表示のほか、地点・周辺・経路・電車のカメラ表示にも重ねる(`sceneryOverlaysOthers`、初期値オン)。範囲は 30/50/100/150/200/300/350km(`sceneryRadiusKm`、初期値100km。利用者の判断: 50kmだと東京の中心から富士山などが入らないため。v0.9.23 で150km以上を足した。150km以上に広げるときは、今いる場所で保存するデータ量の目安 `SceneryTileStore.estimatedBytes` を出して確かめる。範囲の選択肢にも目安と、いま保存してある量を出す)
     - 山(`MountainCatalog`、`Resources/mountains.json`): 国土地理院「日本の主な山岳標高」(1003山、山頂ごとに1,059件、2026-03-31版)の CSV から、山名・山頂名・標高・緯度経度・都道府県だけを同梱(約64KB、圧縮後約22KB)。作り直すときは `python scripts/update_mountains.py`(www.gsi.go.jp は古い TLS の再ネゴシエーションを使うので、そのサーバーへの接続だけ OP_LEGACY_SERVER_CONNECT を付ける)。ベクトルタイルの山名の注記(annoCtg 312〜316)は、位置が文字の置き場所で山頂から0.7〜4kmずれ、標高もないので使わない(利用者の判断)
