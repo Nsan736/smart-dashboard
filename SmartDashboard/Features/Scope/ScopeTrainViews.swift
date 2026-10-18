@@ -16,7 +16,7 @@ enum ScopeTrainRenderer {
     struct Face {
         var points: [CGPoint]
         var color: Color
-        /// 地下の車両(半透明の輪郭線だけで描く)
+        /// 地下の車両(赤の半透明の塗りと破線の輪郭で描く)
         var isUnderground = false
     }
 
@@ -35,7 +35,7 @@ enum ScopeTrainRenderer {
         }
     }
 
-    /// 半透明の輪郭線だけで描くか(地下の区間。地面の標高が分からなくても、地下と分かっていれば輪郭線にする)
+    /// 地下の描き方(赤の半透明の塗りと破線の輪郭)で描くか。地面の標高が分からなくても、地下と分かっていれば地下の描き方にする。
     static func drawsAsOutline(_ height: TrackHeightModel.Height) -> Bool {
         height.section == .underground
     }
@@ -192,8 +192,10 @@ enum ScopeTrainRenderer {
                     path.addLines(face.points)
                     path.closeSubpath()
                     if face.isUnderground {
-                        // 地下の車両は、塗らずに半透明の破線の輪郭だけ(地面の下にいることが分かるように)
-                        context.stroke(path, with: .color(face.color.opacity(0.7)), style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+                        // 地下の車両は、赤の半透明の塗り(後ろのカメラの映像が透けて見える濃さ)と破線の輪郭
+                        context.fill(path, with: .color(ScopeUndergroundStyle.fill))
+                        context.stroke(path, with: .color(ScopeUndergroundStyle.stroke),
+                                       style: StrokeStyle(lineWidth: ScopeUndergroundStyle.lineWidth, dash: ScopeUndergroundStyle.dash))
                     } else {
                         context.fill(path, with: .color(face.color))
                         context.stroke(path, with: .color(item.outline), lineWidth: item.outlineWidth)
@@ -201,7 +203,7 @@ enum ScopeTrainRenderer {
                 }
             case .ring(let center, let inner, let arrow, let isUnderground):
                 if isUnderground {
-                    context.opacity = 0.55
+                    context.opacity = ScopeUndergroundStyle.ringOpacity
                 }
                 let ring = WaypointMarkStyle.ringDiameter
                 let line = WaypointMarkStyle.ringLineWidth
@@ -209,7 +211,7 @@ enum ScopeTrainRenderer {
                 context.fill(Path(ellipseIn: ringRect.insetBy(dx: line, dy: line)), with: .color(Color.white.opacity(0.35)))
                 let innerSize = max(inner, 14)
                 context.fill(Path(ellipseIn: CGRect(x: center.x - innerSize / 2, y: center.y - innerSize / 2, width: innerSize, height: innerSize)),
-                             with: .color(item.color))
+                             with: .color(isUnderground ? ScopeUndergroundStyle.ringInner : item.color))
                 context.stroke(Path(ellipseIn: ringRect.insetBy(dx: -0.5, dy: -0.5)), with: .color(Color.white.opacity(0.9)), lineWidth: 1)
                 // リングは黒(遅れがあれば遅れの色)
                 context.stroke(Path(ellipseIn: ringRect.insetBy(dx: line / 2, dy: line / 2)), with: .color(item.isDelayed ? item.outline : .black),
@@ -249,6 +251,19 @@ enum ScopeTrainRenderer {
         .filter { $0.gap <= 44 }
         return candidates.min { abs($0.gap - $1.gap) > 8 ? $0.gap < $1.gap : $0.distance < $1.distance }?.id
     }
+}
+
+/// 地下の区間の車両の描き方。塗りは、後ろのカメラの映像が透けて見える薄さにする。
+enum ScopeUndergroundStyle {
+    static let fillOpacity = 0.3
+    static let strokeOpacity = 0.85
+    static let fill = Color.red.opacity(fillOpacity)
+    static let stroke = Color.red.opacity(strokeOpacity)
+    static let lineWidth: CGFloat = 1.5
+    static let dash: [CGFloat] = [4, 3]
+    /// 遠い列車のリングの印(全体を少し薄くして、内側の円を赤にする)
+    static let ringOpacity = 0.75
+    static let ringInner = Color.red.opacity(0.6)
 }
 
 /// カメラの映像の上に電車を描く(1枚の Canvas。遠い列車から描くので、近い列車が手前)。タップで列車の詳細。
@@ -353,7 +368,7 @@ struct ScopeTrainsView: View {
                     Label("コンパスで見る", systemImage: "safari")
                 }
             } footer: {
-                Text("列車の位置は、移動タブと同じく、保存した時刻表から計算して遅れで補正したものです(実際の在線位置ではありません)。新しい通信はなく、遅れの取得も移動タブと同じ規則です。電車の形は、各社の公式サイトで調べた両数で、線路の高さ(高架・地上・地下)に置きます。地下の区間の車両は、破線の輪郭だけで描きます。\n\(ODPTAttributionView.heightAttribution)")
+                Text("列車の位置は、移動タブと同じく、保存した時刻表から計算して遅れで補正したものです(実際の在線位置ではありません)。新しい通信はなく、遅れの取得も移動タブと同じ規則です。電車の形は、各社の公式サイトで調べた両数で、線路の高さ(高架・地上・地下)に置きます。地下の区間の車両は、赤の半透明で描きます。\n\(ODPTAttributionView.heightAttribution)")
             }
             Section {
                 Picker("対象の路線", selection: $settings.scopeTrainTarget) {
