@@ -71,6 +71,13 @@ struct ToolSamplesView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                if let permissions = sample.tool.script?.permissions, !permissions.isEmpty {
+                    // 追加したあと、初めて開いたときに許可を求める
+                    Text("使うデータ: " + permissions.map(\.title).joined(separator: "、"))
+                        .font(.caption2)
+                        .foregroundStyle(permissions.contains(where: \.isSensitive) ? Color.orange : Color.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             Spacer(minLength: 8)
             if added {

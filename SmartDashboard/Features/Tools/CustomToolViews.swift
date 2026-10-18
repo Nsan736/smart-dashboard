@@ -203,7 +203,7 @@ struct ToolImportView: View {
                 } header: {
                     Text("読み込む")
                 } footer: {
-                    Text("URLからの取得は、このボタンを押したときだけ行います(https のみ、200KBまで)。読み込んだツールは、決まった型に中身を当てはめるだけで、通信・位置情報・カメラ・ファイル・このアプリのほかのデータには一切アクセスできません。")
+                    Text("URLからの取得は、このボタンを押したときだけ行います(https のみ、200KBまで)。読み込んだツールは、決まった型に中身を当てはめるか、決まった機能だけを使うスクリプトで、通信・カメラ・ファイルにはアクセスできません。アプリのデータを使うスクリプト型のツールは、種類ごとに許可したものだけを読めます(書き換えはできません)。")
                 }
                 if let result {
                     switch result {
@@ -343,12 +343,13 @@ struct ScriptPreviewSection: View {
             Label("スクリプトを含みます", systemImage: "curlybraces")
                 .font(.headline)
                 .foregroundStyle(.orange)
-            Text("JavaScript で動くツールです。使えるのは、アプリが渡した機能(描画、入力の部品、音、振動、このツールだけの保存領域、PNG の書き出し)だけで、通信・ファイル・位置情報・カメラ・アプリのほかのデータには触れられません。固まったときは、閉じるボタンで打ち切れます。")
+            Text("JavaScript で動くツールです。使えるのは、アプリが渡した機能(描画、入力の部品、音、振動、このツールだけの保存領域、PNG の書き出し、許可したアプリのデータの読み取り)だけで、通信・ファイル・カメラには触れられず、アプリのデータを書き換えることもできません。固まったときは、閉じるボタンで打ち切れます。")
                 .font(.footnote)
                 .fixedSize(horizontal: false, vertical: true)
             LabeledContent("コードの長さ", value: "\(content?.script.count ?? 0)文字")
             LabeledContent("入力の部品", value: "\(content?.controls.count ?? 0)個")
             LabeledContent("1秒あたりのコマ", value: "\(content?.fps ?? ScriptToolContent.defaultFPS)")
+            LabeledContent("使うアプリのデータ", value: (content?.permissions.isEmpty ?? true) ? "なし" : "\(content?.permissions.count ?? 0)種類(下の一覧)")
             DisclosureGroup("コードを見る", isExpanded: $showsCode) {
                 let script = content?.script ?? ""
                 Text(String(script.prefix(Self.shownLength)) + (script.count > Self.shownLength ? "\n…(以下略)" : ""))
@@ -364,6 +365,7 @@ struct ScriptPreviewSection: View {
         } header: {
             Text("スクリプト")
         }
+        ScriptPermissionSummarySection(permissions: content?.permissions ?? [])
         .sheet(isPresented: $isPreviewing) {
             NavigationStack {
                 ScriptToolView(tool: tool, isPreview: true)

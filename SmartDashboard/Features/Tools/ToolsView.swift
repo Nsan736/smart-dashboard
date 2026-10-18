@@ -7,6 +7,7 @@ struct ToolScreen: View {
     @State private var isEditing = false
     @State private var isRevising = false
     @State private var confirmDelete = false
+    @State private var showsPermissions = false
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -34,6 +35,13 @@ struct ToolScreen: View {
                             } label: {
                                 Label("文章で直す(Claude)", systemImage: "text.bubble")
                             }
+                            if let permissions = currentCustom(custom).script?.permissions, !permissions.isEmpty {
+                                Button {
+                                    showsPermissions = true
+                                } label: {
+                                    Label("データの許可", systemImage: "hand.raised")
+                                }
+                            }
                             Button(role: .destructive) {
                                 confirmDelete = true
                             } label: {
@@ -50,6 +58,12 @@ struct ToolScreen: View {
                     ToolImportView(json: env.tools.customSources[custom.id] ?? "", editingID: custom.id)
                 }
             }
+            .sheet(isPresented: $showsPermissions) {
+                if case .custom(let custom) = tool.source {
+                    let current = currentCustom(custom)
+                    ScriptPermissionSettingsView(toolID: current.id, toolName: current.name, requested: current.script?.permissions ?? [])
+                }
+            }
             .sheet(isPresented: $isRevising) {
                 if case .custom(let custom) = tool.source {
                     ToolComposeView(mode: .revise(json: env.tools.customSources[custom.id] ?? "", id: custom.id))
@@ -63,12 +77,17 @@ struct ToolScreen: View {
             }
     }
 
+    /// 編集して保存したあとの、新しい内容
+    private func currentCustom(_ custom: CustomTool) -> CustomTool {
+        env.tools.customTools.first { $0.id == custom.id } ?? custom
+    }
+
     @ViewBuilder
     private var content: some View {
         switch tool.source {
         case .custom(let custom):
             // 編集して保存したら、新しい内容で表示する
-            CustomToolRunner(tool: env.tools.customTools.first { $0.id == custom.id } ?? custom)
+            CustomToolRunner(tool: currentCustom(custom))
         case .builtin(let builtin):
             switch builtin {
             case .timer: TimerTabView(initialMode: 0)

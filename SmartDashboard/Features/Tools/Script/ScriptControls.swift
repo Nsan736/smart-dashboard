@@ -159,6 +159,8 @@ struct ScriptToolContent: Equatable {
     var fps: Int
     /// キャンバスの幅÷高さ。nil なら、空いている場所いっぱい。
     var aspect: Double?
+    /// 読みたいアプリのデータの種類(JSON の permissions)。書いていない種類は、許可を求めずに常に null。
+    var permissions: [ScriptPermission] = []
 
     /// JSON の辞書から読む(CustomToolParser から呼ぶ)
     static func parse(_ root: [String: Any], issues: inout [ToolIssue]) -> ScriptToolContent {
@@ -204,6 +206,7 @@ struct ScriptToolContent: Equatable {
                 issues.append(ToolIssue(path: "fps", message: "15〜60の整数にしてください"))
             }
         }
+        content.permissions = ScriptPermission.parse(root["permissions"], issues: &issues)
         if let raw = root["aspect"] {
             if let aspect = raw as? NSNumber, CFGetTypeID(aspect) != CFBooleanGetTypeID(), (0.25...4).contains(aspect.doubleValue) {
                 content.aspect = aspect.doubleValue

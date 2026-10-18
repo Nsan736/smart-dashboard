@@ -164,7 +164,6 @@ final class AppSettings {
     var scopeElevatedHeight: Double {
         didSet { defaults.set(scopeElevatedHeight, forKey: Keys.scopeElevatedHeight) }
     }
-    /// スコープの電車: 地下の線路の、地面からの深さの目安(m、初期値15)
     /// スクリプト型のツールを、すべて止める(安全のための切り替え。初期値はオフ)
     var scriptToolsStopped: Bool {
         didSet { defaults.set(scriptToolsStopped, forKey: Keys.scriptToolsStopped) }
@@ -173,11 +172,16 @@ final class AppSettings {
     var disabledScriptTools: [String] {
         didSet { defaults.set(disabledScriptTools, forKey: Keys.disabledScriptTools) }
     }
+    /// スクリプト型のツールごとの、アプリのデータを読む許可(ツールの画面の「データの許可」で変えられる)
+    var scriptPermissions: ScriptPermissionGrants {
+        didSet { saveJSON(scriptPermissions, forKey: Keys.scriptPermissions) }
+    }
 
     /// Claude API の設定(モデル、料金、上限、思考、カメラの質問で送る情報)。APIキーは Keychain。
     var claude: ClaudeSettings {
         didSet { saveJSON(claude, forKey: Keys.claude) }
     }
+    /// スコープの電車: 地下の線路の、地面からの深さの目安(m、初期値15)
     var scopeUndergroundDepth: Double {
         didSet { defaults.set(scopeUndergroundDepth, forKey: Keys.scopeUndergroundDepth) }
     }
@@ -259,6 +263,7 @@ final class AppSettings {
         claude = Self.loadJSON(ClaudeSettings.self, from: defaults, forKey: Keys.claude) ?? ClaudeSettings()
         scriptToolsStopped = defaults.bool(forKey: Keys.scriptToolsStopped)
         disabledScriptTools = defaults.stringArray(forKey: Keys.disabledScriptTools) ?? []
+        scriptPermissions = Self.loadJSON(ScriptPermissionGrants.self, from: defaults, forKey: Keys.scriptPermissions) ?? ScriptPermissionGrants()
         nearbyRadius = NearbyRadius.clamped(defaults.object(forKey: Keys.nearbyRadius) as? Int ?? NearbyRadius.initial)
         nearbyCategories = NearbyCategory.normalizedOrder(defaults.stringArray(forKey: Keys.nearbyCategories))
         tabOrder = TabOrder.decode(defaults.stringArray(forKey: Keys.tabOrder))
@@ -326,6 +331,7 @@ final class AppSettings {
         static let claude = "claude.settings"
         static let scriptToolsStopped = "tools.scriptStopped"
         static let disabledScriptTools = "tools.scriptDisabled"
+        static let scriptPermissions = "tools.scriptPermissions"
         static let nearbyRadius = "scope.nearbyRadius"
         static let nearbyCategories = "scope.nearbyCategories"
         static let tabOrder = "tabs.order"

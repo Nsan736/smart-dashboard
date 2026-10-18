@@ -179,6 +179,8 @@ final class ToolLibrary {
     @ObservationIgnored let runGuard: ScriptRunGuard
     /// ツールごとの保存領域(Application Support/script-storage/)
     @ObservationIgnored let scriptStorageDirectory: URL
+    /// 読み込んだツールを削除したとき(データの許可の記録を消すのに使う)
+    @ObservationIgnored var onDeleteCustom: ((String) -> Void)?
 
     static let maxRecents = 8
     private static let favoritesKey = "tools.favorites"
@@ -231,6 +233,7 @@ final class ToolLibrary {
     }
 
     func delete(customID: String) {
+        onDeleteCustom?(customID)
         customSources[customID] = nil
         let descriptorID = "custom." + customID
         favorites.removeAll { $0 == descriptorID }

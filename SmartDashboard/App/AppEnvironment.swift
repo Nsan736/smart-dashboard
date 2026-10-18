@@ -165,7 +165,10 @@ final class AppEnvironment {
         waypointStore.onNeedsElevation = { [weak elevationStore] id in
             Task { await elevationStore?.fetchElevation(for: id) }
         }
-        tools = ToolLibrary(fileURL: support.appendingPathComponent("custom-tools.json"))
+        let toolLibrary = ToolLibrary(fileURL: support.appendingPathComponent("custom-tools.json"))
+        // ツールを削除したら、データの許可の記録も消す
+        toolLibrary.onDeleteCustom = { [weak settings] id in settings?.scriptPermissions.reset(toolID: id) }
+        tools = toolLibrary
         let keeper = BackgroundKeeper(settings: settings)
         self.keeper = keeper
         keeper.onStateChange = { [weak recorder] state in
