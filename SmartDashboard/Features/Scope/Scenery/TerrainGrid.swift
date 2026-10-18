@@ -137,10 +137,8 @@ enum GSIElevationTile {
         let size = TerrainGrid.tileSize
         let bytesPerRow = image.bytesPerRow
         var result = [Float](repeating: .nan, count: size * size)
-        if image.colorSpace?.model == .indexed, let space = image.colorSpace, space.colorTableCount > 0 {
-            // 色の数が少ないタイルは、パレットの PNG になっていることがある
-            var table = [UInt8](repeating: 0, count: space.colorTableCount * 3)
-            space.copyColorTable(&table)
+        if image.colorSpace?.model == .indexed, let table = image.colorSpace?.colorTable, !table.isEmpty {
+            // 色の数が少ないタイルは、パレットの PNG になっていることがある(table は RGB の並び)
             guard image.bitsPerPixel == 8 else { return nil }
             for y in 0..<size {
                 for x in 0..<size {
