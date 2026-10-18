@@ -52,6 +52,32 @@ TOOLS = {
             {"id": "export", "type": "button", "label": "PNGで書き出す(512×512)"},
         ],
     },
+    "weather-board": {
+        "name": "自分好みの天気", "icon": "cloud.sun", "category": "other", "fps": 15,
+        "description": "アプリが取得した天気と警報を、自分好みの形で表示します(アプリのデータを読むサンプル)",
+        "keywords": ["てんき", "天気", "気温", "警報"],
+        "permissions": ["weather"],
+        "controls": [{"id": "hours", "type": "choice", "label": "表示する時間", "options": ["12", "24", "48"], "value": "24"}],
+    },
+    "next-train": {
+        "name": "次の電車のカウントダウン", "icon": "tram", "category": "time", "fps": 15,
+        "description": "登録した駅の次の電車までの時間を、秒まで数えます(アプリのデータを読むサンプル)",
+        "keywords": ["でんしゃ", "電車", "発車", "時刻表", "カウントダウン"],
+        "permissions": ["trains"],
+    },
+    "place-compass": {
+        "name": "地点を指すコンパス", "icon": "location.north.circle", "category": "measure",
+        "description": "登録した地点の方向を、端末の方位に合わせて矢印で指します(アプリのデータとセンサーを使うサンプル)",
+        "keywords": ["こんぱす", "方位", "方角", "地点"],
+        "permissions": ["places", "sensors"],
+    },
+    "pressure-graph": {
+        "name": "気圧の小さなグラフ", "icon": "barometer", "category": "measure", "fps": 15,
+        "description": "記録した気圧と予報を、前後24時間の小さなグラフにします(アプリのデータを読むサンプル)",
+        "keywords": ["きあつ", "気圧", "グラフ", "頭痛"],
+        "permissions": ["pressure"],
+        "aspect": 1.6,
+    },
     "tap-target": {
         "name": "的あてゲーム", "icon": "target", "category": "play",
         "description": "30秒で、出てくる的をタップします。最高点を保存します(スクリプト型のサンプル)",
@@ -64,7 +90,7 @@ TOOLS = {
 def build(name, meta):
     script = open(os.path.join(ROOT, "examples", "tools", "src", name + ".js"), encoding="utf-8").read()
     tool = {"format": 1, "id": name, "name": meta["name"], "type": "script"}
-    for key in ("description", "icon", "category", "keywords", "fps", "aspect", "controlsPosition", "controls"):
+    for key in ("description", "icon", "category", "keywords", "permissions", "fps", "aspect", "controlsPosition", "controls"):
         if key in meta:
             tool[key] = meta[key]
     tool["script"] = script

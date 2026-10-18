@@ -1,0 +1,33 @@
+{
+  "format": 1,
+  "id": "weather-board",
+  "name": "自分好みの天気",
+  "type": "script",
+  "description": "アプリが取得した天気と警報を、自分好みの形で表示します(アプリのデータを読むサンプル)",
+  "icon": "cloud.sun",
+  "category": "other",
+  "keywords": [
+    "てんき",
+    "天気",
+    "気温",
+    "警報"
+  ],
+  "permissions": [
+    "weather"
+  ],
+  "fps": 15,
+  "controls": [
+    {
+      "id": "hours",
+      "type": "choice",
+      "label": "表示する時間",
+      "options": [
+        "12",
+        "24",
+        "48"
+      ],
+      "value": "24"
+    }
+  ],
+  "script": "// 自分好みの天気の表示: アプリが取得した天気(app.weather)と警報(app.warnings)を読むだけで、通信はしない。データが変わったときだけ描き直す。\nvar weather = null, warnings = null, hours = 24;\nvar dirty = true, lastKey = '', lastMinute = -1;\n\nfunction setup() {\n  weather = app.weather;\n  warnings = app.warnings;\n}\n\nfunction onData(kind) {\n  if (kind === 'weather') weather = app.weather;\n  if (kind === 'warnings') warnings = app.warnings;\n  dirty = true;\n}\n\nfunction onInput(name, value) {\n  if (name === 'hours') {\n    hours = parseInt(value, 10) || 24;\n    dirty = true;\n  }\n}\n\nfunction frame() {\n  var key = screen.width + 'x' + screen.height + (screen.dark ? 'd' : 'l');\n  var minute = Math.floor(Date.now() / 60000);\n  if (key !== lastKey || minute !== lastMinute) { lastKey = key; lastMinute = minute; dirty = true; }\n  if (!dirty) return;\n  dirty = false;\n  draw();\n}\n\nfunction colors() {\n  return screen.dark\n    ? { bg: '#000000', fg: '#f2f2f7', sub: '#98989f', grid: '#2c2c2e', temp: '#ff9f0a', rain: '#0a84ff' }\n    : { bg: '#ffffff', fg: '#1c1c1e', sub: '#6c6c70', grid: '#e5e5ea', temp: '#ff8c00', rain: '#007aff' };\n}\n\nfunction ago(ms) {\n  var m = Math.max(0, Math.round((Date.now() - ms) / 60000));\n  if (m < 1) return 'たった今';\n  if (m < 60) return m + '分前';\n  if (m < 1440) return Math.floor(m / 60) + '時間前';\n  return Math.floor(m / 1440) + '日前';\n}\n\nfunction wrap(text, x, y, width, lineHeight, maxLines) {\n  var line = '', lines = 0;\n  for (var i = 0; i < text.length; i++) {\n    var next = line + text[i];\n    if (line && ctx.measureText(next).width > width) {\n      ctx.fillText(line, x, y + lines * lineHeight);\n      lines++;\n      line = text[i];\n      if (lines >= maxLines) return lines;\n    } else {\n      line = next;\n    }\n  }\n  if (line) { ctx.fillText(line, x, y + lines * lineHeight); lines++; }\n  return lines;\n}\n\nfunction levelColor(level) {\n  if (level >= 50) return '#000000';\n  if (level >= 40) return '#a020f0';\n  if (level >= 30) return '#ff3b30';\n  return '#f5c400';\n}\n\nfunction draw() {\n  var c = colors(), W = screen.width, H = screen.height;\n  ctx.fillStyle = c.bg;\n  ctx.fillRect(0, 0, W, H);\n  ctx.textAlign = 'left';\n  ctx.textBaseline = 'top';\n  if (!weather) {\n    ctx.fillStyle = c.fg;\n    ctx.font = 'bold 18px sans-serif';\n    ctx.fillText('天気のデータがありません', 16, 24);\n    ctx.fillStyle = c.sub;\n    ctx.font = '14px sans-serif';\n    var allowed = app.permissions && app.permissions.weather;\n    wrap(allowed ? '天気タブで取得すると、ここに出ます(このツールは通信しません)。'\n                 : '「天気」のデータを許可していません。ツールの画面の「その他」→「データの許可」で変えられます。',\n         16, 54, W - 32, 20, 4);\n    return;\n  }\n  var now = weather.current;\n  ctx.fillStyle = c.fg;\n  ctx.font = 'bold 56px sans-serif';\n  ctx.fillText(Math.round(now.temperature) + '°', 16, 12);\n  var tempWidth = ctx.measureText(Math.round(now.temperature) + '°').width;\n  ctx.font = 'bold 20px sans-serif';\n  ctx.fillText(now.label, 24 + tempWidth, 22);\n  ctx.font = '14px sans-serif';\n  ctx.fillStyle = c.sub;\n  ctx.fillText('体感 ' + Math.round(now.apparentTemperature) + '°', 24 + tempWidth, 50);\n  ctx.fillText('湿度 ' + Math.round(now.humidity) + '%  風 ' + now.windSpeed + 'm/s', 16, 80);\n  ctx.fillText((weather.place ? weather.place + '・' : '') + ago(weather.fetchedAt) + 'の情報', 16, 100);\n\n  var y = 126;\n  if (weather.rain && weather.rain.headline) {\n    ctx.fillStyle = c.rain;\n    ctx.font = 'bold 15px sans-serif';\n    y += wrap(weather.rain.headline, 16, y, W - 32, 20, 2) * 20 + 4;\n  }\n\n  var items = warnings && warnings.items ? warnings.items : [];\n  if (items.length) {\n    ctx.font = 'bold 13px sans-serif';\n    var x = 16;\n    for (var i = 0; i < items.length && i < 8; i++) {\n      var label = items[i].name;\n      var w = ctx.measureText(label).width + 16;\n      if (x + w > W - 16) { x = 16; y += 26; }\n      ctx.fillStyle = levelColor(items[i].level);\n      ctx.fillRect(x, y, w, 22);\n      ctx.fillStyle = items[i].level >= 30 ? '#ffffff' : '#000000';\n      ctx.fillText(label, x + 8, y + 4);\n      x += w + 6;\n    }\n    y += 32;\n  }\n\n  var list = weather.hourly.filter(function (h) { return h.time > Date.now() - 3600000; }).slice(0, hours);\n  var top = y + 8, bottom = H - 28, left = 16, right = W - 16;\n  if (list.length < 2 || bottom - top < 80) return;\n  var temps = list.map(function (h) { return h.temperature; }).filter(function (v) { return v !== null; });\n  var lo = Math.floor(Math.min.apply(null, temps)) - 1, hi = Math.ceil(Math.max.apply(null, temps)) + 1;\n  var step = (right - left) / (list.length - 1);\n  function px(i) { return left + i * step; }\n  function py(v) { return bottom - (v - lo) / (hi - lo) * (bottom - top); }\n\n  ctx.strokeStyle = c.grid;\n  ctx.lineWidth = 1;\n  ctx.beginPath();\n  ctx.moveTo(left, bottom); ctx.lineTo(right, bottom);\n  ctx.stroke();\n\n  ctx.fillStyle = c.rain;\n  ctx.globalAlpha = 0.25;\n  for (var j = 0; j < list.length; j++) {\n    var p = list[j].precipitationProbability || 0;\n    var bh = p / 100 * (bottom - top) * 0.6;\n    ctx.fillRect(px(j) - step * 0.35, bottom - bh, step * 0.7, bh);\n  }\n  ctx.globalAlpha = 1;\n\n  ctx.strokeStyle = c.temp;\n  ctx.lineWidth = 2.5;\n  ctx.beginPath();\n  var started = false;\n  for (var k = 0; k < list.length; k++) {\n    if (list[k].temperature === null) continue;\n    if (!started) { ctx.moveTo(px(k), py(list[k].temperature)); started = true; } else { ctx.lineTo(px(k), py(list[k].temperature)); }\n  }\n  ctx.stroke();\n\n  var every = list.length > 30 ? 6 : list.length > 14 ? 3 : 2;\n  ctx.font = '11px sans-serif';\n  ctx.textAlign = 'center';\n  for (var n = 0; n < list.length; n += every) {\n    var d = new Date(list[n].time);\n    ctx.fillStyle = c.sub;\n    ctx.textBaseline = 'top';\n    ctx.fillText(d.getHours() + '時', px(n), bottom + 6);\n    if (list[n].temperature !== null) {\n      ctx.fillStyle = c.fg;\n      ctx.textBaseline = 'bottom';\n      ctx.fillText(Math.round(list[n].temperature) + '°', px(n), py(list[n].temperature) - 4);\n    }\n  }\n}\n"
+}

@@ -1,0 +1,21 @@
+{
+  "format": 1,
+  "id": "pressure-graph",
+  "name": "気圧の小さなグラフ",
+  "type": "script",
+  "description": "記録した気圧と予報を、前後24時間の小さなグラフにします(アプリのデータを読むサンプル)",
+  "icon": "barometer",
+  "category": "measure",
+  "keywords": [
+    "きあつ",
+    "気圧",
+    "グラフ",
+    "頭痛"
+  ],
+  "permissions": [
+    "pressure"
+  ],
+  "fps": 15,
+  "aspect": 1.6,
+  "script": "// 気圧の小さなグラフ: 端末で記録した気圧(実線)と予報(点線)を、前後24時間で描く(app.pressure)。データが変わったときだけ描き直す。\nvar pressure = null, dirty = true, lastKey = '', lastMinute = -1;\n\nfunction setup() { pressure = app.pressure; }\n\nfunction onData(kind) {\n  if (kind === 'pressure') { pressure = app.pressure; dirty = true; }\n}\n\nfunction frame() {\n  var key = screen.width + 'x' + screen.height + (screen.dark ? 'd' : 'l');\n  var minute = Math.floor(Date.now() / 60000);\n  if (key !== lastKey || minute !== lastMinute) { lastKey = key; lastMinute = minute; dirty = true; }\n  if (!dirty) return;\n  dirty = false;\n  draw();\n}\n\nfunction draw() {\n  var dark = screen.dark, W = screen.width, H = screen.height;\n  var fg = dark ? '#f2f2f7' : '#1c1c1e', sub = dark ? '#98989f' : '#6c6c70', grid = dark ? '#2c2c2e' : '#e5e5ea';\n  var blue = dark ? '#0a84ff' : '#007aff';\n  ctx.fillStyle = dark ? '#000000' : '#ffffff';\n  ctx.fillRect(0, 0, W, H);\n  ctx.textAlign = 'left';\n  ctx.textBaseline = 'top';\n  if (!pressure) {\n    ctx.fillStyle = sub;\n    ctx.font = '15px sans-serif';\n    ctx.fillText(app.permissions && app.permissions.pressure ? '気圧のデータがまだありません' : '「気圧」のデータを許可していません', 16, 24);\n    return;\n  }\n  ctx.fillStyle = fg;\n  ctx.font = 'bold 40px sans-serif';\n  ctx.fillText(pressure.latest === null ? '--' : pressure.latest.toFixed(1), 16, 12);\n  var w = ctx.measureText(pressure.latest === null ? '--' : pressure.latest.toFixed(1)).width;\n  ctx.font = '16px sans-serif';\n  ctx.fillText('hPa', 22 + w, 32);\n  var change = pressure.change3h;\n  if (change) {\n    ctx.fillStyle = change.delta <= -3 ? '#ff9500' : sub;\n    ctx.font = 'bold 15px sans-serif';\n    ctx.fillText(change.text, 16, 62);\n  }\n\n  var now = Date.now(), from = now - 24 * 3600000, to = now + 24 * 3600000;\n  var measured = pressure.measured.filter(function (p) { return p.time >= from && p.hPa !== null; });\n  var forecast = pressure.forecast.filter(function (p) { return p.time >= from && p.time <= to && p.hPa !== null; });\n  var values = measured.concat(forecast).map(function (p) { return p.hPa; });\n  if (!values.length) return;\n  var lo = Math.min.apply(null, values), hi = Math.max.apply(null, values);\n  var mid = (lo + hi) / 2, span = Math.max(hi - lo + 2, 6);\n  lo = Math.floor(mid - span / 2); hi = Math.ceil(mid + span / 2);\n  var left = 44, right = W - 12, top = 92, bottom = H - 26;\n  if (bottom - top < 60) return;\n  function px(t) { return left + (t - from) / (to - from) * (right - left); }\n  function py(v) { return bottom - (v - lo) / (hi - lo) * (bottom - top); }\n\n  ctx.font = '11px sans-serif';\n  ctx.textAlign = 'right';\n  ctx.textBaseline = 'middle';\n  var stepHPa = hi - lo > 12 ? 4 : 2;\n  for (var v = Math.ceil(lo / stepHPa) * stepHPa; v <= hi; v += stepHPa) {\n    ctx.strokeStyle = grid;\n    ctx.lineWidth = 1;\n    ctx.beginPath(); ctx.moveTo(left, py(v)); ctx.lineTo(right, py(v)); ctx.stroke();\n    ctx.fillStyle = sub;\n    ctx.fillText(String(v), left - 6, py(v));\n  }\n  ctx.strokeStyle = sub;\n  ctx.setLineDash([3, 3]);\n  ctx.beginPath(); ctx.moveTo(px(now), top); ctx.lineTo(px(now), bottom); ctx.stroke();\n  ctx.setLineDash([]);\n  ctx.textAlign = 'center';\n  ctx.textBaseline = 'top';\n  ctx.fillStyle = sub;\n  ctx.fillText('24時間前', left + 24, bottom + 6);\n  ctx.fillText('今', px(now), bottom + 6);\n  ctx.fillText('24時間後', right - 24, bottom + 6);\n\n  function line(points, color, width, dash) {\n    if (points.length < 2) return;\n    ctx.strokeStyle = color;\n    ctx.lineWidth = width;\n    ctx.setLineDash(dash);\n    ctx.beginPath();\n    ctx.moveTo(px(points[0].time), py(points[0].hPa));\n    for (var i = 1; i < points.length; i++) ctx.lineTo(px(points[i].time), py(points[i].hPa));\n    ctx.stroke();\n    ctx.setLineDash([]);\n  }\n  line(forecast.filter(function (p) { return p.time >= now - 3600000; }), sub, 2, [5, 4]);\n  line(measured, blue, 2.5, []);\n}\n"
+}
