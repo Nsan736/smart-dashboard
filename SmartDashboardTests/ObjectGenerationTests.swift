@@ -15,7 +15,7 @@ final class ObjectGenerationTests: XCTestCase {
     }
 
     func testDetailLimits() {
-        XCTAssertEqual(ObjectDetail.initial, .detailed)
+        XCTAssertEqual(ObjectDetail.initial, .veryDetailed)
         XCTAssertEqual(ObjectDetail.allCases.map(\.maxShapes), [30, 100, 300])
         XCTAssertEqual(ObjectDetail.allCases.map(\.maxTokens), [8_000, 24_000, 56_000])
         XCTAssertEqual(ObjectDetail.allCases.map(\.label), ["ふつう", "細かい", "とても細かい"])
