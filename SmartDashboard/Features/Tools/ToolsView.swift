@@ -5,6 +5,7 @@ struct ToolScreen: View {
     @Environment(AppEnvironment.self) private var env
     let tool: ToolDescriptor
     @State private var isEditing = false
+    @State private var isRevising = false
     @State private var confirmDelete = false
     @Environment(\.dismiss) private var dismiss
 
@@ -28,6 +29,11 @@ struct ToolScreen: View {
                             } label: {
                                 Label("JSONを編集", systemImage: "pencil")
                             }
+                            Button {
+                                isRevising = true
+                            } label: {
+                                Label("文章で直す(Claude)", systemImage: "text.bubble")
+                            }
                             Button(role: .destructive) {
                                 confirmDelete = true
                             } label: {
@@ -42,6 +48,11 @@ struct ToolScreen: View {
             .sheet(isPresented: $isEditing) {
                 if case .custom(let custom) = tool.source {
                     ToolImportView(json: env.tools.customSources[custom.id] ?? "", editingID: custom.id)
+                }
+            }
+            .sheet(isPresented: $isRevising) {
+                if case .custom(let custom) = tool.source {
+                    ToolComposeView(mode: .revise(json: env.tools.customSources[custom.id] ?? "", id: custom.id))
                 }
             }
             .confirmationDialog("このツールを削除しますか", isPresented: $confirmDelete, titleVisibility: .visible) {
@@ -94,6 +105,7 @@ struct ToolsView: View {
     @Environment(AppEnvironment.self) private var env
     @State private var query = ""
     @State private var isImporting = false
+    @State private var isComposing = false
 
     var body: some View {
         let library = env.tools
@@ -128,14 +140,20 @@ struct ToolsView: View {
                     } label: {
                         Label("JSONのツールを読み込む", systemImage: "square.and.arrow.down")
                     }
+                    Button {
+                        isComposing = true
+                    } label: {
+                        Label("文章から作る(Claude)", systemImage: "text.bubble")
+                    }
                 } footer: {
-                    Text("長押しで、お気に入りに追加・削除できます。お気に入りは、ホームの「小ツール」カードにも出せます。JSONの形式は、リポジトリの docs/tools-format.md にあります。")
+                    Text("長押しで、お気に入りに追加・削除できます。お気に入りは、ホームの「小ツール」カードにも出せます。JSONの形式は、リポジトリの docs/tools-format.md にあります。「文章から作る」は Claude API を使います(APIキーは設定の「Claude API」で入力)。")
                 }
             }
             .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "名前・説明・キーワードで探す")
             .navigationTitle("小ツール")
             .navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented: $isImporting) { ToolImportView() }
+            .sheet(isPresented: $isComposing) { ToolComposeView(mode: .create) }
         }
     }
 
