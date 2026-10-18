@@ -128,7 +128,7 @@ final class ScopeLayerTests: XCTestCase {
         // グループ
         XCTAssertEqual(ScopeLayerGroup.marks.layers, [.places, .nearby, .objects])
         XCTAssertEqual(ScopeLayerGroup.movement.layers, [.route, .trains])
-        XCTAssertEqual(ScopeLayerGroup.sky.layers, [.scenery])
+        XCTAssertEqual(ScopeLayerGroup.sky.layers, [.scenery, .sunMoon])
         XCTAssertEqual(ScopeLayerPreset.all.first { $0.name == "歩く" }?.layers, [.places, .route])
         XCTAssertEqual(ScopeLayerPreset.all.first { $0.name == "電車" }?.layers, [.trains, .places])
         XCTAssertEqual(ScopeSightSource.places(selectedID: nil).layer, .places)
