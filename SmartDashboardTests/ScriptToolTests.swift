@@ -349,7 +349,8 @@ final class ScriptSupportTests: XCTestCase {
 
 /// スクリプト型の形式の読み取り、サンプル、試しの実行、Claude での作り直し
 final class ScriptToolFormatTests: XCTestCase {
-    static let samples = ["analog_clock", "bouncing_ball", "fireworks", "pixel_walker", "pattern_maker", "tap_target"]
+    static let samples = ["analog_clock", "bouncing_ball", "fireworks", "pixel_walker", "pattern_maker", "tap_target",
+                          "weather_board", "next_train", "place_compass", "pressure_graph"]
 
     private func sample(_ name: String) throws -> CustomTool {
         let json = try XCTUnwrap(String(data: Fixture.data("tool_script_" + name), encoding: .utf8))

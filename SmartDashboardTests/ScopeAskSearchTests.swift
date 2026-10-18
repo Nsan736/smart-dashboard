@@ -280,10 +280,12 @@ final class ScopeAskPlaceTests: XCTestCase {
 
     func testBundledSamples() {
         let samples = ToolSampleCatalog.bundled
-        // examples/tools の11個(計算・表・チェックリスト・リストの5つと、スクリプト型の6つ)
-        XCTAssertEqual(samples.count, 11)
+        // examples/tools の15個(計算・表・チェックリスト・リストの5つと、スクリプト型の10個。そのうち4つはアプリのデータを使う)
+        XCTAssertEqual(samples.count, 15)
         XCTAssertEqual(Set(samples.map(\.tool.id)).count, samples.count)
-        XCTAssertEqual(samples.filter { $0.tool.kind == .script }.count, 6)
+        XCTAssertEqual(samples.filter { $0.tool.kind == .script }.count, 10)
+        XCTAssertEqual(samples.filter { !($0.tool.script?.permissions.isEmpty ?? true) }.map(\.tool.id).sorted(),
+                       ["next-train", "place-compass", "pressure-graph", "weather-board"])
         XCTAssertTrue(samples.contains { $0.tool.id == "fuel-economy" })
         XCTAssertEqual(ToolSampleCatalog.load(Data("壊れた".utf8)), [])
     }
