@@ -314,7 +314,8 @@ final class ScriptSensorHub: NSObject, CLLocationManagerDelegate {
     }
 
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateHeading newHeading: CLHeading) {
-        let degrees = newHeading.trueHeading >= 0 ? newHeading.trueHeading : newHeading.magneticHeading
+        // 方角の手動補正を足す
+        let degrees = HeadingCorrection.apply(newHeading.trueHeading >= 0 ? newHeading.trueHeading : newHeading.magneticHeading)
         let accuracy = newHeading.headingAccuracy >= 0 ? newHeading.headingAccuracy : nil
         let time = newHeading.timestamp
         MainActor.assumeIsolated {

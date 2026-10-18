@@ -242,6 +242,16 @@ final class AppSettings {
         didSet { defaults.set(movementDebugEnabled, forKey: Keys.movementDebugEnabled) }
     }
 
+    /// 方角の補正(度、−180〜180、時計回りが正)。端末の方角を使うすべての所に足す(`HeadingCorrection`)
+    var headingOffset: Double {
+        didSet {
+            // 範囲の外の値は、保存と反映のときに丸める(画面の側も丸めた値を入れる)
+            let normalized = HeadingCorrection.normalized(headingOffset)
+            defaults.set(normalized, forKey: HeadingCorrection.defaultsKey)
+            HeadingCorrection.current = normalized
+        }
+    }
+
     /// 開発者向け: スコープのカメラ表示に方角のデバッグ表示を出す(初期値はオフ)
     var headingDebugEnabled: Bool {
         didSet { defaults.set(headingDebugEnabled, forKey: Keys.headingDebugEnabled) }
@@ -310,6 +320,8 @@ final class AppSettings {
         movementRetention = defaults.string(forKey: Keys.movementRetention).flatMap(MovementRetention.init(rawValue:)) ?? .today
         movementDebugEnabled = defaults.bool(forKey: Keys.movementDebugEnabled)
         headingDebugEnabled = defaults.bool(forKey: Keys.headingDebugEnabled)
+        headingOffset = HeadingCorrection.normalized(defaults.double(forKey: HeadingCorrection.defaultsKey))
+        HeadingCorrection.current = headingOffset
         headingGyroHold = defaults.bool(forKey: Keys.headingGyroHold)
         walkRouteFactor = defaults.object(forKey: Keys.walkRouteFactor) as? Double ?? 1.3
         walkSpeedKmh = defaults.object(forKey: Keys.walkSpeedKmh) as? Double ?? 4.8

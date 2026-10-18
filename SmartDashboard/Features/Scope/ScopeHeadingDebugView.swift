@@ -67,9 +67,14 @@ struct ScopeHeadingDebugView: View {
         let accuracy = accuracyText(tracker.headingAccuracy)
         texts.append(("コンパス 真北 " + trueText + "  磁北 " + magneticHeading + "  精度 " + accuracy, false))
 
+        if let correction = HeadingCorrection.text(HeadingCorrection.current) {
+            texts.append(("方角の" + correction + "(上の方角は補正したあと。コンパスとは補正の前で比べる)", false))
+        }
         var warns = false
         let compass = tracker.compassTrueHeading ?? tracker.compassMagneticHeading
-        if let reference = HeadingDiagnostics.compassReference(attitude), let compass {
+        // コンパスの値は補正の前なので、補正を戻して比べる
+        let uncorrected = attitude.rotatedClockwise(by: -HeadingCorrection.current)
+        if let reference = HeadingDiagnostics.compassReference(uncorrected), let compass {
             let difference = HeadingDiagnostics.difference(reference.azimuth, compass)
             warns = abs(difference) >= HeadingDiagnostics.warningDifference
             let line = "比べる軸 " + reference.axis + ": \(number(reference.azimuth))°  コンパスとの差 \(signed(difference))°"

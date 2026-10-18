@@ -557,7 +557,9 @@ struct DashboardMapView: UIViewRepresentable {
         func rotateDirectionArrow(on map: MKMapView) {
             guard let view = map.view(for: map.userLocation) as? DirectionArrowView else { return }
             let course = map.userLocation.location?.course ?? -1
-            let heading = map.userLocation.heading?.trueHeading ?? -1
+            let raw = map.userLocation.heading?.trueHeading ?? -1
+            // 端末の向きには方角の手動補正を足す(GPS の進行方向は磁気と関係ないので足さない)
+            let heading = raw >= 0 ? HeadingCorrection.apply(raw) : raw
             guard let direction = MapDirection.arrowRotation(course: course, heading: heading, cameraHeading: map.camera.heading) else { return }
             view.setRotation(degrees: direction)
         }

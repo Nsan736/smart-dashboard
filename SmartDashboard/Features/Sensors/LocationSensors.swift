@@ -141,7 +141,8 @@ final class LocationSensors: NSObject, CLLocationManagerDelegate {
 
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateHeading newHeading: CLHeading) {
         let value = newHeading.trueHeading >= 0 ? newHeading.trueHeading : newHeading.magneticHeading
-        MainActor.assumeIsolated { heading = value }
+        // 方角の手動補正を足す
+        MainActor.assumeIsolated { heading = HeadingCorrection.apply(value) }
     }
 
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {

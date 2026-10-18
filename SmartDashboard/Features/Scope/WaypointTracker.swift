@@ -187,7 +187,10 @@ final class WaypointTracker: NSObject, CLLocationManagerDelegate {
                                          m31: matrix.m31, m32: matrix.m32, m33: matrix.m33)
                 self.recordDiagnostics(data, raw: raw)
                 // ジャイロで保つ(試験)ときは、ジャイロで説明できない回転の累計を打ち消す
-                let used = self.holdsHeadingWithGyro ? raw.rotatedClockwise(by: -self.diagnostics.correction) : raw
+                let held = self.holdsHeadingWithGyro ? raw.rotatedClockwise(by: -self.diagnostics.correction) : raw
+                // 方角の手動補正(設定の「方角の補正」)
+                let offset = HeadingCorrection.current
+                let used = offset == 0 ? held : held.rotatedClockwise(by: offset)
                 self.attitude = self.attitude?.smoothed(toward: used, weight: Self.smoothingWeight) ?? used
             }
         }
@@ -253,7 +256,8 @@ final class WaypointTracker: NSObject, CLLocationManagerDelegate {
             compassTrueHeading = newHeading.trueHeading >= 0 ? newHeading.trueHeading : nil
             compassMagneticHeading = newHeading.magneticHeading >= 0 ? newHeading.magneticHeading : nil
             guard newHeading.headingAccuracy >= 0 else { return }
-            compassHeading = newHeading.trueHeading >= 0 ? newHeading.trueHeading : newHeading.magneticHeading
+            // 方角の手動補正を足す(デバッグ表示の真北・磁北は、補正する前の値のまま)
+            compassHeading = HeadingCorrection.apply(newHeading.trueHeading >= 0 ? newHeading.trueHeading : newHeading.magneticHeading)
         }
     }
 
