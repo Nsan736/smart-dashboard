@@ -35,6 +35,7 @@ struct ObjectListView: View {
     @State private var placementToEdit: ObjectPlacement?
     @State private var showsImport = false
     @State private var showsCompose = false
+    @State private var showsPhotoCompose = false
     @State private var objectToDelete: ScopeObject?
 
     var body: some View {
@@ -144,6 +145,7 @@ struct ObjectListView: View {
                 Button { showsImport = true } label: { Label("読み込む(JSON)", systemImage: "square.and.arrow.down") }
                 if env.claude.hasKey {
                     Button { showsCompose = true } label: { Label("文章から作る(Claude)", systemImage: "text.bubble") }
+                    Button { showsPhotoCompose = true } label: { Label("写真から作る(Claude)", systemImage: "camera") }
                 }
             } header: {
                 Text("オブジェクト(\(store.objects.count))")
@@ -158,6 +160,7 @@ struct ObjectListView: View {
         .sheet(item: $placementToEdit) { ObjectPlacementEditor(placement: $0) }
         .sheet(isPresented: $showsImport) { ObjectImportView() }
         .sheet(isPresented: $showsCompose) { ObjectComposeView() }
+        .sheet(isPresented: $showsPhotoCompose) { ObjectComposeView(photos: true) }
         .confirmationDialog("このオブジェクトを削除しますか", isPresented: Binding(get: { objectToDelete != nil }, set: { if !$0 { objectToDelete = nil } }),
                             titleVisibility: .visible) {
             Button("削除(置いたものも消えます)", role: .destructive) {

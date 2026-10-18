@@ -87,13 +87,44 @@ enum ObjectGenerator {
         webSearch ? basePrompt + searchPrompt : basePrompt
     }
 
+    /// 写真から作るときに、文章から作るときの指示に足す(v0.9.30)
+    static let photoPrompt = """
+
+    写真から作る:
+    - 1〜3枚の写真(違う角度から撮ったもの)に写っている物を、外から見える形で作ってください。写っていない側は、写っている側から自然に推測してください
+    - 寸法が文で与えられていれば、それに合わせてください。与えられていない寸法は、写っているもの(人・車・ドア・窓・階段の一段など、大きさの分かるもの)から見積もってください
+    - JSON の前に、作るときに使った寸法の短い一覧を <dimensions> と </dimensions> の間に、1行に1つ「項目: 値」の形で書いてください(20行まで)。写真から見積もった値には「(見積もり)」と付けてください。一覧のほかに説明の文章は書かないでください
+    - 一番よく写っている面か入口のある面を、正面(+y)にしてください
+    - 写っている人や車のナンバーなど、個人が分かるものは形にしないでください
+    """
+
+    static var photoSystemPrompt: String { basePrompt + photoPrompt }
+
+    /// 写真から作る最初のメッセージ(写真のあとに、細かさ・寸法・説明の文)
+    static func photoMessages(images: [Data], description: String, dimensions: String, detail: ObjectDetail) -> [ClaudeMessage] {
+        var content: [ClaudeContent] = images.map { .jpeg($0) }
+        var text = "上の\(images.count)枚の写真に写っている物のオブジェクトを作ってください。細かさ: \(detail.label)(形は\(detail.maxShapes)個まで。外から見える形を細かくするために使い、数を埋めるための形は作らないでください)\n\n"
+        text += dimensions.isEmpty ? "寸法の指定: なし(写真から見積もってください)" : "寸法の指定: " + dimensions
+        let note = description.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !note.isEmpty { text += "\n説明: " + String(note.prefix(maxInstruction)) }
+        content.append(.text(text))
+        return [ClaudeMessage(role: .user, content: content)]
+    }
+
+    /// 写真の料金の目安(ドル)。画像のトークン(幅×高さ÷750)を入力に足す
+    static func estimatedPhotoCost(detail: ObjectDetail, imageSizes: [(width: Int, height: Int)], pricing: ClaudePricing = ClaudePricing()) -> Double {
+        let tokens = imageSizes.reduce(0) { $0 + ScopeAskImage.estimatedTokens(width: $1.width, height: $1.height) }
+        return estimatedCost(detail: detail, webSearch: false, pricing: pricing) + pricing.cost(ClaudeUsage(input: tokens))
+    }
+
     static func messages(description: String, detail: ObjectDetail) -> [ClaudeMessage] {
         [.user("次のオブジェクトを作ってください。細かさ: \(detail.label)(形は\(detail.maxShapes)個まで。外から見える形を細かくするために使い、数を埋めるための形は作らないでください)\n\n"
                + String(description.prefix(maxInstruction)))]
     }
 
-    static func request(messages: [ClaudeMessage], model: String, thinking: Bool, detail: ObjectDetail, webSearch: Bool) -> ClaudeRequest {
-        ClaudeRequest(model: model, system: systemPrompt(webSearch: webSearch), cachesSystem: true, messages: messages,
+    static func request(messages: [ClaudeMessage], model: String, thinking: Bool, detail: ObjectDetail, webSearch: Bool,
+                        system: String? = nil) -> ClaudeRequest {
+        ClaudeRequest(model: model, system: system ?? systemPrompt(webSearch: webSearch), cachesSystem: true, messages: messages,
                       maxTokens: detail.maxTokens, thinking: thinking, timeout: timeout,
                       webSearchMaxUses: webSearch ? maxSearches : nil)
     }
@@ -110,11 +141,25 @@ enum ObjectGenerator {
     /// 作る流れ。call は Claude を呼ぶ部分(本番はストリーミングの ClaudeService.callStreaming、テストでは決まった応答)
     static func run(description: String, detail: ObjectDetail, webSearch: Bool, model: String, thinking: Bool,
                     call: (ClaudeRequest) async throws -> ClaudeCallResult) async throws -> Outcome {
+        try await run(first: messages(description: description, detail: detail), system: nil, detail: detail, webSearch: webSearch,
+                      model: model, thinking: thinking, call: call)
+    }
+
+    /// 写真から作る(Web 検索は使わない)
+    static func runPhotos(images: [Data], description: String, dimensions: String, detail: ObjectDetail, model: String, thinking: Bool,
+                          call: (ClaudeRequest) async throws -> ClaudeCallResult) async throws -> Outcome {
+        try await run(first: photoMessages(images: images, description: description, dimensions: dimensions, detail: detail),
+                      system: photoSystemPrompt, detail: detail, webSearch: false, model: model, thinking: thinking, call: call)
+    }
+
+    /// 作る流れ(最初のメッセージと、指示文。system が nil なら、文章から作るときの指示)
+    static func run(first: [ClaudeMessage], system: String?, detail: ObjectDetail, webSearch: Bool, model: String, thinking: Bool,
+                    call: (ClaudeRequest) async throws -> ClaudeCallResult) async throws -> Outcome {
         var outcome = Outcome(object: nil, json: "", issues: [], usage: ClaudeUsage(), cost: 0, attempts: 0, detail: detail)
-        var messages = messages(description: description, detail: detail)
+        var messages = first
         var usesSearch = webSearch
         while outcome.attempts < 2 {
-            let request = request(messages: messages, model: model, thinking: thinking, detail: detail, webSearch: usesSearch)
+            let request = request(messages: messages, model: model, thinking: thinking, detail: detail, webSearch: usesSearch, system: system)
             let result = try await ClaudeSearchCall.run(request, withoutSearch: { plain in
                 var plain = plain
                 plain.system = systemPrompt(webSearch: false)

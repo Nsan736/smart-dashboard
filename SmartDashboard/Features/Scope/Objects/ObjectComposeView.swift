@@ -1,13 +1,19 @@
 import SwiftUI
 
-/// 文章からオブジェクトを作る画面。細かさと Web 検索を選び、進み具合を見ながら待ち、確認の画面でプレビューしてから保存する。
+/// 文章か写真からオブジェクトを作る画面。細かさと Web 検索を選び、進み具合を見ながら待ち、確認の画面でプレビューしてから保存する。
 /// 作る作業は `ObjectComposeJob`(アプリ全体で1つ)が持つので、閉じても作るのは続き、結果は「最近作ったもの」に残る
 struct ObjectComposeView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.dismiss) private var dismiss
+    /// 写真から作る(v0.9.30)
+    @State private var usesPhotos: Bool
     @State private var removesHidden = true
     @State private var safariURL: ScopeAskURL?
     @State private var recordToDelete: ObjectComposeRecord?
+
+    init(photos: Bool = false) {
+        _usesPhotos = State(initialValue: photos)
+    }
 
     var body: some View {
         let job = env.objectCompose
@@ -15,27 +21,44 @@ struct ObjectComposeView: View {
         NavigationStack {
             Form {
                 Section {
-                    TextEditor(text: $bindable.instruction)
-                        .frame(minHeight: 100)
-                        .disabled(job.isRunning)
-                } header: {
-                    Text("作りたいオブジェクト")
-                } footer: {
-                    Text("例: 「東京タワー」「高さ30mの赤い塔」「2階建ての家」「青い半透明の球(直径10m)」。送るのはこの文だけで、今いる場所などは送りません。")
+                    Picker("作り方", selection: $usesPhotos) {
+                        Text("文章から").tag(false)
+                        Text("写真から").tag(true)
+                    }
+                    .pickerStyle(.segmented)
+                }
+                .disabled(job.isRunning)
+                if usesPhotos {
+                    ObjectPhotoInputSections()
+                } else {
+                    Section {
+                        TextEditor(text: $bindable.instruction)
+                            .frame(minHeight: 100)
+                            .disabled(job.isRunning)
+                    } header: {
+                        Text("作りたいオブジェクト")
+                    } footer: {
+                        Text("例: 「東京タワー」「高さ30mの赤い塔」「2階建ての家」「青い半透明の球(直径10m)」。送るのはこの文だけで、今いる場所などは送りません。")
+                    }
                 }
                 Section {
                     Picker("細かさ", selection: $bindable.detailRaw) {
                         ForEach(ObjectDetail.allCases) { Text($0.label).tag($0.rawValue) }
                     }
                     .pickerStyle(.segmented)
-                    Toggle("Web で調べる(2回まで)", isOn: $bindable.webSearch)
+                    if !usesPhotos {
+                        Toggle("Web で調べる(2回まで)", isOn: $bindable.webSearch)
+                    }
                 } footer: {
-                    Text(optionsFooter(job))
+                    Text(usesPhotos ? photoFooter(job) : optionsFooter(job))
                 }
                 .disabled(job.isRunning)
                 Section {
                     if job.isRunning {
                         progressView(job)
+                    } else if usesPhotos {
+                        Button("写真から作ってもらう") { start() }
+                            .disabled(job.photos.isEmpty)
                     } else {
                         Button("作ってもらう") { start() }
                             .disabled(job.instruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -78,6 +101,13 @@ struct ObjectComposeView: View {
         }
     }
 
+    private func photoFooter(_ job: ObjectComposeJob) -> String {
+        let sizes = job.photos.map { ObjectPhotoImage.sentSize($0.image, shape: $0.shape) }
+        let tokens = sizes.reduce(0) { $0 + ScopeAskImage.estimatedTokens(width: $1.width, height: $1.height) }
+        return "形は\(job.detail.maxShapes)個まで。料金の目安は1回あたり約\(ClaudePricing.text(job.photoEstimatedCost))"
+            + "(写真\(job.photos.count)枚の画像で約\(tokens)トークンを含む)。細かいほど時間がかかります。"
+    }
+
     private func optionsFooter(_ job: ObjectComposeJob) -> String {
         let detail = job.detail
         let cost = ClaudePricing.text(ObjectGenerator.estimatedCost(detail: detail, webSearch: job.webSearch))
@@ -110,6 +140,17 @@ struct ObjectComposeView: View {
     @ViewBuilder
     private func resultSections(_ record: ObjectComposeRecord) -> some View {
         let outcome = record.outcome
+        if let photoCount = record.photoCount {
+            Section {
+                LabeledContent("写真", value: "\(photoCount)枚")
+                LabeledContent("寸法の指定", value: record.inputDimensions ?? "なし(写真から見積もり)")
+                if record.instruction != "写真から作成" {
+                    Text(record.instruction).font(.footnote).fixedSize(horizontal: false, vertical: true)
+                }
+            } header: {
+                Text("写真から作ったもの")
+            }
+        }
         if let generated = outcome.object {
             let object = removesHidden ? ObjectGeometry.removingShapes(outcome.hiddenShapes, from: generated) : generated
             ObjectConfirmSection(object: object)
@@ -119,9 +160,10 @@ struct ObjectComposeView: View {
                         LabeledContent(item.label, value: item.value)
                     }
                 } header: {
-                    Text("調べた寸法")
+                    Text(record.photoCount == nil ? "調べた寸法" : "使った寸法(見積もりを含む)")
                 } footer: {
-                    Text("Web で調べた結果を Claude がまとめた一覧です。この値に合わせて作っています。")
+                    Text(record.photoCount == nil ? "Web で調べた結果を Claude がまとめた一覧です。この値に合わせて作っています。"
+                         : "指定した寸法と、写真から見積もった寸法(「見積もり」と付いたもの)です。この値に合わせて作っています。")
                 }
             }
             Section {
@@ -183,11 +225,22 @@ struct ObjectComposeView: View {
     /// 作り直す・捨てる
     @ViewBuilder
     private func resultButtons(_ record: ObjectComposeRecord) -> some View {
-        Button("同じ文で作り直す") {
-            env.objectCompose.restoreInput(from: record)
-            start()
+        if record.photoCount != nil {
+            // 写真は保存していないので、今選んでいる写真で作り直す
+            Button("今の写真と寸法で作り直す") {
+                env.objectCompose.restoreInput(from: record)
+                usesPhotos = true
+                start()
+            }
+            .disabled(env.objectCompose.isRunning || env.objectCompose.photos.isEmpty)
+        } else {
+            Button("同じ文で作り直す") {
+                env.objectCompose.restoreInput(from: record)
+                usesPhotos = false
+                start()
+            }
+            .disabled(env.objectCompose.isRunning)
         }
-        .disabled(env.objectCompose.isRunning)
         Button("捨てる", role: .destructive) { recordToDelete = record }
     }
 
@@ -229,6 +282,7 @@ struct ObjectComposeView: View {
 
     private func recentCaption(_ record: ObjectComposeRecord) -> String {
         var parts = [ClaudeRecentList.dateText(record.createdAt), record.objectDetail.label, ClaudePricing.text(record.cost)]
+        if let photoCount = record.photoCount { parts.insert("写真\(photoCount)枚", at: 1) }
         if !record.issues.isEmpty { parts.append("誤りあり") }
         parts.append(record.savedAt == nil ? "未保存" : "保存済み")
         return parts.joined(separator: "・")
@@ -242,6 +296,12 @@ struct ObjectComposeView: View {
         }
         let settings = env.settings.claude
         let service = env.claude
+        if usesPhotos {
+            job.startPhotos(model: settings.model, thinking: settings.thinkingForTools) { request, onEvent in
+                try await service.callStreaming(request, onEvent: onEvent)
+            }
+            return
+        }
         job.start(model: settings.model, thinking: settings.thinkingForTools) { request, onEvent in
             try await service.callStreaming(request, onEvent: onEvent)
         }

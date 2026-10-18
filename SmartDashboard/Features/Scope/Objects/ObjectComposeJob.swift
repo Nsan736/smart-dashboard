@@ -22,9 +22,15 @@ struct ObjectComposeRecord: ClaudeRecentEntry {
     var hiddenShapes: [Int]
     /// オブジェクトの一覧に保存した日時
     var savedAt: Date?
+    /// 写真から作ったときの写真の枚数と、入力した寸法(文章から作ったときは nil。写真は保存しない)
+    var photoCount: Int?
+    var inputDimensions: String?
 
-    init(outcome: ObjectGenerator.Outcome, instruction: String, webSearch: Bool, createdAt: Date = Date()) {
+    init(outcome: ObjectGenerator.Outcome, instruction: String, webSearch: Bool, createdAt: Date = Date(),
+         photoCount: Int? = nil, inputDimensions: String? = nil) {
         self.createdAt = createdAt
+        self.photoCount = photoCount
+        self.inputDimensions = inputDimensions
         self.instruction = instruction
         detail = outcome.detail.rawValue
         self.webSearch = webSearch
@@ -66,6 +72,7 @@ final class ObjectComposeJob {
     static let draftKey = "objects.composeDraft"
     static let detailKey = "objects.composeDetail2"
     static let searchKey = "objects.composeSearch2"
+    static let photoKey = "objects.photoDraft"
 
     var instruction: String {
         didSet { defaults.set(instruction, forKey: Self.draftKey) }
@@ -76,6 +83,12 @@ final class ObjectComposeJob {
     var webSearch: Bool {
         didSet { defaults.set(webSearch, forKey: Self.searchKey) }
     }
+    /// 写真から作る(v0.9.30): 選んだ写真(端末には保存しない)と、分かっている寸法・説明(残す)
+    private(set) var photos: [ObjectPhotoDraft] = []
+    var photoHeight = "" { didSet { savePhotoDraft() } }
+    var photoWidth = "" { didSet { savePhotoDraft() } }
+    var photoDepth = "" { didSet { savePhotoDraft() } }
+    var photoNote = "" { didSet { savePhotoDraft() } }
     private(set) var isRunning = false
     private(set) var progress = ObjectGenerationProgress()
     private(set) var errorText: String?
@@ -98,9 +111,82 @@ final class ObjectComposeJob {
         detailRaw = defaults.string(forKey: Self.detailKey) ?? ObjectDetail.initial.rawValue
         webSearch = defaults.object(forKey: Self.searchKey) as? Bool ?? false
         recents = ClaudeRecents(fileURL: fileURL)
+        let draft = defaults.stringArray(forKey: Self.photoKey) ?? []
+        if draft.count == 4 {
+            photoHeight = draft[0]
+            photoWidth = draft[1]
+            photoDepth = draft[2]
+            photoNote = draft[3]
+        }
     }
 
     var detail: ObjectDetail { ObjectDetail(rawValue: detailRaw) ?? .initial }
+
+    private func savePhotoDraft() {
+        defaults.set([photoHeight, photoWidth, photoDepth, photoNote], forKey: Self.photoKey)
+    }
+
+    func addPhoto(_ image: CGImage) {
+        guard photos.count < ObjectPhotoImage.maxPhotos else { return }
+        photos.append(ObjectPhotoDraft(image: image))
+    }
+
+    func removePhoto(_ id: UUID) {
+        photos.removeAll { $0.id == id }
+    }
+
+    func setShape(_ shape: [CGPoint]?, for id: UUID) {
+        guard let index = photos.firstIndex(where: { $0.id == id }) else { return }
+        photos[index].shape = shape
+    }
+
+    /// Claude に送る寸法の文
+    var photoDimensionsText: String {
+        ObjectPhotoImage.dimensionsText(height: photoHeight, width: photoWidth, depth: photoDepth)
+    }
+
+    /// 写真から作る料金の目安
+    var photoEstimatedCost: Double {
+        ObjectGenerator.estimatedPhotoCost(detail: detail, imageSizes: photos.map { ObjectPhotoImage.sentSize($0.image, shape: $0.shape) })
+    }
+
+    /// 写真から作り始める(Web 検索は使わない)
+    func startPhotos(model: String, thinking: Bool,
+                     call: @escaping (ClaudeRequest, @escaping @Sendable (ClaudeStreamEvent) -> Void) async throws -> ClaudeCallResult) {
+        guard !isRunning, !photos.isEmpty else { return }
+        let images = photos.compactMap { ObjectPhotoImage.prepare($0.image, shape: $0.shape) }
+        guard images.count == photos.count else {
+            errorText = "写真を用意できませんでした"
+            return
+        }
+        errorText = nil
+        viewingID = nil
+        progress = ObjectGenerationProgress()
+        isRunning = true
+        let detail = detail
+        let note = photoNote.trimmingCharacters(in: .whitespacesAndNewlines)
+        let dimensions = photoDimensionsText
+        let count = images.count
+        // この入れ物はアプリの間ずっとある(AppEnvironment)ので、self を強く持ってよい
+        task = Task {
+            do {
+                let outcome = try await ObjectGenerator.runPhotos(images: images, description: note, dimensions: dimensions, detail: detail,
+                                                                  model: model, thinking: thinking) { request in
+                    try await call(request) { event in
+                        Task { @MainActor in self.progress.apply(event) }
+                    }
+                }
+                finish(ObjectComposeRecord(outcome: outcome, instruction: note.isEmpty ? "写真から作成" : note, webSearch: false,
+                                           photoCount: count, inputDimensions: dimensions.isEmpty ? nil : dimensions))
+            } catch is CancellationError {
+                errorText = "中止しました(Claude 側で処理が進んでいた分は、料金がかかることがあります)"
+            } catch {
+                errorText = error.localizedDescription
+            }
+            isRunning = false
+            task = nil
+        }
+    }
 
     /// 作り始める。call は Claude を呼ぶ部分(本番はストリーミング)。終わったら「最近作ったもの」に入れる
     func start(model: String, thinking: Bool,
@@ -170,8 +256,13 @@ final class ObjectComposeJob {
 
     /// 作り直す(その結果の文と設定を、入力に戻す)
     func restoreInput(from record: ObjectComposeRecord) {
-        instruction = record.instruction
         detailRaw = record.detail
+        if record.photoCount != nil {
+            // 写真は保存していないので、今選んでいる写真で作り直す
+            photoNote = record.instruction == "写真から作成" ? "" : record.instruction
+            return
+        }
+        instruction = record.instruction
         webSearch = record.webSearch
     }
 }
