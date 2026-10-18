@@ -7,6 +7,8 @@ protocol HTTPClient: Sendable {
     func response(_ url: URL) async throws -> (data: Data, status: Int)
     /// 組み立てたリクエスト(POST など)を送る。状態コードが200番台でなくても、本文と状態コードを返す。
     func send(_ request: URLRequest) async throws -> (data: Data, status: Int)
+    /// 応答を1行ずつ受け取る(SSE のストリーミング)。200番台でなければ、行は渡さず、本文を errorBody で返す。
+    func stream(_ request: URLRequest, onLine: @escaping @Sendable (String) -> Void) async throws -> (status: Int, errorBody: Data)
 }
 
 extension HTTPClient {
@@ -16,6 +18,14 @@ extension HTTPClient {
 
     func send(_ request: URLRequest) async throws -> (data: Data, status: Int) {
         throw HTTPError.notHTTP
+    }
+
+    /// 初期の実装: まとめて受け取ってから行に分ける(テスト用の差し替えなど)
+    func stream(_ request: URLRequest, onLine: @escaping @Sendable (String) -> Void) async throws -> (status: Int, errorBody: Data) {
+        let (data, status) = try await send(request)
+        guard (200..<300).contains(status) else { return (status, data) }
+        String(decoding: data, as: UTF8.self).split(whereSeparator: \.isNewline).forEach { onLine(String($0)) }
+        return (status, Data())
     }
 }
 
@@ -67,6 +77,24 @@ final class MeteredHTTPClient: NSObject, HTTPClient, URLSessionTaskDelegate, @un
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw HTTPError.notHTTP }
         return (data, http.statusCode)
+    }
+
+    func stream(_ request: URLRequest, onLine: @escaping @Sendable (String) -> Void) async throws -> (status: Int, errorBody: Data) {
+        let (bytes, response) = try await session.bytes(for: request)
+        guard let http = response as? HTTPURLResponse else { throw HTTPError.notHTTP }
+        guard (200..<300).contains(http.statusCode) else {
+            var body = Data()
+            for try await byte in bytes {
+                body.append(byte)
+                if body.count > 100_000 { break }
+            }
+            return (http.statusCode, body)
+        }
+        for try await line in bytes.lines {
+            try Task.checkCancellation()
+            onLine(line)
+        }
+        return (http.statusCode, Data())
     }
 
     /// モバイル通信のほか、テザリングなど従量制の回線もモバイル通信として数える

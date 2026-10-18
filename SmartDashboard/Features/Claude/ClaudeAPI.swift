@@ -313,6 +313,15 @@ enum ClaudeError: LocalizedError, Equatable {
 /// Claude API を呼ぶ部分。テストでは決まった応答を返すものに差し替える。
 protocol ClaudeClient: Sendable {
     func send(_ request: ClaudeRequest, apiKey: String) async throws -> ClaudeResponse
+    /// ストリーミングで呼ぶ(進み具合を onEvent で知らせる)。初期の実装は send(進み具合は始まりだけ)
+    func stream(_ request: ClaudeRequest, apiKey: String, onEvent: @escaping @Sendable (ClaudeStreamEvent) -> Void) async throws -> ClaudeResponse
+}
+
+extension ClaudeClient {
+    func stream(_ request: ClaudeRequest, apiKey: String, onEvent: @escaping @Sendable (ClaudeStreamEvent) -> Void) async throws -> ClaudeResponse {
+        onEvent(.started)
+        return try await send(request, apiKey: apiKey)
+    }
 }
 
 /// 本番の呼び出し。通信は HTTPClient(MeteredHTTPClient)を通すので、通信量の記録に入る。

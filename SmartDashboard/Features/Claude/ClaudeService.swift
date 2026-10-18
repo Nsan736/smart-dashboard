@@ -166,6 +166,18 @@ final class ClaudeService {
         if let reason = blockReason { throw reason }
         guard let key = keychain.string(for: KeychainAccount.claudeAPIKey), !key.isEmpty else { throw ClaudeError.missingKey }
         let response = try await client.send(request, apiKey: key)
+        return record(response)
+    }
+
+    /// ストリーミングで呼び出して、使用量を記録する(進み具合を onEvent で知らせる。どのスレッドから呼ばれるかは決まっていない)
+    func callStreaming(_ request: ClaudeRequest, onEvent: @escaping @Sendable (ClaudeStreamEvent) -> Void) async throws -> ClaudeCallResult {
+        if let reason = blockReason { throw reason }
+        guard let key = keychain.string(for: KeychainAccount.claudeAPIKey), !key.isEmpty else { throw ClaudeError.missingKey }
+        let response = try await client.stream(request, apiKey: key, onEvent: onEvent)
+        return record(response)
+    }
+
+    private func record(_ response: ClaudeResponse) -> ClaudeCallResult {
         let cost = settings.claude.pricing.cost(response.usage)
         ledger.add(response.usage, cost: cost, at: Date())
         if let data = try? JSONEncoder().encode(ledger) { defaults.set(data, forKey: Self.ledgerKey) }

@@ -193,37 +193,13 @@ enum ScopeAsk {
         var searchFallback = false
     }
 
-    /// 聞く。pause_turn なら、受け取った内容をそのまま送り返して続きを頼む(上限 maxContinuations 回)。
-    /// Web 検索を付けた依頼が HTTP 400 になったら(このモデルや組織で使えないなど)、検索なしで1回だけ聞き直す。
+    /// 聞く。pause_turn の続きと、Web 検索が使えないときの検索なしでの聞き直しは、共通の ClaudeSearchCall で行う。
     static func ask(_ request: ClaudeRequest, call: (ClaudeRequest) async throws -> ClaudeCallResult) async throws -> Answer {
-        do {
-            return try await continueTurns(request, call: call)
-        } catch let error as ClaudeError {
-            guard case .badRequest = error, request.webSearchMaxUses != nil else { throw error }
-            var plain = request
-            plain.webSearchMaxUses = nil
+        let result = try await ClaudeSearchCall.run(request, maxContinuations: maxContinuations, withoutSearch: { plain in
+            var plain = plain
             plain.system = systemPrompt(webSearch: false, maxSearches: 0)
-            var answer = try await continueTurns(plain, call: call)
-            answer.searchFallback = true
-            return answer
-        }
-    }
-
-    private static func continueTurns(_ request: ClaudeRequest, call: (ClaudeRequest) async throws -> ClaudeCallResult) async throws -> Answer {
-        var current = request
-        let first = try await call(current)
-        var response = first.response
-        var cost = first.cost
-        var last = first.response
-        var continuations = 0
-        while last.stopReason == "pause_turn", continuations < maxContinuations {
-            continuations += 1
-            current.messages.append(ClaudeMessage(role: .assistant, content: last.rawContent.map { .raw($0) }))
-            let next = try await call(current)
-            response = response.appending(next.response)
-            cost += next.cost
-            last = next.response
-        }
-        return Answer(response: response, cost: cost)
+            return plain
+        }, call: call)
+        return Answer(response: result.response, cost: result.cost, searchFallback: result.searchFallback)
     }
 }
