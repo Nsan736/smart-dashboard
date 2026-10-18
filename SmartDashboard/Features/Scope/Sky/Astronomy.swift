@@ -50,9 +50,18 @@ enum Astronomy {
         let omega = 125.04452 - 1934.136261 * t
         let sunLongitude = 280.4665 + 36000.7698 * t
         let moonLongitude = 218.3165 + 481267.8813 * t
-        let nutation = (-17.20 * sinD(omega) - 1.32 * sinD(2 * sunLongitude) - 0.23 * sinD(2 * moonLongitude) + 0.21 * sinD(2 * omega)) / 3600
-        let mean = 23 + (26 + (21.448 - t * (46.815 + t * (0.00059 - t * 0.001813))) / 60) / 60
-        let obliquity = mean + (9.20 * cosD(omega) + 0.57 * cosD(2 * sunLongitude) + 0.10 * cosD(2 * moonLongitude) - 0.09 * cosD(2 * omega)) / 3600
+        var nutationSeconds: Double = -17.20 * sinD(omega)
+        nutationSeconds -= 1.32 * sinD(2 * sunLongitude)
+        nutationSeconds -= 0.23 * sinD(2 * moonLongitude)
+        nutationSeconds += 0.21 * sinD(2 * omega)
+        let arcSeconds: Double = 21.448 - t * (46.815 + t * (0.00059 - t * 0.001813))
+        let mean: Double = 23 + (26 + arcSeconds / 60) / 60
+        var obliquitySeconds: Double = 9.20 * cosD(omega)
+        obliquitySeconds += 0.57 * cosD(2 * sunLongitude)
+        obliquitySeconds += 0.10 * cosD(2 * moonLongitude)
+        obliquitySeconds -= 0.09 * cosD(2 * omega)
+        let nutation = nutationSeconds / 3600
+        let obliquity = mean + obliquitySeconds / 3600
         return (obliquity, nutation)
     }
 
@@ -62,7 +71,7 @@ enum Astronomy {
         let l0 = normalized(280.46646 + t * (36000.76983 + t * 0.0003032))
         let m = 357.52911 + t * (35999.05029 - 0.0001537 * t)
         let e = 0.016708634 - t * (0.000042037 + 0.0000001267 * t)
-        let c = sinD(m) * (1.914602 - t * (0.004817 + 0.000014 * t)) + sinD(2 * m) * (0.019993 - 0.000101 * t) + sinD(3 * m) * 0.000289
+        let c = equationOfCenter(m: m, t: t)
         let trueLongitude = l0 + c
         let trueAnomaly = m + c
         let radius = 1.000001018 * (1 - e * e) / (1 + e * cosD(trueAnomaly))
@@ -74,12 +83,20 @@ enum Astronomy {
         return Equatorial(rightAscension: ra, declination: dec, distanceKm: radius * astronomicalUnit)
     }
 
+    /// 太陽の中心差(度)
+    static func equationOfCenter(m: Double, t: Double) -> Double {
+        let first: Double = sinD(m) * (1.914602 - t * (0.004817 + 0.000014 * t))
+        let second: Double = sinD(2 * m) * (0.019993 - 0.000101 * t)
+        let third: Double = sinD(3 * m) * 0.000289
+        return first + second + third
+    }
+
     /// 太陽の見かけの黄経(度。夏至=90°、冬至=270°)
     static func sunLongitude(_ date: Date) -> Double {
         let t = centuries(date)
         let l0 = 280.46646 + t * (36000.76983 + t * 0.0003032)
         let m = 357.52911 + t * (35999.05029 - 0.0001537 * t)
-        let c = sinD(m) * (1.914602 - t * (0.004817 + 0.000014 * t)) + sinD(2 * m) * (0.019993 - 0.000101 * t) + sinD(3 * m) * 0.000289
+        let c = equationOfCenter(m: m, t: t)
         let omega = 125.04 - 1934.136 * t
         return normalized(l0 + c - 0.00569 - 0.00478 * sinD(omega))
     }
@@ -135,8 +152,15 @@ enum Astronomy {
             let factor = abs(term.1) == 1 ? e : (abs(term.1) == 2 ? e * e : 1)
             sumB += term.4 * factor * sinD(argument)
         }
-        sumL += 3958 * sinD(a1) + 1962 * sinD(lp - f) + 318 * sinD(a2)
-        sumB += -2235 * sinD(lp) + 382 * sinD(a3) + 175 * sinD(a1 - f) + 175 * sinD(a1 + f) + 127 * sinD(lp - mp) - 115 * sinD(lp + mp)
+        sumL += 3958 * sinD(a1)
+        sumL += 1962 * sinD(lp - f)
+        sumL += 318 * sinD(a2)
+        sumB -= 2235 * sinD(lp)
+        sumB += 382 * sinD(a3)
+        sumB += 175 * sinD(a1 - f)
+        sumB += 175 * sinD(a1 + f)
+        sumB += 127 * sinD(lp - mp)
+        sumB -= 115 * sinD(lp + mp)
         let (epsilon, nutation) = obliquityAndNutation(t)
         let lambda = normalized(lp + sumL / 1_000_000 + nutation)
         let beta = sumB / 1_000_000

@@ -36,11 +36,10 @@ struct SkyTimePanel: View {
                 time = SkyEvents.startOfDay(day).addingTimeInterval(minutes * 60)
             }), in: 0...1439, step: 5)
             if let scene {
-                Text([scene.sunriseText(), scene.sunsetText()].compactMap { $0 }.joined(separator: "・"))
+                Text(Self.sunText(scene))
                     .font(.caption)
                     .fixedSize(horizontal: false, vertical: true)
-                Text("月の出 " + (scene.moonRise.map { SkyText.time($0.date) } ?? "なし") + "・月の入り "
-                     + (scene.moonSet.map { SkyText.time($0.date) } ?? "なし") + "・" + SkyText.phase(Astronomy.moonPhase(displayTime)))
+                Text(Self.moonText(scene, time: displayTime))
                     .font(.caption)
                     .fixedSize(horizontal: false, vertical: true)
                 if !scene.hasTerrain {
@@ -53,6 +52,18 @@ struct SkyTimePanel: View {
         }
         .padding(12)
         .background(.regularMaterial)
+    }
+
+    static func sunText(_ scene: SkyScene) -> String {
+        let parts: [String?] = [scene.sunriseText(), scene.sunsetText()]
+        return parts.compactMap { $0 }.joined(separator: "・")
+    }
+
+    static func moonText(_ scene: SkyScene, time: Date) -> String {
+        let rise = scene.moonRise.map { SkyText.time($0.date) } ?? "なし"
+        let set = scene.moonSet.map { SkyText.time($0.date) } ?? "なし"
+        let phase = SkyText.phase(Astronomy.moonPhase(time))
+        return "月の出 \(rise)・月の入り \(set)・\(phase)"
     }
 
     /// 別の日にするときは、時刻はそのまま(今の時刻、または選んでいた時刻)
@@ -114,7 +125,7 @@ struct SkyDetailView: View {
                 Section("月") {
                     row("月の出", scene.moonRise)
                     row("月の入り", scene.moonSet)
-                    Text(SkyText.phase(Astronomy.moonPhase(SkyEvents.startOfDay(day).addingTimeInterval(12 * 3600))) + "(正午)")
+                    Text(noonPhaseText)
                         .font(.subheadline)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -129,7 +140,7 @@ struct SkyDetailView: View {
         }
         .navigationTitle("太陽と月")
         .navigationBarTitleDisplayMode(.inline)
-        .task(id: "\(Int(SkyEvents.startOfDay(day).timeIntervalSince1970))|\(origin?.latitude ?? 0)|\(origin?.longitude ?? 0)") {
+        .task(id: taskKey) {
             guard let origin else { return }
             let skyline = nearbySkyline(latitude: origin.latitude, longitude: origin.longitude)
             let day = day
@@ -141,6 +152,17 @@ struct SkyDetailView: View {
         }
     }
 
+    private var taskKey: String {
+        let origin = env.waypoints.origin
+        let dayKey = Int(SkyEvents.startOfDay(day).timeIntervalSince1970)
+        return "\(dayKey)|\(origin?.latitude ?? 0)|\(origin?.longitude ?? 0)"
+    }
+
+    private var noonPhaseText: String {
+        let noon = SkyEvents.startOfDay(day).addingTimeInterval(12 * 3600)
+        return SkyText.phase(Astronomy.moonPhase(noon)) + "(正午)"
+    }
+
     /// 景色を計算した場所が近ければ(1km 以内)、その稜線
     private func nearbySkyline(latitude: Double, longitude: Double) -> Skyline? {
         guard let scene = env.scenery.scene, let skyline = scene.skyline else { return nil }
@@ -148,11 +170,15 @@ struct SkyDetailView: View {
         return distance <= 1_000 ? skyline : nil
     }
 
+    static func eventText(_ event: SkyEvent) -> String {
+        let direction = WaypointMath.compassPoint(event.azimuth)
+        return SkyText.time(event.date) + "・方角\(Int(event.azimuth.rounded()))°(" + direction + ")"
+    }
+
     private func row(_ name: String, _ event: SkyEvent?) -> some View {
         LabeledContent(name) {
             if let event {
-                Text("\(SkyText.time(event.date))・方角\(Int(event.azimuth.rounded()))°(\(WaypointMath.compassPoint(event.azimuth)))")
-                    .monospacedDigit()
+                Text(Self.eventText(event)).monospacedDigit()
             } else {
                 Text("なし")
             }
@@ -262,7 +288,7 @@ struct SummitForecastView: View {
                 Button {
                     showsMountains = true
                 } label: {
-                    LabeledContent("山", value: mountain.map { "\($0.displayName) \(SceneryText.elevation($0.elevation))" } ?? "なし")
+                    LabeledContent("山", value: mountainText)
                 }
                 Picker("見る場所", selection: $observerID) {
                     Text("現在地(最後に分かった位置)").tag(UUID?.none)
@@ -283,7 +309,7 @@ struct SummitForecastView: View {
                     Text("見る場所が分かりません(現在地を測るか、地点を選んでください)").font(.footnote).foregroundStyle(.orange)
                 }
             } footer: {
-                Text("太陽・月の中心が、山頂から ±\(String(format: "%.2f", SummitAlignmentSearch.tolerance))° 以内に来る日時を出します。地平線の近くの大気の屈折と、地球の丸み・地上の屈折を考えます。山頂が手前の山に隠れていないかは調べていません。計算は端末の中だけで行います。")
+                Text(Self.footerText)
             }
             if let elapsed = model.elapsed {
                 Section {
@@ -311,6 +337,11 @@ struct SummitForecastView: View {
         .onDisappear { model.cancel() }
     }
 
+    private var mountainText: String {
+        guard let mountain else { return "なし" }
+        return mountain.displayName + " " + SceneryText.elevation(mountain.elevation)
+    }
+
     private func binding(_ body: SkyBody) -> Binding<Bool> {
         Binding(get: { bodies.contains(body) }, set: { on in
             if on { bodies.insert(body) } else { bodies.remove(body) }
@@ -323,6 +354,9 @@ struct SummitForecastView: View {
         if let illumination = result.illumination { parts.append("月の輝き \(Int((illumination * 100).rounded()))%") }
         return parts.joined(separator: "・")
     }
+
+    static let footerText = "太陽・月の中心が、山頂から ±" + String(format: "%.2f", SummitAlignmentSearch.tolerance)
+        + "° 以内に来る日時を出します。地平線の近くの大気の屈折と、地球の丸み・地上の屈折を考えます。山頂が手前の山に隠れていないかは調べていません。計算は端末の中だけで行います。"
 
     /// 計算の入力(見る場所の緯度経度と目の高さ、山頂)
     private var input: SummitForecastModel.Input? {
