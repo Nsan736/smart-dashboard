@@ -200,7 +200,9 @@ final class ToolFrameworkTests: XCTestCase {
         XCTAssertEqual(issues(#"{"format":1,"id":"a","type":"calc","inputs":[],"outputs":[{"label":"x","formula":"1"}]}"#), ["name"])
         XCTAssertEqual(issues(#"{"format":2,"id":"a","name":"A","type":"list","items":["x"]}"#), ["format"])
         XCTAssertEqual(issues(#"{"format":1,"id":"a b","name":"A","type":"list","items":["x"]}"#), ["id"])
-        XCTAssertEqual(issues(#"{"format":1,"id":"a","name":"A","type":"script","code":"x"}"#), ["type"])
+        XCTAssertEqual(issues(#"{"format":1,"id":"a","name":"A","type":"program","code":"x"}"#), ["type"])
+        // スクリプト型(v0.9.19)は、本体の script が必要
+        XCTAssertEqual(issues(#"{"format":1,"id":"a","name":"A","type":"script","code":"x"}"#), ["script"])
         XCTAssertEqual(issues(#"{"format":1,"id":"a","name":"A","type":"list","mode":"spin","items":["x"]}"#), ["mode"])
         XCTAssertEqual(issues(#"{"format":1,"id":"a","name":"A","type":"checklist","items":[]}"#), ["items"])
         XCTAssertEqual(issues(#"{"format":1,"id":"a","name":"A","type":"table","columns":["x","y"],"rows":[["1","2"],["3"]]}"#), ["rows[1]"])
