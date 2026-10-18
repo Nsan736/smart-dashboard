@@ -3,14 +3,20 @@ import SwiftUI
 import simd
 
 /// オブジェクトのプレビュー(SceneKit)。指で回す・拡大する(allowsCameraControl)。編集の画面と確認の画面で使う。
+/// 形が多いとき(heavyShapes 個より多いとき)は軽くする: 形の種類ごとの立体の部品と、色ごとの材質を使い回し、丸い形の分割を減らし、
+/// 透明の描き方を1回にして、アンチエイリアスを切る。描くのは指で動かしたときと、形を変えたときだけ(1秒30コマまで)。
 /// 座標は、オブジェクトの中の x=右、y=前、z=上 を、SceneKit の x=右、y=上、z=手前(前の逆)に直す。
 struct ObjectPreviewView: UIViewRepresentable {
     let object: ScopeObject
     var selectedID: UUID?
 
+    static let heavyShapes = 60
+
     final class Coordinator {
         var signature = ""
         let content = SCNNode()
+        var geometries: [String: SCNGeometry] = [:]
+        var materials: [String: SCNMaterial] = [:]
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -19,7 +25,9 @@ struct ObjectPreviewView: UIViewRepresentable {
         let view = SCNView()
         view.backgroundColor = UIColor.secondarySystemBackground
         view.allowsCameraControl = true
-        view.antialiasingMode = .multisampling2X
+        view.antialiasingMode = object.shapes.count > Self.heavyShapes ? .none : .multisampling2X
+        view.preferredFramesPerSecond = 30
+        view.rendersContinuously = false
         let scene = SCNScene()
         view.scene = scene
         scene.rootNode.addChildNode(context.coordinator.content)
@@ -71,32 +79,58 @@ struct ObjectPreviewView: UIViewRepresentable {
         guard signature != coordinator.signature else { return }
         coordinator.signature = signature
         coordinator.content.childNodes.forEach { $0.removeFromParentNode() }
+        let heavy = object.shapes.count > Self.heavyShapes
         for shape in object.shapes {
-            coordinator.content.addChildNode(Self.node(shape, selected: shape.id == selectedID))
+            coordinator.content.addChildNode(Self.node(shape, selected: shape.id == selectedID, heavy: heavy, coordinator: coordinator))
         }
     }
 
-    static func node(_ shape: ObjectShape, selected: Bool) -> SCNNode {
-        let geometry: SCNGeometry
-        switch shape.kind {
-        case .box: geometry = SCNBox(width: 1, height: 1, length: 1, chamferRadius: 0)
+    /// 形の種類ごとの立体の部品(大きさ1。使い回す。材質は形ごとに付けるので、部品は材質ごとに複製する)
+    static func baseGeometry(_ kind: ObjectShapeKind, heavy: Bool) -> SCNGeometry {
+        switch kind {
+        case .box: return SCNBox(width: 1, height: 1, length: 1, chamferRadius: 0)
         case .cylinder:
             let cylinder = SCNCylinder(radius: 0.5, height: 1)
-            cylinder.radialSegmentCount = 24
-            geometry = cylinder
-        case .cone: geometry = SCNCone(topRadius: 0, bottomRadius: 0.5, height: 1)
-        case .sphere: geometry = SCNSphere(radius: 0.5)
-        case .pyramid: geometry = SCNPyramid(width: 1, height: 1, length: 1)
-        case .plane: geometry = SCNPlane(width: 1, height: 1)
+            cylinder.radialSegmentCount = heavy ? 12 : 24
+            return cylinder
+        case .cone:
+            let cone = SCNCone(topRadius: 0, bottomRadius: 0.5, height: 1)
+            cone.radialSegmentCount = heavy ? 12 : 24
+            return cone
+        case .sphere:
+            let sphere = SCNSphere(radius: 0.5)
+            sphere.segmentCount = heavy ? 12 : 32
+            return sphere
+        case .pyramid: return SCNPyramid(width: 1, height: 1, length: 1)
+        case .plane: return SCNPlane(width: 1, height: 1)
         }
-        let material = SCNMaterial()
-        material.diffuse.contents = ObjectColor.uiColor(shape.color)
-        material.transparency = CGFloat(shape.opacity)
-        material.transparencyMode = .dualLayer
-        material.isDoubleSided = true
-        material.lightingModel = .lambert
-        if selected { material.emission.contents = UIColor.white.withAlphaComponent(0.35) }
-        geometry.materials = [material]
+    }
+
+    static func node(_ shape: ObjectShape, selected: Bool, heavy: Bool = false, coordinator: Coordinator? = nil) -> SCNNode {
+        let materialKey = "\(shape.color)|\(shape.opacity)|\(selected)|\(heavy)"
+        let geometryKey = "\(shape.kind.rawValue)|\(materialKey)"
+        let geometry: SCNGeometry
+        if let cached = coordinator?.geometries[geometryKey] {
+            geometry = cached
+        } else {
+            let material: SCNMaterial
+            if let cached = coordinator?.materials[materialKey] {
+                material = cached
+            } else {
+                material = SCNMaterial()
+                material.diffuse.contents = ObjectColor.uiColor(shape.color)
+                material.transparency = CGFloat(shape.opacity)
+                // 形が多いときは、透明の描き方を1回にする(dualLayer は2回描く)
+                material.transparencyMode = heavy ? .aOne : .dualLayer
+                material.isDoubleSided = true
+                material.lightingModel = .lambert
+                if selected { material.emission.contents = UIColor.white.withAlphaComponent(0.35) }
+                coordinator?.materials[materialKey] = material
+            }
+            geometry = baseGeometry(shape.kind, heavy: heavy)
+            geometry.materials = [material]
+            coordinator?.geometries[geometryKey] = geometry
+        }
         let node = SCNNode(geometry: geometry)
         // 角錐は底面が原点なので、中心に合わせる
         if shape.kind == .pyramid { node.pivot = SCNMatrix4MakeTranslation(0, 0.5, 0) }

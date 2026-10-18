@@ -16,18 +16,26 @@ enum ObjectGeometry {
     static let sphereLongitudes = 10
     static let sphereLatitudes = 6
 
+    /// 粗い版(遠いとき): 円柱・円錐は6角形、球は経度6×緯度3
+    static let lowRoundSegments = 6
+    static let lowSphereLongitudes = 6
+    static let lowSphereLatitudes = 3
+
     /// 大きさ1の形の面(中心が原点、各辺が −0.5〜0.5)
-    static func unitFaces(_ kind: ObjectShapeKind) -> [[ObjectPoint]] {
+    static func unitFaces(_ kind: ObjectShapeKind, low: Bool = false) -> [[ObjectPoint]] {
+        let roundSegments = low ? lowRoundSegments : self.roundSegments
+        let sphereLongitudes = low ? lowSphereLongitudes : self.sphereLongitudes
+        let sphereLatitudes = low ? lowSphereLatitudes : self.sphereLatitudes
         switch kind {
         case .box:
             let c = [ObjectPoint(-0.5, -0.5, -0.5), ObjectPoint(0.5, -0.5, -0.5), ObjectPoint(0.5, 0.5, -0.5), ObjectPoint(-0.5, 0.5, -0.5),
                      ObjectPoint(-0.5, -0.5, 0.5), ObjectPoint(0.5, -0.5, 0.5), ObjectPoint(0.5, 0.5, 0.5), ObjectPoint(-0.5, 0.5, 0.5)]
             return [[0, 3, 2, 1], [4, 5, 6, 7], [0, 1, 5, 4], [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7]].map { $0.map { c[$0] } }
         case .cylinder, .cone:
-            let ring = circle(z: -0.5)
+            let ring = circle(z: -0.5, segments: roundSegments)
             var faces: [[ObjectPoint]] = [ring.reversed()]
             if kind == .cylinder {
-                let top = circle(z: 0.5)
+                let top = circle(z: 0.5, segments: roundSegments)
                 faces.append(top)
                 for i in 0..<roundSegments {
                     let j = (i + 1) % roundSegments
@@ -66,9 +74,9 @@ enum ObjectGeometry {
         }
     }
 
-    private static func circle(z: Double) -> [ObjectPoint] {
-        (0..<roundSegments).map { i in
-            let a = Double(i) / Double(roundSegments) * 2 * .pi
+    private static func circle(z: Double, segments: Int) -> [ObjectPoint] {
+        (0..<segments).map { i in
+            let a = Double(i) / Double(segments) * 2 * .pi
             return ObjectPoint(0.5 * sin(a), 0.5 * cos(a), z)
         }
     }
@@ -84,11 +92,11 @@ enum ObjectGeometry {
         return ObjectPoint(v.x * cos(y) + v.y * sin(y), -v.x * sin(y) + v.y * cos(y), v.z)
     }
 
-    /// 形の面(オブジェクトの中の座標)
-    static func faces(of shape: ObjectShape) -> [ObjectFace] {
+    /// 形の面(オブジェクトの中の座標)。low: 丸い形を粗くする
+    static func faces(of shape: ObjectShape, low: Bool = false) -> [ObjectFace] {
         let size = ObjectPoint(shape.width, shape.kind == .plane ? 0 : shape.depth, shape.height)
         let center = ObjectPoint(shape.x, shape.y, shape.z + shape.height / 2)
-        return unitFaces(shape.kind).map { face in
+        return unitFaces(shape.kind, low: low).map { face in
             ObjectFace(vertices: face.map { rotate($0 * size, yaw: shape.yaw, pitch: shape.pitch, roll: shape.roll) + center },
                        color: shape.color, opacity: shape.opacity)
         }
@@ -96,6 +104,38 @@ enum ObjectGeometry {
 
     static func faces(of object: ScopeObject) -> [ObjectFace] {
         object.shapes.flatMap { faces(of: $0) }
+    }
+
+    /// 形の大きさ(一番長い辺、m)。遠いときに省く形を決めるのに使う
+    static func size(of shape: ObjectShape) -> Double {
+        max(shape.width, shape.kind == .plane ? 0 : shape.depth, shape.height)
+    }
+
+    /// 粗い版の面と、その面の形の大きさ(遠いときに、小さい形を省くため)
+    static func lowFaces(of object: ScopeObject) -> [(face: ObjectFace, size: Double)] {
+        object.shapes.flatMap { shape in faces(of: shape, low: true).map { (face: $0, size: size(of: shape)) } }
+    }
+
+    /// 全体を囲む1つの箱(もっと遠いとき)。色は一番大きい形の色、不透明度は形の平均
+    static func boundingBoxFaces(of object: ScopeObject) -> [ObjectFace] {
+        let points = faces(of: object).flatMap(\.vertices)
+        guard let first = points.first else { return [] }
+        var lo = first, hi = first
+        for p in points {
+            lo = ObjectPoint(min(lo.x, p.x), min(lo.y, p.y), min(lo.z, p.z))
+            hi = ObjectPoint(max(hi.x, p.x), max(hi.y, p.y), max(hi.z, p.z))
+        }
+        let largest = object.shapes.max { volume($0) < volume($1) }
+        let opacity = object.shapes.map(\.opacity).reduce(0, +) / Double(max(object.shapes.count, 1))
+        let size = hi - lo
+        let center = (hi + lo) / 2
+        return unitFaces(.box).map { face in
+            ObjectFace(vertices: face.map { $0 * size + center }, color: largest?.color ?? ObjectShape.defaultColor, opacity: opacity)
+        }
+    }
+
+    static func volume(_ shape: ObjectShape) -> Double {
+        shape.width * (shape.kind == .plane ? 0.1 : shape.depth) * shape.height
     }
 
     /// 置いたときの向きと倍率を反映した点(x=東、y=北、z=上。置いた場所の地面からの高さ)
