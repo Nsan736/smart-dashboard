@@ -37,6 +37,8 @@ struct SceneryView: View {
     @State private var locationError: String?
     @State private var detail: SceneryMountain?
     @State private var confirmDelete = false
+    /// 150km 以上に広げる前の確認
+    @State private var pendingRadius: Int?
 
     var body: some View {
         @Bindable var settings = env.settings
@@ -63,14 +65,25 @@ struct SceneryView: View {
                 Text("選んだ層は、景色のカメラ表示のほか、地点・周辺・経路・電車のカメラ表示にも重ねます(切り替えでオフにできます)。")
             }
             Section {
-                Picker("範囲", selection: Binding(get: { settings.sceneryRadiusKm }, set: { settings.sceneryRadiusKm = $0; scenery.settingsChanged() })) {
-                    ForEach(SceneryRadius.choices, id: \.self) { Text("\($0)km").tag($0) }
+                Picker("範囲", selection: Binding(get: { settings.sceneryRadiusKm }, set: { new in
+                    // 150km 以上に広げるときは、保存するデータ量の目安を出して確かめる
+                    if new >= SceneryRadius.confirmFrom, new > settings.sceneryRadiusKm {
+                        pendingRadius = new
+                    } else {
+                        settings.sceneryRadiusKm = new
+                        scenery.settingsChanged()
+                    }
+                })) {
+                    ForEach(SceneryRadius.choices, id: \.self) { km in
+                        Text(estimateText(km).map { "\(km)km(\($0))" } ?? "\(km)km").tag(km)
+                    }
                 }
+                LabeledContent("いま保存してある量", value: ByteCountFormatter.string(fromByteCount: scenery.storedBytes, countStyle: .file))
                 Toggle("隠れた山も薄く表示する", isOn: $settings.sceneryShowsHiddenMountains)
             } header: {
                 Text("山と稜線")
             } footer: {
-                Text("山は国土地理院の「日本の主な山岳標高」の\(scenery.catalog.entries.count)山から、範囲の中のものを出します。稜線は、範囲の中の標高タイルから、0.5°ごとに計算します。保存するデータは1か所あたり、範囲30kmで約1〜2MB、100kmで約3〜5MBです。")
+                Text("山は国土地理院の「日本の主な山岳標高」の\(scenery.catalog.entries.count)山から、範囲の中のものを出します(広い範囲では、高い山・近い山を優先して文字を出します)。稜線は、範囲の中の標高タイルから0.5°ごとに計算します。遠い所ほど粗いタイル(100kmまで約250m、200kmまで約500m、それより遠くは約1km)を使い、山頂の高さは山の一覧の標高で補います。かっこの中は、今いる場所でその範囲に保存するデータ量の目安です(保存済みの分は取り直しません)。海・湖・川と地名は100kmまでです。")
             }
             statusSection(scenery)
             if let scene = scenery.scene {
@@ -105,6 +118,18 @@ struct SceneryView: View {
             }
         }
         .sheet(item: $detail) { SceneryMountainSheet(mountain: $0) }
+        .alert("範囲を\(pendingRadius ?? 0)kmに広げますか", isPresented: Binding(get: { pendingRadius != nil }, set: { if !$0 { pendingRadius = nil } })) {
+            Button("広げる") {
+                if let radius = pendingRadius {
+                    settings.sceneryRadiusKm = radius
+                    scenery.settingsChanged()
+                }
+                pendingRadius = nil
+            }
+            Button("やめる", role: .cancel) { pendingRadius = nil }
+        } message: {
+            Text("この場所で、地形のデータを合わせて\(pendingRadius.flatMap(estimateText) ?? "数MB")ほど保存します(いま保存してある量: \(ByteCountFormatter.string(fromByteCount: scenery.storedBytes, countStyle: .file)))。保存は Wi-Fi など従量制でない回線のときだけ行い、地図タイルと合わせた保存の上限を超えたら止めます。")
+        }
         .confirmationDialog("景色のデータを削除しますか", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("削除", role: .destructive) { Task { await scenery.removeAll() } }
         } message: {
@@ -177,6 +202,13 @@ struct SceneryView: View {
         } header: {
             Text("範囲の山(\(list.count)、近い順)")
         }
+    }
+
+    /// その範囲に保存するデータ量の目安(今いる場所。分からなければ nil)
+    private func estimateText(_ km: Int) -> String? {
+        guard let point = located.map({ (latitude: $0.latitude, longitude: $0.longitude) }) ?? env.scenery.lastLocation else { return nil }
+        let bytes = SceneryTileStore.estimatedBytes(latitude: point.latitude, longitude: point.longitude, radius: Double(km) * 1000)
+        return "約" + ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
     }
 
     private func locate() async {

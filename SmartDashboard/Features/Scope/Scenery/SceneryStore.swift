@@ -86,10 +86,21 @@ final class SceneryTileStore: @unchecked Sendable {
         var result = TerrainGrid.neededTiles(latitude: latitude, longitude: longitude, radius: radius)
             .map { SceneryTileRef(kind: .dem, key: $0) }
         if includesVector {
-            result += TileKey.around(latitude: latitude, longitude: longitude, radius: radius, zoom: WaterMap.zoom)
+            result += TileKey.around(latitude: latitude, longitude: longitude, radius: min(radius, SceneryRadius.vectorLimit), zoom: WaterMap.zoom)
                 .map { SceneryTileRef(kind: .vector, key: $0) }
         }
         return result
+    }
+
+    /// 1枚の大きさの目安(バイト。2026-10-18 に東京・甲府・松本・札幌の周りで測った平均)
+    static let averageBytes: [Int: Int64] = [12: 90_000, 10: 110_000, 9: 110_000, 8: 80_000, 7: 60_000]
+    static let averageVectorBytes: Int64 = 100_000
+
+    /// その場所で、その範囲の景色に保存するデータ量の目安(バイト)
+    static func estimatedBytes(latitude: Double, longitude: Double, radius: Double) -> Int64 {
+        needed(latitude: latitude, longitude: longitude, radius: radius, includesVector: true).reduce(0) { total, tile in
+            total + (tile.kind == .vector ? averageVectorBytes : averageBytes[tile.key.z] ?? 100_000)
+        }
     }
 }
 
@@ -139,8 +150,10 @@ actor SceneryEngine {
         if needsSkyline {
             var waterSampler: WaterSampling?
             if input.layers.contains(.water) { waterSampler = water }
+            // 遠くの山頂は、山の一覧の標高で補う
+            let peaks = catalog.map { SkylinePeak(latitude: $0.latitude, longitude: $0.longitude, elevation: $0.elevation) }
             let result = SkylineCalculator.compute(latitude: input.latitude, longitude: input.longitude, eye: eye, radius: input.radius,
-                                                   terrain: grid, water: waterSampler)
+                                                   terrain: grid, water: waterSampler, peaks: peaks)
             skyline = result.skyline
             hits = result.water
         }
@@ -164,7 +177,7 @@ actor SceneryEngine {
             guard wanted else { continue }
             let distance = WaypointMath.distance(fromLatitude: input.latitude, longitude: input.longitude,
                                                  toLatitude: name.latitude, longitude: name.longitude)
-            let limit = name.kind == .river ? min(30_000, input.radius) : input.radius
+            let limit = name.kind == .river ? min(30_000, input.radius) : min(input.radius, SceneryRadius.vectorLimit)
             guard distance >= 200, distance <= limit else { continue }
             let bearing = WaypointMath.bearing(fromLatitude: input.latitude, longitude: input.longitude,
                                                toLatitude: name.latitude, longitude: name.longitude)
@@ -200,7 +213,8 @@ actor SceneryEngine {
     }
 
     private func loadVector(_ input: SceneryInput) {
-        let keys = Set(TileKey.around(latitude: input.latitude, longitude: input.longitude, radius: input.radius, zoom: WaterMap.zoom)
+        let keys = Set(TileKey.around(latitude: input.latitude, longitude: input.longitude, radius: min(input.radius, SceneryRadius.vectorLimit),
+                                      zoom: WaterMap.zoom)
             .filter { store.exists(SceneryTileRef(kind: .vector, key: $0)) })
         guard keys != vectorKeys else { return }
         var tiles: [TileKey: VectorTile] = [:]
@@ -261,6 +275,8 @@ final class SceneryStore {
     }
 
     var layers: Set<SceneryLayer> { Set(settings.sceneryLayers) }
+    /// 最後に計算した場所(範囲を選ぶ画面で、データ量の目安を出すのに使う)
+    var lastLocation: (latitude: Double, longitude: Double)? { lastInput.map { ($0.latitude, $0.longitude) } }
     var radius: Double { Double(SceneryRadius.clamped(settings.sceneryRadiusKm)) * 1000 }
     var isActive: Bool { !activeReasons.isEmpty }
 

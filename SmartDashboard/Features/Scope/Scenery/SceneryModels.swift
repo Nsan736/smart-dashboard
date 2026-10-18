@@ -38,10 +38,13 @@ enum SceneryLayer: String, CaseIterable, Identifiable, Codable {
     }
 }
 
-/// 景色の範囲(km)の選択肢
+/// 景色の範囲(km)の選択肢。150km 以上は、保存するデータ量の目安を出して確かめてから広げる
 enum SceneryRadius {
-    static let choices = [30, 50, 100]
+    static let choices = [30, 50, 100, 150, 200, 300, 350]
     static let initial = 100
+    static let confirmFrom = 150
+    /// 水部・注記(ベクトルタイル)を使う範囲の上限(m)。それより遠くの水面は、地平線の下になることが多いため
+    static let vectorLimit = 100_000.0
 
     static func clamped(_ value: Int) -> Int {
         choices.contains(value) ? value : initial

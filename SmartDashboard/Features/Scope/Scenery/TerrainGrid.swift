@@ -66,9 +66,10 @@ struct TerrainGrid {
         }
     }
 
-    /// 距離ごとに使うズーム(近い順)。5kmまで ズーム12(約30m)、30kmまで ズーム10(約125m)、それより遠くは ズーム9(約250m)
-    static let rings: [(distance: Double, zoom: Int)] = [(5_000, 12), (30_000, 10), (.infinity, 9)]
-    static let zooms = [12, 10, 9]
+    /// 距離ごとに使うズーム(近い順)。5kmまで ズーム12(約30m)、30kmまで ズーム10(約125m)、100kmまで ズーム9(約250m)、
+    /// 200kmまで ズーム8(約500m)、それより遠くは ズーム7(約1km)。遠くの山頂が低く出る分は、山の一覧の標高で補う(SkylinePeak)
+    static let rings: [(distance: Double, zoom: Int)] = [(5_000, 12), (30_000, 10), (100_000, 9), (200_000, 8), (.infinity, 7)]
+    static let zooms = [12, 10, 9, 8, 7]
     static let tileSize = 256
 
     /// タイルごとの標高(m)。256×256、行ごと。海(データなし)は NaN。
@@ -79,7 +80,7 @@ struct TerrainGrid {
     }
 
     static func zoom(forDistance distance: Double) -> Int {
-        rings.first { distance <= $0.distance }?.zoom ?? 9
+        rings.first { distance <= $0.distance }?.zoom ?? 7
     }
 
     /// その距離で使うズーム(なければ粗いほうへ)で標高を引く

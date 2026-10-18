@@ -101,6 +101,13 @@ struct Skyline: Equatable {
     }
 }
 
+/// 山の一覧の山頂(粗い標高タイルで低く出る山頂を補う)
+struct SkylinePeak: Equatable {
+    var latitude: Double
+    var longitude: Double
+    var elevation: Double
+}
+
 /// 見えた水面(方角ごとに一番手前のもの)
 struct WaterHit: Equatable {
     var component: Int
@@ -120,11 +127,44 @@ enum SkylineCalculator {
     }
     /// 見える高さが、これより上がったときだけ記録する(度)
     static let recordThreshold: Float = 0.02
+    /// 山頂の補い: この距離より遠い山だけ(近くは細かい標高タイルで足りる)。山頂を中心に、半径3km・傾き0.25の円すいとして高さを足す
+    static let peakMinimumDistance = 30_000.0
+    static let peakConeRadius = 3_000.0
+    static let peakConeSlope = 0.25
+
+    /// 方角ごとに、近くを通る山頂(道のりの上の位置と、横のずれ)
+    struct RayPeak {
+        var along: Double
+        var across: Double
+        var elevation: Double
+    }
+
+    static func rayPeaks(_ peaks: [SkylinePeak], latitude: Double, longitude: Double, radius: Double, step: Double, count: Int) -> [[RayPeak]] {
+        var result = Array(repeating: [RayPeak](), count: count)
+        for peak in peaks {
+            let d = WaypointMath.distance(fromLatitude: latitude, longitude: longitude, toLatitude: peak.latitude, longitude: peak.longitude)
+            guard d > peakMinimumDistance, d <= radius + peakConeRadius else { continue }
+            let b = WaypointMath.bearing(fromLatitude: latitude, longitude: longitude, toLatitude: peak.latitude, longitude: peak.longitude)
+            let halfWidth = atan(peakConeRadius / d) * 180 / .pi
+            let first = Int(floor((b - halfWidth) / step)), last = Int(ceil((b + halfWidth) / step))
+            for k in first...last {
+                let index = ((k % count) + count) % count
+                let offset = (b - Double(k) * step) * .pi / 180
+                let across = abs(d * sin(offset))
+                guard across < peakConeRadius else { continue }
+                result[index].append(RayPeak(along: d * cos(offset), across: across, elevation: peak.elevation))
+            }
+        }
+        for index in result.indices { result[index].sort { $0.along < $1.along } }
+        return result
+    }
 
     /// 稜線を計算する。water を渡すと、方角ごとに一番手前の見える水面も返す。
     static func compute(latitude: Double, longitude: Double, eye: Double, radius: Double, terrain: TerrainSampling,
-                        water: WaterSampling? = nil, step: Double = Skyline.defaultStep) -> (skyline: Skyline, water: [WaterHit?]) {
+                        water: WaterSampling? = nil, peaks: [SkylinePeak] = [],
+                        step: Double = Skyline.defaultStep) -> (skyline: Skyline, water: [WaterHit?]) {
         let count = max(1, Int((360 / step).rounded()))
+        let peaksByRay = peaks.isEmpty ? [] : rayPeaks(peaks, latitude: latitude, longitude: longitude, radius: radius, step: step, count: count)
         var rays: [Skyline.Ray] = []
         rays.reserveCapacity(count)
         var hits: [WaterHit?] = Array(repeating: nil, count: water == nil ? 0 : count)
@@ -137,6 +177,7 @@ enum SkylineCalculator {
             var ray = Skyline.Ray()
             var best = -Float.greatestFiniteMagnitude
             var distance = firstDistance
+            let nearPeaks = peaksByRay.isEmpty ? [] : peaksByRay[index]
             while distance <= radius {
                 // 大円の上で、方角 bearing に distance 進んだ点
                 let delta = distance / WaypointElevation.earthRadius
@@ -146,9 +187,14 @@ enum SkylineCalculator {
                 let lon = lon0 + atan2(sinB * sinD * cosLat0, cosD - sinLat0 * sinLat)
                 let latDeg = lat * 180 / .pi, lonDeg = lon * 180 / .pi
                 let sample = terrain.sample(latitude: latDeg, longitude: lonDeg, distance: distance)
-                guard let height = sample.height else {
+                guard var height = sample.height else {
                     ray.missingFrom = Float(distance)
                     break
+                }
+                // 近くを通る山頂の円すいの高さで補う(粗いタイルでは山頂が低く出るため)
+                for peak in nearPeaks where abs(distance - peak.along) < peakConeRadius {
+                    let offset = ((distance - peak.along) * (distance - peak.along) + peak.across * peak.across).squareRoot()
+                    height = max(height, peak.elevation - peakConeSlope * offset)
                 }
                 let angle = Float(WaypointElevation.angle(targetAltitude: height, observerAltitude: eye, distance: distance))
                 if let water, hits[index] == nil, angle >= best, let component = water.component(latitude: latDeg, longitude: lonDeg) {
@@ -164,7 +210,10 @@ enum SkylineCalculator {
                     }
                     best = angle
                 }
-                distance = nextDistance(after: distance)
+                var next = nextDistance(after: distance)
+                // 山頂の位置を飛ばさないように、その距離でも調べる
+                if let special = nearPeaks.first(where: { $0.along > distance && $0.along < next }) { next = special.along }
+                distance = next
             }
             rays.append(ray)
         }
