@@ -31,3 +31,6 @@ Thumbs.db
 
 # XcodeGenが生成する
 SmartDashboard/Info.plist
+
+# Python のキャッシュ(check_local.py が scripts の中のモジュールを読むため)
+__pycache__/

@@ -14,6 +14,7 @@
 - Swift の文字列が行の途中で切れていないか(パッチの文字列の改行の記号が、本物の改行になる誤り。v0.9.17 の ci で起きた)
 - アプリに同梱した小ツールの形式の説明が、docs/tools-format.md と同じか
 - Claude の APIキーらしき文字列(sk-ant-)が、Git の管理下のファイルに書かれていないか
+- スクリプト型のサンプル(examples/tools と、テストのフィクスチャ)が、examples/tools/src の JavaScript から作ったものと同じか
 """
 import glob
 import json
@@ -251,8 +252,20 @@ def check_bundled_docs():
     check(same, "SmartDashboard/Resources/tools-format.md が docs/tools-format.md と違います(docs のほうを写してください)")
 
 
+def check_script_examples():
+    """スクリプト型のサンプルを、元の JavaScript から作り直したものと比べる(python scripts/build_tool_examples.py で作る)"""
+    sys.path.insert(0, os.path.join(ROOT, "scripts"))
+    import build_tool_examples
+    for name, meta in build_tool_examples.TOOLS.items():
+        expected = build_tool_examples.build(name, meta)
+        for path in (os.path.join(ROOT, "examples", "tools", name + ".json"),
+                     os.path.join(ROOT, "SmartDashboardTests", "Fixtures", "tool_script_" + name.replace("-", "_") + ".json")):
+            same = os.path.exists(path) and open(path, encoding="utf-8").read() == expected
+            check(same, f"{os.path.relpath(path, ROOT)} が examples/tools/src/{name}.js と合いません(python scripts/build_tool_examples.py を実行)")
+
+
 for step in (check_fixtures, check_committed_secrets, check_yaml, check_apps_json, check_swift_brackets, check_double_backslash,
-             check_main_actor_statics, check_unterminated_strings, check_bundled_docs):
+             check_main_actor_statics, check_unterminated_strings, check_bundled_docs, check_script_examples):
     step()
 
 if errors:
