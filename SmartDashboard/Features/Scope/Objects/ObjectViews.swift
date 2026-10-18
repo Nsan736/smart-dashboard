@@ -65,7 +65,9 @@ struct ObjectListView: View {
                 } label: {
                     Label("コンパスで見る", systemImage: "safari")
                 }
-                Toggle("地点・周辺・経路・電車・景色にも重ねる", isOn: $settings.objectsOverlayOthers)
+                Toggle("スコープのカメラ表示に重ねる", isOn: Binding(get: { settings.scopeLayers.contains(.objects) }, set: { on in
+                    if on { settings.scopeLayers.insert(.objects) } else { settings.scopeLayers.remove(.objects) }
+                }))
             }
             Section {
                 MapContainerView(center: located?.coordinate ?? store.placements.first.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) },

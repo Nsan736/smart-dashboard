@@ -242,6 +242,16 @@ final class AppSettings {
         didSet { defaults.set(movementDebugEnabled, forKey: Keys.movementDebugEnabled) }
     }
 
+    /// スコープに重ねる表示(v0.9.29)。保存がなければ、以前の上部の切り替えと「ほかの表示にも重ねる」から決める(`ScopeLayerMigration`)
+    var scopeLayers: Set<ScopeLayer> {
+        didSet { defaults.set(ScopeLayer.sorted(scopeLayers).map(\.rawValue), forKey: Keys.scopeLayers) }
+    }
+
+    /// 山の高さの強調(景色の仰角に掛ける倍率。初期値1倍)
+    var sceneryHeightScale: Double {
+        didSet { defaults.set(sceneryHeightScale, forKey: Keys.sceneryHeightScale) }
+    }
+
     /// 方角の補正(度、−180〜180、時計回りが正)。端末の方角を使うすべての所に足す(`HeadingCorrection`)
     var headingOffset: Double {
         didSet {
@@ -320,6 +330,16 @@ final class AppSettings {
         movementRetention = defaults.string(forKey: Keys.movementRetention).flatMap(MovementRetention.init(rawValue:)) ?? .today
         movementDebugEnabled = defaults.bool(forKey: Keys.movementDebugEnabled)
         headingDebugEnabled = defaults.bool(forKey: Keys.headingDebugEnabled)
+        if let raw = defaults.stringArray(forKey: Keys.scopeLayers) {
+            scopeLayers = ScopeLayerMigration.decode(raw)
+        } else {
+            scopeLayers = ScopeLayerMigration.initial(section: defaults.string(forKey: Keys.scopeSection),
+                                                      sceneryOverlaysOthers: defaults.object(forKey: Keys.sceneryOverlaysOthers) as? Bool ?? true,
+                                                      objectsOverlayOthers: defaults.object(forKey: Keys.objectsOverlayOthers) as? Bool ?? true,
+                                                      hasSceneryLayers: !SceneryLayer.decode(defaults.stringArray(forKey: Keys.sceneryLayers)).isEmpty)
+        }
+        let heightScale = defaults.double(forKey: Keys.sceneryHeightScale)
+        sceneryHeightScale = SceneryHeightScale.choices.contains(heightScale) ? heightScale : 1
         let offset = HeadingCorrection.normalized(defaults.double(forKey: HeadingCorrection.defaultsKey))
         headingOffset = offset
         HeadingCorrection.current = offset
@@ -398,6 +418,9 @@ final class AppSettings {
         static let movementRetention = "movement.retention"
         static let movementDebugEnabled = "movement.debug"
         static let headingDebugEnabled = "scope.headingDebug"
+        static let scopeLayers = "scope.layers"
+        static let scopeSection = "scope.section"
+        static let sceneryHeightScale = "scope.sceneryHeightScale"
         static let headingGyroHold = "scope.headingGyroHold"
         static let walkRouteFactor = "movement.walkRouteFactor"
         static let walkSpeedKmh = "movement.walkSpeedKmh"

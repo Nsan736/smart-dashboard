@@ -100,6 +100,18 @@ enum ScopeSightSource: Equatable {
     case scenery
     /// 地図に置いたオブジェクト
     case objects
+
+    /// 重ねる表示の種類(v0.9.29)
+    var layer: ScopeLayer {
+        switch self {
+        case .places: return .places
+        case .nearby: return .nearby
+        case .route: return .route
+        case .trains: return .trains
+        case .scenery: return .scenery
+        case .objects: return .objects
+        }
+    }
 }
 
 /// 経路の目的地(地点、または周辺の施設)

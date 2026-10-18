@@ -1,48 +1,11 @@
 import CoreLocation
 import SwiftUI
 
-/// スコープのタブ。上部で「地点/周辺/経路」を切り替える。カメラ表示とコンパス表示は3つで共通(ScopeSightView)。
+/// スコープのタブ。開くとカメラ表示(v0.9.29)。上部の「表示」で重ねる表示を選び、一覧と設定は「…」の「管理」から開く
 struct ScopeView: View {
-    @AppStorage("scope.section") private var sectionRaw = ScopeSection.places.rawValue
-
     var body: some View {
-        let section = Binding<ScopeSection>(
-            get: { ScopeSection(rawValue: sectionRaw) ?? .places },
-            set: { sectionRaw = $0.rawValue })
         NavigationStack {
-            VStack(spacing: 0) {
-                // 6つあるので、横にスクロールできる切り替え(最小の画面幅でも文字が切れない)
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
-                        ForEach(ScopeSection.allCases) { item in
-                            Button {
-                                section.wrappedValue = item
-                            } label: {
-                                Text(item.label)
-                                    .font(.subheadline.weight(.semibold))
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 6)
-                                    .foregroundStyle(section.wrappedValue == item ? Color.white : Color.primary)
-                                    .background(section.wrappedValue == item ? Color.accentColor : Color(.tertiarySystemFill), in: Capsule())
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                    .padding(.horizontal)
-                    .padding(.vertical, 8)
-                }
-                switch section.wrappedValue {
-                case .places: WaypointListView(section: section)
-                case .nearby: NearbyView(section: section)
-                case .route: RouteView(section: section)
-                case .trains: ScopeTrainsView()
-                case .scenery: SceneryView()
-                case .objects: ObjectListView()
-                }
-            }
-            .background(Color(.systemGroupedBackground))
-            .navigationTitle("スコープ")
-            .navigationBarTitleDisplayMode(.inline)
+            ScopeSightView(mode: .camera)
         }
     }
 }

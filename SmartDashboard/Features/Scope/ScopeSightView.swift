@@ -11,16 +11,23 @@ enum ScopeRouteStyle {
     static let destinationColor = Color.red
 }
 
-/// カメラ越しの表示と、コンパス表示。地点・周辺・経路・電車・景色で共通。開いている間だけ、カメラ・GPS・モーションを動かす。
-/// 景色(山・稜線・水面・地名)は、選んだ層を、どの表示にも同じ Canvas で重ねる(設定で、景色の表示のときだけにもできる)。
+/// カメラ越しの表示と、コンパス表示。重ねる表示(`ScopeLayer`: 地点・周辺・オブジェクト・経路・電車・景色)をいくつでも同時に出す。
+/// スコープのタブの最初の画面(isRoot)は、設定の重ねる表示(`AppSettings.scopeLayers`)を使い、上部の「表示」で選ぶ。
+/// 一覧の画面の「カメラで見る」から開いたときは、その表示に、オンにしている景色とオブジェクトを重ねる。
+/// 開いている間だけ、カメラ・GPS・モーションを動かす。
 struct ScopeSightView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.scenePhase) private var scenePhase
     @State private var mode: ScopeSightMode
-    @State private var source: ScopeSightSource
+    /// 一覧の画面から開いたときの表示(nil ならスコープのタブの最初の画面で、設定の重ねる表示を使う)
+    private let fixedLayers: Set<ScopeLayer>?
+    /// 地点の「選んだ1つ」(nil なら表示中の地点すべて)
+    @State private var selectedPlaceID: UUID?
+    @State private var showsLayers = false
+    @State private var showsManage = false
     @State private var tracker = WaypointTracker()
     @State private var isVisible = false
-    /// 電車(source が .trains のときだけ動かす)
+    /// 電車(電車の表示がオンのときだけ動かす)
     @State private var trainFeed = ScopeTrainFeed(reason: "scope.sight")
     @State private var trainDetail: ScopeTrainDetailSheet.Target?
     /// 「撮って聞く」(止めた映像で Claude に聞く)
@@ -41,10 +48,29 @@ struct ScopeSightView: View {
         let id: UUID
     }
 
+    /// 一覧の画面から、その表示で開く
     init(mode: ScopeSightMode, source: ScopeSightSource) {
         _mode = State(initialValue: mode)
-        _source = State(initialValue: source)
+        fixedLayers = [source.layer]
+        if case .places(let id) = source { _selectedPlaceID = State(initialValue: id) }
     }
+
+    /// スコープのタブの最初の画面(設定の重ねる表示)
+    init(mode: ScopeSightMode) {
+        _mode = State(initialValue: mode)
+        fixedLayers = nil
+    }
+
+    private var isRoot: Bool { fixedLayers == nil }
+
+    /// 今の重ねる表示
+    private var layers: Set<ScopeLayer> {
+        guard let fixedLayers else { return env.settings.scopeLayers }
+        // 一覧から開いたときも、オンにしている景色とオブジェクトは重ねる
+        return fixedLayers.union(env.settings.scopeLayers.intersection([.scenery, .objects]))
+    }
+
+    private func has(_ layer: ScopeLayer) -> Bool { layers.contains(layer) }
 
     var body: some View {
         @Bindable var settings = env.settings
@@ -65,35 +91,52 @@ struct ScopeSightView: View {
                         showsCorrection = false
                     }
                 }
-                if source == .route { guidanceBar }
+                if has(.route), !isRoot || env.route.navigator != nil { guidanceBar }
                 statusBar
             }
         }
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            if isRoot {
+                ToolbarItem(placement: .topBarLeading) {
+                    // 重ねる表示を選ぶ(上部のボタンはこれ1つ)
+                    Button {
+                        showsLayers = true
+                    } label: {
+                        Label("表示", systemImage: "square.3.layers.3d")
+                            .labelStyle(.titleAndIcon)
+                    }
+                }
+            }
             ToolbarItemGroup(placement: .topBarTrailing) {
+                Button {
+                    mode = mode == .camera ? .compass : .camera
+                } label: {
+                    Label(mode == .camera ? "コンパス表示" : "カメラ表示", systemImage: mode == .camera ? "safari" : "camera")
+                }
                 Menu {
-                    if case .places(let selectedID) = source {
+                    if isRoot {
+                        Button {
+                            showsManage = true
+                        } label: {
+                            Label("管理(一覧と設定)", systemImage: "list.bullet")
+                        }
+                    }
+                    if has(.places) {
                         // 「選んだ1つ」は、非表示の地点も選べる(選んだ地点は一時的に表示する)
-                        Picker("表示する地点", selection: Binding(get: { selectedID }, set: { source = .places(selectedID: $0) })) {
+                        Picker("表示する地点", selection: $selectedPlaceID) {
                             Text("すべての地点(表示中)").tag(UUID?.none)
                             ForEach(env.waypoints.waypoints) { Text($0.isHidden ? "\($0.name)(非表示)" : $0.name).tag(UUID?.some($0.id)) }
                         }
                     }
                     Toggle("向いている方角を表示", isOn: $settings.waypointShowsHeading)
                     Toggle("高さを反映する", isOn: $settings.scopeUsesHeight)
-                    if source != .objects {
-                        Toggle("オブジェクトを重ねる", isOn: $settings.objectsOverlayOthers)
-                    }
                     Menu("景色") {
                         SceneryLayerToggles()
                         Toggle("隠れた山も薄く表示", isOn: $settings.sceneryShowsHiddenMountains)
-                        if source != .scenery {
-                            Toggle("この表示にも重ねる", isOn: Binding(get: { settings.sceneryOverlaysOthers }, set: {
-                                settings.sceneryOverlaysOthers = $0
-                                if isVisible { startAll() }
-                            }))
+                        Picker("山の高さの強調", selection: $settings.sceneryHeightScale) {
+                            ForEach(SceneryHeightScale.choices, id: \.self) { Text(SceneryHeightScale.label($0)).tag($0) }
                         }
                     }
                     Button {
@@ -107,14 +150,15 @@ struct ScopeSightView: View {
                         Label("最近聞いたこと(撮って聞く)", systemImage: "clock.arrow.circlepath")
                     }
                 } label: {
-                    Label("表示の設定", systemImage: "line.3.horizontal.decrease.circle")
-                }
-                Button {
-                    mode = mode == .camera ? .compass : .camera
-                } label: {
-                    Label(mode == .camera ? "コンパス表示" : "カメラ表示", systemImage: mode == .camera ? "safari" : "camera")
+                    Label("その他", systemImage: "ellipsis.circle")
                 }
             }
+        }
+        .sheet(isPresented: $showsLayers) { ScopeLayerPickerView() }
+        .navigationDestination(isPresented: $showsManage) { ScopeManageView() }
+        .onChange(of: layers) { _, _ in
+            // 重ねる表示を変えたら、電車・景色の取得と計算を始める・止める
+            if isVisible { startAll() }
         }
         .onAppear {
             isVisible = true
@@ -193,21 +237,16 @@ struct ScopeSightView: View {
         }
     }
 
-    /// 撮った方向の分類の名前(Claude に送る)
-    private var sourceKindName: String {
-        switch source {
-        case .places: return "登録した地点"
-        case .nearby: return "周辺の施設"
-        case .route: return "経路の目的地・曲がり角"
-        case .trains: return "電車"
-        case .scenery: return "山"
-        case .objects: return "置いたオブジェクト"
-        }
+    /// 印の ID → その印の表示(「撮って聞く」で送る印の種類と、コンパス表示で電車の行を見分けるのに使う)
+    private var markLayers: [String: ScopeLayer] {
+        var result: [String: ScopeLayer] = [:]
+        for entry in layeredMarks { result[entry.mark.id] = entry.layer }
+        return result
     }
 
-    /// オブジェクトを重ねるか(置いたものがあり、オブジェクトの表示か、ほかの表示にも重ねる設定のとき)
+    /// オブジェクトを重ねるか(オブジェクトの表示がオンで、置いたものがあるとき)
     private var showsObjects: Bool {
-        !env.objects.visiblePlacements.isEmpty && (source == .objects || env.settings.objectsOverlayOthers)
+        has(.objects) && !env.objects.visiblePlacements.isEmpty
     }
 
     /// 現在地(位置のデバッグの間は、仮想の位置)
@@ -229,13 +268,14 @@ struct ScopeSightView: View {
         return extras
     }
 
-    /// 景色を重ねるか(層を1つ以上選んでいて、景色の表示か、ほかの表示にも重ねる設定のとき)
+    /// 景色を重ねるか(景色の表示がオンで、景色の中の層を1つ以上選んでいるとき)
     private var showsScenery: Bool {
-        !env.settings.sceneryLayers.isEmpty && (source == .scenery || env.settings.sceneryOverlaysOthers)
+        has(.scenery) && !env.settings.sceneryLayers.isEmpty
     }
 
     private var sceneryOptions: SceneryDrawOptions {
-        SceneryDrawOptions(layers: Set(env.settings.sceneryLayers), showsHiddenMountains: env.settings.sceneryShowsHiddenMountains)
+        SceneryDrawOptions(layers: Set(env.settings.sceneryLayers), showsHiddenMountains: env.settings.sceneryShowsHiddenMountains,
+                           heightScale: env.settings.sceneryHeightScale)
     }
 
     /// 景色の計算の結果(重ねないときは nil)
@@ -257,13 +297,14 @@ struct ScopeSightView: View {
         let visible = ScopeAskImage.visibleRect(imageSize: CGSize(width: frame.width, height: frame.height), viewSize: viewSize)
         let image = frame.cropping(to: visible) ?? frame
         var inView: [ScopeAskTarget] = []
+        let kinds = markLayers
         if let attitude {
             let screen = CGRect(origin: .zero, size: viewSize)
             for target in targets {
                 guard let point = WaypointProjection.point(bearing: target.bearing, elevation: target.elevationAngle, attitude: attitude,
                                                            tangents: tangents, viewSize: viewSize),
                       screen.contains(point) else { continue }
-                inView.append(ScopeAskTarget(name: target.mark.name, kind: sourceKindName, bearing: target.bearing,
+                inView.append(ScopeAskTarget(name: target.mark.name, kind: (kinds[target.id] ?? .places).kindName, bearing: target.bearing,
                                              distance: target.distance, heightDifference: target.heightDifference))
             }
         }
@@ -275,6 +316,36 @@ struct ScopeSightView: View {
             // 答えの場所が写る範囲の中かを確かめるため(端末の中だけで使う)
             halfFieldOfView: atan(tangents.horizontal) * 180 / .pi))
         showsAsk = true
+    }
+
+    /// 方角のデバッグ表示: 画角の内訳と縦の目盛り、山の頂の仰角と画面での高さ(地平線から何 pt 上か)
+    private func debugLines(attitude: CameraAttitude, tangents: (horizontal: Double, vertical: Double), size: CGSize) -> [String] {
+        let camera = env.camera
+        let perDegree = WaypointProjection.pointsPerDegree(tangents: tangents, viewSize: size)
+        let corrected = camera.correctedFieldOfView.map { String(format: "%.1f°", $0) } ?? "なし"
+        var lines = [
+            String(format: "画角: 形式 %.1f°・歪み補正後 ", camera.formatFieldOfView) + corrected
+                + String(format: "・ズーム %.2f → 計算 %.1f°(長辺)", camera.zoom, camera.fieldOfView),
+            String(format: "映像 %.2f:1・画面 %.0f×%.0f・1°= 横 %.1fpt / 縦 %.1fpt", camera.videoAspect, size.width, size.height,
+                   perDegree.horizontal, perDegree.vertical),
+        ]
+        guard showsScenery, let scene = env.scenery.scene else { return lines }
+        let visible = scene.mountains.filter { !$0.isHidden }
+        let scale = env.settings.sceneryHeightScale
+        // 富士山(なければ、一番目立つ山)
+        for mountain in [visible.first { $0.entry.name == "富士山" }, visible.first].compactMap({ $0 }).prefix(1) {
+            var line = mountain.entry.shortName + String(format: " 仰角 %.2f°・方角 %.1f°・%@", mountain.angle, mountain.bearing,
+                                                         SceneryText.distance(mountain.distance))
+            if let top = WaypointProjection.point(bearing: mountain.bearing, elevation: mountain.angle * scale, attitude: attitude,
+                                                  tangents: tangents, viewSize: size),
+               let base = WaypointProjection.point(bearing: mountain.bearing, elevation: 0, attitude: attitude, tangents: tangents, viewSize: size) {
+                line += String(format: "・画面で地平線から %.1fpt 上", base.y - top.y)
+            } else {
+                line += "・画面の外"
+            }
+            lines.append(line)
+        }
+        return lines
     }
 
     /// 方角の補正で合わせる目印(表示している印、景色の山、置いたオブジェクト)
@@ -301,23 +372,34 @@ struct ScopeSightView: View {
     }
 
     private var title: String {
-        switch source {
-        case .places: return mode == .camera ? "カメラで見る" : "コンパス"
-        case .nearby: return env.nearby.category?.label ?? "周辺"
-        case .route: return "経路の案内"
-        case .trains: return mode == .camera ? "電車をカメラで見る" : "電車のコンパス"
-        case .scenery: return mode == .camera ? "景色をカメラで見る" : "景色のコンパス"
-        case .objects: return mode == .camera ? "オブジェクトをカメラで見る" : "オブジェクトのコンパス"
+        if isRoot { return "スコープ" }
+        switch fixedLayers?.first {
+        case .places?: return mode == .camera ? "カメラで見る" : "コンパス"
+        case .nearby?: return env.nearby.category?.label ?? "周辺"
+        case .route?: return "経路の案内"
+        case .trains?: return mode == .camera ? "電車をカメラで見る" : "電車のコンパス"
+        case .scenery?: return mode == .camera ? "景色をカメラで見る" : "景色のコンパス"
+        case .objects?: return mode == .camera ? "オブジェクトをカメラで見る" : "オブジェクトのコンパス"
+        case nil: return "スコープ"
         }
     }
 
-    /// 表示する印。地点・周辺の施設・経路(次の曲がり角と目的地)のどれでも、同じ形にそろえる。
-    private var currentMarks: [ScopeMark] {
-        switch source {
-        case .places(let selectedID):
+    /// 表示する印(重ねる表示ごと)。地点・周辺の施設・経路(次の曲がり角と目的地)は、どれも同じ形にそろえる。
+    /// 電車・景色の山・オブジェクトは、カメラ表示ではそれぞれの描き方で描くので、印はコンパス表示のときだけ
+    private var layeredMarks: [(layer: ScopeLayer, mark: ScopeMark)] {
+        var result: [(layer: ScopeLayer, mark: ScopeMark)] = []
+        for layer in ScopeLayer.sorted(layers) {
+            result += marks(for: layer).map { (layer: layer, mark: $0) }
+        }
+        return result
+    }
+
+    private func marks(for layer: ScopeLayer) -> [ScopeMark] {
+        switch layer {
+        case .places:
             // すべて: 表示中の地点だけ。選んだ1つ: 非表示の地点でも出す。
-            guard let selectedID else { return env.waypoints.visibleWaypoints.map { ScopeMark($0) } }
-            return env.waypoints.waypoints.filter { $0.id == selectedID }.map { ScopeMark($0) }
+            guard let selectedPlaceID else { return env.waypoints.visibleWaypoints.map { ScopeMark($0) } }
+            return env.waypoints.waypoints.filter { $0.id == selectedPlaceID }.map { ScopeMark($0) }
         case .nearby:
             return env.nearby.marks
         case .route:
@@ -333,7 +415,7 @@ struct ScopeSightView: View {
             return trainFeed.marks()
         case .scenery:
             // カメラ表示では山の形の印で描くので、印はコンパス表示のときだけ(優先の高い12山)
-            guard mode == .compass, let scene = env.scenery.scene else { return [] }
+            guard mode == .compass, showsScenery, let scene = env.scenery.scene else { return [] }
             return scene.mountains.filter { env.settings.sceneryShowsHiddenMountains || !$0.isHidden }.prefix(12).map { mountain in
                 var mark = ScopeMark(id: "mountain.\(mountain.id)", name: mountain.entry.displayName, latitude: mountain.entry.latitude,
                                      longitude: mountain.entry.longitude, color: .brown, altitude: mountain.entry.elevation)
@@ -359,15 +441,21 @@ struct ScopeSightView: View {
         return env.elevation.observerHeight(latitude: coordinate.latitude, longitude: coordinate.longitude, gpsAltitude: tracker.gpsAltitude)
     }
 
+    /// 印の対象(遠い順)。カメラ表示では電車を含めない(電車は車両の箱で描く)
     private var currentTargets: [ScopeTarget] {
-        if source == .trains {
-            // コンパス表示の電車の印は、方角だけを出す(高さは印の文字で出す)。位置のデバッグの間は、仮想の位置から測る。
-            guard let point = trainUserPoint else { return [] }
-            return ScopeTarget.make(currentMarks, latitude: point.latitude, longitude: point.longitude)
+        let entries = layeredMarks
+        var result: [ScopeTarget] = []
+        let others = entries.filter { $0.layer != .trains }.map { $0.mark }
+        if let coordinate = tracker.coordinate, !others.isEmpty {
+            result += ScopeTarget.make(others, latitude: coordinate.latitude, longitude: coordinate.longitude,
+                                       observerAltitude: observer?.meters, usesHeight: env.settings.scopeUsesHeight)
         }
-        guard let coordinate = tracker.coordinate else { return [] }
-        return ScopeTarget.make(currentMarks, latitude: coordinate.latitude, longitude: coordinate.longitude,
-                                observerAltitude: observer?.meters, usesHeight: env.settings.scopeUsesHeight)
+        // コンパス表示の電車の印は、方角だけを出す(高さは印の文字で出す)。位置のデバッグの間は、仮想の位置から測る
+        if mode == .compass, let point = trainUserPoint {
+            let trains = entries.filter { $0.layer == .trains }.map { $0.mark }
+            if !trains.isEmpty { result += ScopeTarget.make(trains, latitude: point.latitude, longitude: point.longitude) }
+        }
+        return result.sorted { $0.distance > $1.distance }
     }
 
     /// カメラ・GPS・モーションは、この画面を表示している間だけ動かす。表示中は画面を消さない。
@@ -377,7 +465,7 @@ struct ScopeSightView: View {
         tracker.holdsHeadingWithGyro = env.settings.headingGyroHold
         // 位置とモーションは、カメラの準備を待たずに始める(カメラの設定と開始は専用のキューで進む)
         tracker.start(includesMotion: mode == .camera)
-        if source == .trains, !trainFeed.isRunning {
+        if has(.trains), !trainFeed.isRunning {
             // 位置のデバッグの間は、仮想の位置と時刻を進める(移動タブと同じ仕組み)
             if env.movement.isVirtual { env.movement.setVisible(true) }
             trainFeed.start(env: env, user: { [tracker, movement = env.movement] in
@@ -387,6 +475,9 @@ struct ScopeSightView: View {
                 guard settings.scopeUsesHeight, let coordinate = tracker.coordinate else { return nil }
                 return elevation.observerHeight(latitude: coordinate.latitude, longitude: coordinate.longitude, gpsAltitude: tracker.gpsAltitude)?.meters
             })
+        }
+        if !has(.trains), trainFeed.isRunning {
+            trainFeed.stop(env: env)
         }
         if showsObjects, env.movement.isVirtual { env.movement.setVisible(true) }
         if showsScenery {
@@ -444,10 +535,12 @@ struct ScopeSightView: View {
                         .background(.thinMaterial, in: Capsule())
                 } else if let attitude = tracker.attitude {
                     let tangents = WaypointProjection.tangents(fieldOfView: env.camera.fieldOfView, videoAspect: env.camera.videoAspect, viewSize: size)
-                    if source == .trains {
+                    if has(.trains) {
+                        // 電車(と景色・オブジェクト)を下に、印を上に重ねる。タップは電車 → オブジェクト → 山
                         ScopeTrainOverlay(feed: trainFeed, attitude: attitude, tangents: tangents, extras: extras) { id in
                             trainDetail = ScopeTrainDetailSheet.Target(selection: .train(id))
                         }
+                        ScopeOverlay(targets: targets, attitude: attitude, tangents: tangents)
                     } else {
                         ScopeOverlay(targets: targets, attitude: attitude, tangents: tangents, extras: extras)
                     }
@@ -481,6 +574,17 @@ struct ScopeSightView: View {
                             .shadow(color: .black, radius: 1)
                             .allowsHitTesting(false)
                     }
+                    if isRoot {
+                        // 今オンになっている表示(タップでその表示だけをオフ)
+                        VStack {
+                            HStack {
+                                ScopeActiveLayerIcons(layers: ScopeLayer.sorted(layers)) { layer in _ = env.settings.scopeLayers.remove(layer) }
+                                Spacer(minLength: 0)
+                            }
+                            Spacer()
+                        }
+                        .padding(8)
+                    }
                     VStack(alignment: .trailing, spacing: 6) {
                         if !showsAsk, env.scopeAsk.isThinking || env.scopeAsk.hasUnseenAnswer {
                             ClaudeWorkBanner(isRunning: env.scopeAsk.isThinking, hasResult: env.scopeAsk.hasUnseenAnswer,
@@ -498,7 +602,8 @@ struct ScopeSightView: View {
                         ScopeCompassRoseOverlay(attitude: attitude, tangents: tangents)
                         VStack {
                             HStack {
-                                ScopeHeadingDebugView(tracker: tracker, attitude: attitude, viewSize: size, targets: targets)
+                                ScopeHeadingDebugView(tracker: tracker, attitude: attitude, viewSize: size, targets: targets,
+                                                      extraLines: debugLines(attitude: attitude, tangents: tangents, size: size))
                                 Spacer(minLength: 0)
                             }
                             Spacer()
@@ -545,8 +650,9 @@ struct ScopeSightView: View {
                         .aspectRatio(1, contentMode: .fit)
                         .frame(maxWidth: 360)
                         .padding(.horizontal)
-                    ForEach(Array(targets.reversed().prefix(source == .trains ? 40 : 12))) { target in
-                        if source == .trains {
+                    let kinds = markLayers
+                    ForEach(Array(targets.reversed().prefix(has(.trains) ? 40 : 12))) { target in
+                        if kinds[target.id] == .trains {
                             Button {
                                 trainDetail = ScopeTrainDetailSheet.Target(selection: .train(target.id))
                             } label: {
@@ -686,12 +792,10 @@ struct ScopeSightView: View {
             if quality.needsCalibration {
                 Text(HeadingQuality.calibrationHint).foregroundStyle(.orange)
             }
-            if case .places = source {
-                Text(observerText)
-            } else if source == .scenery {
+            if has(.places) || has(.scenery) {
                 Text(observerText)
             }
-            if source == .trains {
+            if has(.trains) {
                 if env.movement.isVirtual {
                     Text("デバッグ中(仮想の位置と時刻)").foregroundStyle(.red)
                 }
