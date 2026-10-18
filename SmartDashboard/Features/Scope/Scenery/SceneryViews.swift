@@ -57,6 +57,27 @@ struct SceneryView: View {
                 }
             }
             Section {
+                Toggle(isOn: Binding(get: { settings.scopeLayers.contains(.sunMoon) }, set: { on in
+                    if on { settings.scopeLayers.insert(.sunMoon) } else { settings.scopeLayers.remove(.sunMoon) }
+                })) {
+                    Label("カメラ表示に太陽と月を重ねる", systemImage: "sun.and.horizon")
+                }
+                NavigationLink {
+                    SkyDetailView()
+                } label: {
+                    Label("日の出入り・月の出入り", systemImage: "sunrise")
+                }
+                NavigationLink {
+                    SummitForecastView()
+                } label: {
+                    Label("ダイヤモンド富士・パール富士の予報", systemImage: "mountain.2")
+                }
+            } header: {
+                Text("太陽と月")
+            } footer: {
+                Text("カメラ表示では、通り道と時刻の印、出入りの方角と時刻、今の太陽と月(月は満ち欠けの形)を重ねます。日時は、カメラ表示の「…」の「太陽と月の日時を変える」で変えられます。計算は端末の中だけで行います。")
+            }
+            Section {
                 SceneryLayerToggles()
                 Toggle("スコープのカメラ表示に重ねる", isOn: Binding(get: { settings.scopeLayers.contains(.scenery) }, set: { on in
                     if on { settings.scopeLayers.insert(.scenery) } else { settings.scopeLayers.remove(.scenery) }

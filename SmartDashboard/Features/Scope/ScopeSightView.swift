@@ -11,20 +11,21 @@ enum ScopeRouteStyle {
     static let destinationColor = Color.red
 }
 
-/// カメラ越しの表示と、コンパス表示。重ねる表示(`ScopeLayer`: 地点・周辺・オブジェクト・経路・電車・景色)をいくつでも同時に出す。
-/// スコープのタブの最初の画面(isRoot)は、設定の重ねる表示(`AppSettings.scopeLayers`)を使い、上部の「表示」で選ぶ。
-/// 一覧の画面の「カメラで見る」から開いたときは、その表示に、オンにしている景色とオブジェクトを重ねる。
+/// カメラ越しの表示と、コンパス表示。重ねる表示(`ScopeLayer`: 地点・周辺・オブジェクト・経路・電車・景色・太陽と月)をいくつでも同時に出す。
+/// 一覧の画面の「カメラで見る」から開く。開いた画面の表示を、設定の重ねる表示(`AppSettings.scopeLayers`)に入れ、上部の「表示」で変えられる。
 /// 開いている間だけ、カメラ・GPS・モーションを動かす。
 struct ScopeSightView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.scenePhase) private var scenePhase
     @State private var mode: ScopeSightMode
-    /// 一覧の画面から開いたときの表示(nil ならスコープのタブの最初の画面で、設定の重ねる表示を使う)
-    private let fixedLayers: Set<ScopeLayer>?
+    /// 開いた一覧の画面の表示(題名に使い、開いたときに重ねる表示に入れる)
+    private let primaryLayer: ScopeLayer
     /// 地点の「選んだ1つ」(nil なら表示中の地点すべて)
     @State private var selectedPlaceID: UUID?
     @State private var showsLayers = false
-    @State private var showsManage = false
+    /// 写真からオブジェクトを作る画面(撮って囲んだ写真を集める)と、最近作ったもの
+    @State private var showsPhotoComposer = false
+    @State private var showsObjectRecents = false
     /// 太陽と月: 1日分の計算、表示する日、選んだ時刻(nil なら今)、日時を変えるパネル
     @State private var skyScene: SkyScene?
     @State private var skyDay = Date()
@@ -56,24 +57,12 @@ struct ScopeSightView: View {
     /// 一覧の画面から、その表示で開く
     init(mode: ScopeSightMode, source: ScopeSightSource) {
         _mode = State(initialValue: mode)
-        fixedLayers = [source.layer]
+        primaryLayer = source.layer
         if case .places(let id) = source { _selectedPlaceID = State(initialValue: id) }
     }
 
-    /// スコープのタブの最初の画面(設定の重ねる表示)
-    init(mode: ScopeSightMode) {
-        _mode = State(initialValue: mode)
-        fixedLayers = nil
-    }
-
-    private var isRoot: Bool { fixedLayers == nil }
-
-    /// 今の重ねる表示
-    private var layers: Set<ScopeLayer> {
-        guard let fixedLayers else { return env.settings.scopeLayers }
-        // 一覧から開いたときも、オンにしている景色とオブジェクトは重ねる
-        return fixedLayers.union(env.settings.scopeLayers.intersection([.scenery, .objects]))
-    }
+    /// 今の重ねる表示(設定。開いた画面の表示は、開いたときに入れる)
+    private var layers: Set<ScopeLayer> { env.settings.scopeLayers }
 
     private func has(_ layer: ScopeLayer) -> Bool { layers.contains(layer) }
 
@@ -99,38 +88,26 @@ struct ScopeSightView: View {
                 if has(.sunMoon), showsSkyPanel {
                     SkyTimePanel(day: $skyDay, time: $skyTime, displayTime: skyDisplayTime, scene: skyScene) { showsSkyPanel = false }
                 }
-                if has(.route), !isRoot || env.route.navigator != nil { guidanceBar }
+                if has(.route), primaryLayer == .route || env.route.navigator != nil { guidanceBar }
                 statusBar
             }
         }
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            if isRoot {
-                ToolbarItem(placement: .topBarLeading) {
-                    // 重ねる表示を選ぶ(上部のボタンはこれ1つ)
-                    Button {
-                        showsLayers = true
-                    } label: {
-                        Label("表示", systemImage: "square.3.layers.3d")
-                            .labelStyle(.titleAndIcon)
-                    }
-                }
-            }
             ToolbarItemGroup(placement: .topBarTrailing) {
+                // 重ねる表示を選ぶ
+                Button {
+                    showsLayers = true
+                } label: {
+                    Label("表示", systemImage: "square.3.layers.3d")
+                }
                 Button {
                     mode = mode == .camera ? .compass : .camera
                 } label: {
                     Label(mode == .camera ? "コンパス表示" : "カメラ表示", systemImage: mode == .camera ? "safari" : "camera")
                 }
                 Menu {
-                    if isRoot {
-                        Button {
-                            showsManage = true
-                        } label: {
-                            Label("管理(一覧と設定)", systemImage: "list.bullet")
-                        }
-                    }
                     if has(.places) {
                         // 「選んだ1つ」は、非表示の地点も選べる(選んだ地点は一時的に表示する)
                         Picker("表示する地点", selection: $selectedPlaceID) {
@@ -164,13 +141,30 @@ struct ScopeSightView: View {
                     } label: {
                         Label("最近聞いたこと(撮って聞く)", systemImage: "clock.arrow.circlepath")
                     }
+                    Button {
+                        showsObjectRecents = true
+                    } label: {
+                        Label("最近作ったもの(オブジェクト)", systemImage: "cube")
+                    }
                 } label: {
                     Label("その他", systemImage: "ellipsis.circle")
                 }
             }
         }
         .sheet(isPresented: $showsLayers) { ScopeLayerPickerView() }
-        .navigationDestination(isPresented: $showsManage) { ScopeManageView() }
+        .sheet(isPresented: $showsObjectRecents) { ObjectComposeView() }
+        .sheet(isPresented: $showsPhotoComposer) {
+            // 撮り足すときは、この画面を閉じてカメラ表示に戻る(集めている写真は残る)
+            ObjectComposeView(photos: true) { showsPhotoComposer = false }
+        }
+        .onChange(of: showsPhotoComposer) { _, shows in
+            // 作る画面を出している間は、カメラ・GPS・モーションを止める
+            if shows {
+                stopAll()
+            } else if isVisible {
+                startAll()
+            }
+        }
         .onChange(of: layers) { _, _ in
             // 重ねる表示を変えたら、電車・景色の取得と計算を始める・止める
             if isVisible { startAll() }
@@ -194,6 +188,8 @@ struct ScopeSightView: View {
         }
         .onAppear {
             isVisible = true
+            // 開いた一覧の画面の表示を、重ねる表示に入れる
+            if !env.settings.scopeLayers.contains(primaryLayer) { env.settings.scopeLayers.insert(primaryLayer) }
             tracker.onLocation = { [store = env.waypoints, route = env.route, elevation = env.elevation, settings = env.settings,
                                     scenery = env.scenery, movement = env.movement] location in
                 let coordinate = location.coordinate
@@ -263,6 +259,10 @@ struct ScopeSightView: View {
             // 聞いている間は、カメラ・GPS・モーションを止める(閉じたら再開。答えは閉じても待ち続ける)
             if shows {
                 stopAll()
+            } else if env.objectCompose.opensPhotoComposer {
+                // 撮って囲んだ写真を「オブジェクトを作る」にしたとき
+                env.objectCompose.opensPhotoComposer = false
+                showsPhotoComposer = true
             } else if isVisible {
                 startAll()
             }
@@ -421,16 +421,14 @@ struct ScopeSightView: View {
     }
 
     private var title: String {
-        if isRoot { return "スコープ" }
-        switch fixedLayers?.first {
-        case .places?: return mode == .camera ? "カメラで見る" : "コンパス"
-        case .nearby?: return env.nearby.category?.label ?? "周辺"
-        case .route?: return "経路の案内"
-        case .trains?: return mode == .camera ? "電車をカメラで見る" : "電車のコンパス"
-        case .scenery?: return mode == .camera ? "景色をカメラで見る" : "景色のコンパス"
-        case .objects?: return mode == .camera ? "オブジェクトをカメラで見る" : "オブジェクトのコンパス"
-        case .sunMoon?: return mode == .camera ? "太陽と月をカメラで見る" : "太陽と月のコンパス"
-        case nil: return "スコープ"
+        switch primaryLayer {
+        case .places: return mode == .camera ? "カメラで見る" : "コンパス"
+        case .nearby: return env.nearby.category?.label ?? "周辺"
+        case .route: return "経路の案内"
+        case .trains: return mode == .camera ? "電車をカメラで見る" : "電車のコンパス"
+        case .scenery: return mode == .camera ? "景色をカメラで見る" : "景色のコンパス"
+        case .objects: return mode == .camera ? "オブジェクトをカメラで見る" : "オブジェクトのコンパス"
+        case .sunMoon: return mode == .camera ? "太陽と月をカメラで見る" : "太陽と月のコンパス"
         }
     }
 
@@ -627,18 +625,24 @@ struct ScopeSightView: View {
                             .shadow(color: .black, radius: 1)
                             .allowsHitTesting(false)
                     }
-                    if isRoot {
-                        // 今オンになっている表示(タップでその表示だけをオフ)
-                        VStack {
-                            HStack {
-                                ScopeActiveLayerIcons(layers: ScopeLayer.sorted(layers)) { layer in _ = env.settings.scopeLayers.remove(layer) }
-                                Spacer(minLength: 0)
-                            }
-                            Spacer()
+                    // 今オンになっている表示(タップでその表示だけをオフ)
+                    VStack {
+                        HStack {
+                            ScopeActiveLayerIcons(layers: ScopeLayer.sorted(layers)) { layer in _ = env.settings.scopeLayers.remove(layer) }
+                            Spacer(minLength: 0)
                         }
-                        .padding(8)
+                        Spacer()
                     }
+                    .padding(8)
                     VStack(alignment: .trailing, spacing: 6) {
+                        if env.objectCompose.isCollectingPhotos, !showsAsk, !showsPhotoComposer {
+                            // オブジェクトの写真を撮り足している間(撮って聞くで撮り、囲んで「オブジェクトを作る」)
+                            ObjectPhotoCollectingBanner(count: env.objectCompose.photos.count) {
+                                showsPhotoComposer = true
+                            } onCancel: {
+                                env.objectCompose.isCollectingPhotos = false
+                            }
+                        }
                         if !showsAsk, env.scopeAsk.isThinking || env.scopeAsk.hasUnseenAnswer {
                             ClaudeWorkBanner(isRunning: env.scopeAsk.isThinking, hasResult: env.scopeAsk.hasUnseenAnswer,
                                              runningText: "撮って聞く: 答えを待っています…", doneText: "撮って聞く: 答えが届きました(確認する)") {
