@@ -10,7 +10,7 @@ iOS向けの個人用「手元ダッシュボード」アプリ。SwiftUI製。A
 
 ## 現在の状況と引き継ぎ
 
-- 最新のリリースは **v0.9.19**(2026-10-18)。**v1.0.0 は、利用者が判断したときに付ける。それまでは 0.9.x で進める**(次は v0.9.20)。勝手に 1.0.0 にしない
+- 最新のリリースは **v0.9.20**(2026-10-18)。**v1.0.0 は、利用者が判断したときに付ける。それまでは 0.9.x で進める**(次は v0.9.21)。勝手に 1.0.0 にしない
 - 新しい会話で作業を続けるときは、まず [docs/handoff.md](docs/handoff.md) を読む。次の内容をまとめてある
   - 実装済みの機能の一覧
   - 実機(iPhone SE 第2世代、LiveContainer)で確認済みの点と、まだ未確認の点。開発機は Windows で実機がないので、画面・センサー・MapKit・カメラの動作は、利用者の報告に頼っている。未確認のものを「動く」と書かない
@@ -231,6 +231,7 @@ iOS向けの個人用「手元ダッシュボード」アプリ。SwiftUI製。A
     - 読み込みの確認(`ScriptPreviewSection`): 「スクリプトを含みます」、コード(20,000文字まで表示)、「保存する前に動かしてみる」(プレビュー。保存領域を使わない)。書き出し・読み込み(ファイル、クリップボード、URL)は既存のまま
     - Claude での作成(`ToolGenerator`): system prompt に script 型の使い分けと注意を足した。形式の検証を通ったスクリプト型は、構文(JSCheckScriptSyntax)と、試しの実行(`ScriptTrial`: 専用のスレッドで setup・2秒分のコマ・触れる・部品・onStop を早回し、1回の呼び出し2秒・全体8秒まで、音などは出さない)で確かめ、エラーがあれば添えて1回だけ作り直しを頼む。出力の上限は32,000トークン、待つ時間は360秒(`ClaudeRequest.timeout`)
     - サンプル: examples/tools/src/*.js を `python scripts/build_tool_examples.py` で JSON(examples/tools と、テストのフィクスチャ tool_script_*.json)にする。check_local.py が一致を確かめ、テストが6つとも試しの実行でエラーがないことを確かめる
+  - サンプル(v0.9.20、`ToolSampleCatalog`、`ToolSamplesView`): examples/tools のサンプル全部を `Resources/tool_samples.json` に同梱し(`python scripts/build_tool_examples.py` で作り、check_local.py が一致を確かめる)、小ツールの一覧の「サンプルから追加」でワンタップで追加する。追加済みは「追加済み」
   - 内蔵ツール(第1弾、v0.9.7): タイマー、ストップウォッチ、日付計算、和暦・西暦・年齢、割り勘、パーセント・割引・消費税、単位換算、進数変換、ルーレット(くじ引きを含む)、サイコロ、コイントス、チーム分け、順番決め、トーナメント表(シードと不戦勝)、カウンター、文字数カウント、文字の変換、パスワード・乱数、懐中電灯
   - 内蔵ツール(第2弾、v0.9.8): 時間計算、世界時計、あみだくじ、スコアボード、メトロノーム。ロジックは `MoreToolLogic.swift`、画面は `MoreToolViews.swift` と `PlayToolViews.swift`
     - 世界時計の時差と夏時間は、iOS のタイムゾーンのデータ(TimeZone)から求める。通信しない。都市の表は `WorldClock.cities`
@@ -309,7 +310,7 @@ iOS向けの個人用「手元ダッシュボード」アプリ。SwiftUI製。A
   - 依頼(`ClaudeRequest`): 思考は機能ごとの設定で `adaptive` か `disabled`(display は指定しない)。画像は base64 の JPEG。プロンプトキャッシュは cache_control(ephemeral、5分)で、小ツールは system prompt(形式の説明。約3,000トークン、最小の512トークンを超える)、カメラは最初のメッセージの「撮影の状況」の文まで(画像を含む)。思考のブロックは送り返さない(ツールを使わない会話では不要。送り返すと、会話の途中を変えたときに 400 になることがある)
   - 応答(`ClaudeResponse`): text のブロックをつなげる。usage の input・output・cache_creation_input_tokens・cache_read_input_tokens・output_tokens_details.thinking_tokens を `ClaudeUsage` に入れる。stop_reason が refusal なら拒否として扱う。エラーは本文の error.message を添えて、状態コードで分ける(401 無効なキー、402 支払い、403 権限、429 上限、529 混雑など。`ClaudeError`)
   - 共通の仕組み(`ClaudeService`、`AppEnvironment.claude`): APIキーは Keychain(`KeychainAccount.claudeAPIKey`)だけに保存し、画面・ログ・リポジトリに出さない。呼ぶ前に、キー・今月の使用額と上限・回線を確かめる(`ClaudeGate`。上限に達したら止めて理由を出す)。使用量は日本時間の月ごとに、呼び出したときの料金で計算した金額と一緒に記録する(`ClaudeLedger`、UserDefaults の claude.ledger、12か月)。金額 = 入力×入力の料金 + 出力(思考を含む)×出力の料金 + キャッシュの書き込み×書き込みの料金 + 読み込み×読み込みの料金(`ClaudePricing.cost`)。10万トークンを超えるプロンプトの高い料金は計算に入れていない(この2機能では超えない)
-  - 設定(`AppSettings.claude` = `ClaudeSettings`、JSON で保存。設定の「AI」→「Claude API」、`ClaudeSettingsView`): APIキー、モデル(初期値 claude-haiku-5-5)、料金(初期値 0.10 / 0.50 / 0.125 / 0.01)、今月の使用量(トークン数と金額)、月の上限額(初期値5ドル)、機能ごとの思考(初期値はどちらもオン)、カメラの質問で送る情報(方角と上下の向き、地名、緯度経度、撮った方向にあるもの。初期値はすべてオン)、画像の長い辺(初期値1024px、モバイル通信のときは768px)
+  - 設定(`AppSettings.claude` = `ClaudeSettings`、JSON で保存。設定の「AI」→「Claude API」、`ClaudeSettingsView`): APIキー、モデル(初期値 claude-haiku-5-5)、料金(初期値 0.10 / 0.50 / 0.125 / 0.01)、今月の使用量(トークン数と金額)、月の上限額(初期値5ドル)、機能ごとの思考(初期値はどちらもオン)、カメラの質問で送る情報(方角と上下の向き=初期値オン。地名・緯度経度・撮った方向にあるもの=居場所が推測できるので初期値オフ。v0.9.19 までの設定は、読み込むときに `privacyVersion` で送らない設定に合わせる)、Web 検索(初期値オン、1回の質問で3回まで)、画像の長い辺(初期値1024px、モバイル通信のときは768px)
   - 小ツールを文章から作る・直す(`ToolGenerator`、`ToolComposeView`): 一覧の「文章から作る(Claude)」と、JSONのツールの画面のメニューの「文章で直す(Claude)」(今の JSON と依頼文を送る)。形式の説明は docs/tools-format.md と同じものを `Resources/tools-format.md` に同梱し(check_local.py で一致を確かめる)、system prompt に入れる。応答から JSON を取り出し(コードブロックの記号や前後の文章を除く `extractJSON`)、`CustomToolParser` で検証する。誤りがあれば、1回目の答えと誤りの一覧を添えて、もう1回だけ頼む。それでも誤りがあれば誤りを表示し、手で直せるように JSON を開ける。検証を通ったら、既存の確認の画面(`ToolImportView`)を出し、保存は利用者が押す。1回の作成の呼び出し回数・トークン数・金額を出す
   - カメラで見えているものを聞く(`ScopeAsk`、`ScopeAskImage`、`ScopeAskView`): カメラ表示の右下の「撮って聞く」。映像の1コマを `AVCaptureVideoDataOutput` から取る(`FrameGrabber`。写真の撮影ではないのでシャッター音は鳴らない。頼んだときだけ画像にし、ふだんのコマはすぐ捨てる。縦向き videoRotationAngle 90)。画面に見えていた範囲(aspectFill)で切り出し、印などの重ね描きは含めない。全画面の質問の画面を出し、その間はカメラ・GPS・モーションを止める
     - 指で描いた形(1つ)を囲む四角で切り出し、形の外側を黒の80%で暗くし、長い辺を設定の大きさに縮めて JPEG(品質0.8)にする(`ScopeAskImage.render` / `prepare`)。描かなければ画像全体。取り消し(1つ前の囲みに戻す)と描き直し(囲みを消す)。囲みを変えたら、前のやり取りは捨てて新しい画像として聞く
@@ -317,6 +318,11 @@ iOS向けの個人用「手元ダッシュボード」アプリ。SwiftUI製。A
     - system prompt で、「画像から分かること」と「推測」を分けて答え、分からないときは「分からない」と答えるよう指示する。人物がだれかは答えない
     - 続けて質問するときは、同じ画像と直近3回のやり取りだけを送る(`ScopeAsk.messages`。失敗したやり取りは送らない)。待っている間は「考え中…」と取り消しのボタン(Task の取り消し → URLSession の取り消し)。1回ごとにトークン数と金額を出す
     - 撮った画像は端末に保存しない(画面の状態にだけ持ち、閉じたら捨てる)。カメラの許可の説明文(project.yml の NSCameraUsageDescription)に、「撮って聞く」のときだけ送ることを書いた
+    - 送る情報(v0.9.20): カメラに写っているものから見つけることを基本にし、初期値で送るのは画像・質問・方角と向きだけ。送った JPEG は CGImageDestination で一から作るので、位置などのメタデータ(EXIF・GPS)を含まない(テストで確かめている)。答えの下に「画像・質問・方角と向きを送信」(`ScopeAsk.sentItems`)
+    - Web 検索(v0.9.20): Claude API のサーバー側の検索 `web_search_20250305`(基本の版。直接呼ぶ、コード実行を使わない)を tools に付ける(`ClaudeRequest.webSearchMaxUses`、max_uses は設定、初期値3)。system prompt で、検索の言葉に現在地・地名・住所・緯度経度を入れず、写っているものの特徴で検索するよう指示する。応答の text の citations(web_search_result_location の title・url)を出典として答えの下に出し、タップで SFSafariViewController(`ScopeAskSafariView`)。検索の回数は usage.server_tool_use.web_search_requests で、1,000回あたり10ドル(`ClaudePricing.webSearchPer1000`)を使用量と月の上限に含める。stop_reason が pause_turn なら、受け取った内容のブロックをそのまま(`ClaudeContent.raw`)assistant として足して続きを頼む(3回まで、`ScopeAsk.ask`)。Web 検索を付けた依頼が HTTP 400 なら(このモデル・組織で使えない)、検索なしで1回だけ聞き直して、その旨を出す。DuckDuckGo の Instant Answer API は使わない(api.duckduckgo.com の robots.txt がすべて禁止、利用条件のページがなくなっている、日本語では結果が出ない。利用者の判断)
+    - 場所の特定(v0.9.20、`ScopeAskPlace`): system prompt で、答えの最後に `<place>{"identified": true, "name", "latitude", "longitude", "confidence": "high|medium|low", "reason"}</place>` か、特定できないときは `<place>{"identified": false, "reason"}</place>` を書かせ、表示からは消す。座標がない・範囲の外・0,0・名前がないものは特定できないとして扱う
+    - 方角の照合(`ScopeAskPlaceCheck`。自分の位置は外に送らず、端末の中だけで計算): 撮ったときの位置からその座標への方角と距離を出し、撮ったときのカメラの向きと写る範囲(左右の半分 `halfFieldOfView`、分からなければ±30°)と比べる。範囲の中/少し外/30°以上外れたら「撮った方向と合いません」。10m未満・250km超は目安の注意
+    - 地点に登録(`ScopeAskPlaceSheet`): 既存の地図(`MapContainerView`。回線で Apple Maps と保存済みの地理院タイルを切り替える)で位置を見て、タップでピンを動かす。名前を直して登録すると、標高は既存の仕組み(`WaypointStore.onNeedsElevation`)で自動で取る。メモに確からしさ・根拠・出典の URL(`ScopeAskPlaceMemo`)
 - 開発者向け: 運行情報の直近の応答(生のJSON)を1件だけ保存し、設定画面で表示・コピーできる(遅延時のサンプル収集用。追加の通信はしない)
 - 設定: APIトークン、登録した地点・路線・駅・通貨ペア、地図(表示の切り替え、保存エリア、最大ズーム、容量の上限、進捗、削除、再ダウンロード)、自動更新ポリシー、受信バイト数、キャッシュ削除、各データの最終更新時刻
 
