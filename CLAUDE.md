@@ -10,7 +10,7 @@ iOS向けの個人用「手元ダッシュボード」アプリ。SwiftUI製。A
 
 ## 現在の状況と引き継ぎ
 
-- 最新のリリースは **v0.9.27**(2026-10-18)。**v1.0.0 は、利用者が判断したときに付ける。それまでは 0.9.x で進める**(次は v0.9.28)。勝手に 1.0.0 にしない
+- 最新のリリースは **v0.9.28**(2026-10-18)。**v1.0.0 は、利用者が判断したときに付ける。それまでは 0.9.x で進める**(次は v0.9.29)。勝手に 1.0.0 にしない
 - 新しい会話で作業を続けるときは、まず [docs/handoff.md](docs/handoff.md) を読む。次の内容をまとめてある
   - 実装済みの機能の一覧
   - 実機(iPhone SE 第2世代、LiveContainer)で確認済みの点と、まだ未確認の点。開発機は Windows で実機がないので、画面・センサー・MapKit・カメラの動作は、利用者の報告に頼っている。未確認のものを「動く」と書かない
@@ -284,6 +284,10 @@ iOS向けの個人用「手元ダッシュボード」アプリ。SwiftUI製。A
   - CMMotionManager は、スコープの画面どうしで1つを使い回す(`WaypointTracker.sharedMotion`。アプリで1つにするよう Apple が求めている。v0.9.25 までは画面の構造体が作られるたびに作っていた)。止めるのは、始めた画面(`motionOwner`)だけ。始め直したら、平滑化と診断を捨てる
   - 方角のデバッグ(v0.9.26、設定の開発者向け「方角のデバッグ表示」`AppSettings.headingDebugEnabled`、初期値オフ。`ScopeHeadingDebugView`): カメラ表示の左上に、計算した方角・仰角・傾き、CoreMotion の生の値、基準(頼んだもの・実際の `attitudeReferenceFrame`)、開始した回数・基準が変わった回数、情報源、磁気の較正の状態・CMDeviceMotion.heading、コンパス(CLHeading)の真北・磁北・精度、比べる軸(カメラが水平に近いときは背面、平らに近いときは上端)とコンパスとの差(30°以上で赤)、ジャイロで説明できない回転の累計と跳びの回数、行列と重力の差、画面・シーンの向き・持ち方(重力から)
     - ジャイロで説明できない回転(`HeadingDiagnostics`): 前の姿勢から今の姿勢への鉛直まわりの回転(基準の座標系の回転 R = Σ e_k(今)・e_k(前)ᵀ の (R21 − R12)/2)と、角速度の鉛直の成分(行列の3列目との内積、台形で積分)の差を足していく。端末が回っていないのに方角だけが回った分(磁気による補正、基準の取り直し)が分かる。1回で5°より大きい差は「跳び」。0.5秒より間が空いたら比べない
+    - 方角の手動補正(v0.9.28、`HeadingCorrection`、設定の「方角の補正」`AppSettings.headingOffset`、−180〜180°、UserDefaults の scope.headingOffset): iPhone の磁気センサーがずれて、iPhone のコンパスアプリも含めて方角が約90°ずれたことがあった(8の字の補正と再起動でほぼ直った。v0.9.26〜v0.9.27 で調べたとおり、アプリのコードの問題ではなかった)ときの短期的な対策。補正した方角 = 端末の方角 + 補正(時計回りが+)。`HeadingCorrection.current`(AppSettings が読み込み・変更のときに入れる)を、端末の方角を使う所すべてに足す: `WaypointTracker`(CoreMotion の姿勢を鉛直のまわりに回す `rotatedClockwise` → スコープのカメラ表示の地点・周辺・経路・電車・景色・オブジェクト・東西南北の印・撮って聞くの方角、コンパス表示の CLHeading、経路の案内のカメラ表示)、`LocationSensors`(センサー画面の方位)、`ScriptSensors`(スクリプト型の app.sensors の方位)、`DashboardMapView` の現在地の矢印(端末の向きを使うときだけ。GPS の進行方向には足さない)。地図を進行方向に回す表示(MKMapView の userTrackingMode)は MapKit が自分で方角を求めるので補正できない(矢印は補正した方角を、回った地図の上で指す)。方角のデバッグ表示のコンパスとの比較は、補正を戻して比べる
+      - 操作(`HeadingCorrectionControls`): スライダー(1°刻み)、−10°・−1°・+1°・+10°、0°に戻す。設定(`HeadingCorrectionSettingsSection`)と、スコープのカメラ表示・コンパス表示のメニュー「方角を補正」で出すパネル(`ScopeHeadingCorrectionPanel`)
+      - 目印に合わせる: パネルを出すと画面の中央に十字。表示している印・景色の山・置いたオブジェクトのうち、中央から左右25°以内で一番近いもの(`HeadingCorrection.nearest`)を出し、「この印に合わせる」で 補正 = 今の補正 + (目印の方角 − 今のカメラの方角)(`aligned`)
+      - 補正が0でないときは、カメラ表示の右上とコンパス表示に「補正 +12°」(`HeadingCorrectionBadge`)
     - 東西南北の印(v0.9.27、`ScopeCompassRose`、`ScopeCompassRoseOverlay`): デバッグ表示のとき、方角0°〜315°(45°ごと)の印と水平線を、地点と同じ投影(`WaypointProjection.point`、仰角0)でそのまま描き、画面の中央に十字と「中央 123° → 南東(135°)の印が右に12°」を出す。実際の北に「北」が重なれば、方角と投影は正しい
     - 現在地の確かめ(v0.9.27、`ScopeLocationCheck`): 方角と投影が正しくても、現在地がずれていると近いものの方向がずれる(誤差 a m・距離 d m で ±asin(a/d))。デバッグ表示に現在地の精度・何秒前か・おおよその位置か、近い印3つの方角・中央からの角度・距離・位置の誤差でのずれを出す。カメラ表示の下には、「おおよその位置」のとき(正確な位置情報がオフ)と、一番近い印が誤差で20°以上ずれうるときに注意を出す
     - 「方角をジャイロで保つ(試験)」(`headingGyroHold`、初期値オフ): 表示に使う姿勢を、その累計の分だけ戻す(磁気による補正を打ち消す)。積分の誤差で少しずつずれるので、デバッグ表示の「ジャイロの累計を0に戻す」で合わせ直す
@@ -362,12 +366,18 @@ iOS向けの個人用「手元ダッシュボード」アプリ。SwiftUI製。A
     - 質問は入力か、よく使う質問のボタン(これは何？、何の建物？、何という山？、文字を読んで)。空なら「これは何ですか？」。一緒に送る情報は `ScopeAsk.contextText`(設定で選んだものだけ。撮った方向にあるものは、スコープで計算している印のうち画面に写る範囲のもの、近い順に15件まで)。地名は `PlaceNameResolver`(天気と共有、500m以内はキャッシュ)
     - system prompt で、「画像から分かること」と「推測」を分けて答え、分からないときは「分からない」と答えるよう指示する。人物がだれかは答えない
     - 続けて質問するときは、同じ画像と直近3回のやり取りだけを送る(`ScopeAsk.messages`。失敗したやり取りは送らない)。待っている間は「考え中…」と取り消しのボタン(Task の取り消し → URLSession の取り消し)。1回ごとにトークン数と金額を出す
-    - 撮った画像は端末に保存しない(画面の状態にだけ持ち、閉じたら捨てる)。カメラの許可の説明文(project.yml の NSCameraUsageDescription)に、「撮って聞く」のときだけ送ることを書いた
+    - 撮った画像そのものは端末に保存しない。v0.9.28 から、会話を「最近聞いたこと」に残すため、長い辺480pxに縮めた JPEG だけを保存する(下の「閉じても戻れる」)。カメラの許可の説明文(project.yml の NSCameraUsageDescription)に、「撮って聞く」のときだけ送ること・縮めた画像を保存することを書いた
     - 送る情報(v0.9.20): カメラに写っているものから見つけることを基本にし、初期値で送るのは画像・質問・方角と向きだけ。送った JPEG は CGImageDestination で一から作るので、位置などのメタデータ(EXIF・GPS)を含まない(テストで確かめている)。答えの下に「画像・質問・方角と向きを送信」(`ScopeAsk.sentItems`)
     - Web 検索(v0.9.20): Claude API のサーバー側の検索 `web_search_20250305`(基本の版。直接呼ぶ、コード実行を使わない)を tools に付ける(`ClaudeRequest.webSearchMaxUses`、max_uses は設定、初期値3)。system prompt で、検索の言葉に現在地・地名・住所・緯度経度を入れず、写っているものの特徴で検索するよう指示する。応答の text の citations(web_search_result_location の title・url)を出典として答えの下に出し、タップで SFSafariViewController(`ScopeAskSafariView`)。検索の回数は usage.server_tool_use.web_search_requests で、1,000回あたり10ドル(`ClaudePricing.webSearchPer1000`)を使用量と月の上限に含める。stop_reason が pause_turn なら、受け取った内容のブロックをそのまま(`ClaudeContent.raw`)assistant として足して続きを頼む(3回まで、`ScopeAsk.ask`)。Web 検索を付けた依頼が HTTP 400 なら(このモデル・組織で使えない)、検索なしで1回だけ聞き直して、その旨を出す。DuckDuckGo の Instant Answer API は使わない(api.duckduckgo.com の robots.txt がすべて禁止、利用条件のページがなくなっている、日本語では結果が出ない。利用者の判断)
     - 場所の特定(v0.9.20、`ScopeAskPlace`): system prompt で、答えの最後に `<place>{"identified": true, "name", "latitude", "longitude", "confidence": "high|medium|low", "reason"}</place>` か、特定できないときは `<place>{"identified": false, "reason"}</place>` を書かせ、表示からは消す。座標がない・範囲の外・0,0・名前がないものは特定できないとして扱う
     - 方角の照合(`ScopeAskPlaceCheck`。自分の位置は外に送らず、端末の中だけで計算): 撮ったときの位置からその座標への方角と距離を出し、撮ったときのカメラの向きと写る範囲(左右の半分 `halfFieldOfView`、分からなければ±30°)と比べる。範囲の中/少し外/30°以上外れたら「撮った方向と合いません」。10m未満・250km超は目安の注意
     - 地点に登録(`ScopeAskPlaceSheet`): 既存の地図(`MapContainerView`。回線で Apple Maps と保存済みの地理院タイルを切り替える)で位置を見て、タップでピンを動かす。名前を直して登録すると、標高は既存の仕組み(`WaypointStore.onNeedsElevation`)で自動で取る。メモに確からしさ・根拠・出典の URL(`ScopeAskPlaceMemo`)
+- Claude で作る画面を閉じても戻れる(v0.9.28): オブジェクトを文章から作る(`ObjectComposeJob`)、小ツールを文章から作る・直す(`ToolComposeJob`)、撮って聞く(`ScopeAskJob`)。どれも AppEnvironment が1つ持ち、作る作業(Task)は画面ではなくこの入れ物が持つので、画面を閉じても作るのは続く(アプリの中で。バックグラウンドの処理はしない)
+  - 帯(`ClaudeWorkBanner`): 作っている間は「作成中…」、できたら「できました(確認する)」。オブジェクトの一覧(`ObjectListView`)、小ツールの一覧(`ToolsView`)、スコープのカメラ表示(撮って聞く)の上に出し、タップで作る画面に戻る。作る画面を開いている間にできたものは、すぐ見たことにする(`isShowing`)
+  - 最近作ったもの(`ClaudeRecents`、`ClaudeRecentList`): 機能ごとに最新10件、新しい順。Application Support/SmartDashboard/claude-recents/(objects.json・tools.json・scope-ask.json)に .atomic で保存(キャッシュの削除では消さない)。作り終わったときに入れ、捨てるのは利用者が「捨てる」を押したときか、一覧から消したときだけ。一覧に作った日時・入力した文・料金(概算)・保存済みか。タップで確認の画面を開き直して、保存・作り直し(同じ文で作り直す)ができる。オブジェクトの結果は返ってきた JSON などを保存し、開くときに読み直す(`ObjectComposeRecord.outcome`)。小ツールは JSON と、直したときのもとのツールの ID・JSON
+  - 入力の文・細かさ・検索のオンとオフは残す(オブジェクト: objects.composeDraft / composeDetail2 / composeSearch2、小ツール: tools.composeDrafts に作る / 直すツールごと)
+  - 進み具合の画面に「中止」(Task の取り消し → URLSession の取り消し)
+  - 撮って聞く: 撮ったら会話を始め(`begin`)、質問を送ったときに記録する。画面を閉じても答えを待ち、届いたら帯に出す。メニューの「最近聞いたこと」(`ScopeAskRecentsView`)から開き直すと、縮めた画像と会話を出し、続けて質問するとその縮めた画像を送る。囲みを変えたら別の会話にする(前の会話は残る)。画面の「捨てる」で会話を消す
 - 開発者向け: 運行情報の直近の応答(生のJSON)を1件だけ保存し、設定画面で表示・コピーできる(遅延時のサンプル収集用。追加の通信はしない)
 - 設定: APIトークン、登録した地点・路線・駅・通貨ペア、地図(表示の切り替え、保存エリア、最大ズーム、容量の上限、進捗、削除、再ダウンロード)、自動更新ポリシー、受信バイト数、キャッシュ削除、各データの最終更新時刻
 
