@@ -36,6 +36,9 @@ struct ObjectListView: View {
     @State private var showsImport = false
     @State private var showsCompose = false
     @State private var showsPhotoCompose = false
+    /// 作る画面で「カメラ表示で撮る」を押した(閉じたあとに、カメラ表示を開く)
+    @State private var opensCameraAfterCompose = false
+    @State private var opensCamera = false
     @State private var objectToDelete: ScopeObject?
 
     var body: some View {
@@ -159,8 +162,13 @@ struct ObjectListView: View {
         }
         .sheet(item: $placementToEdit) { ObjectPlacementEditor(placement: $0) }
         .sheet(isPresented: $showsImport) { ObjectImportView() }
-        .sheet(isPresented: $showsCompose) { ObjectComposeView() }
-        .sheet(isPresented: $showsPhotoCompose) { ObjectComposeView(photos: true) }
+        .sheet(isPresented: $showsCompose, onDismiss: openCameraIfRequested) {
+            ObjectComposeView { opensCameraAfterCompose = true }
+        }
+        .sheet(isPresented: $showsPhotoCompose, onDismiss: openCameraIfRequested) {
+            ObjectComposeView(photos: true) { opensCameraAfterCompose = true }
+        }
+        .navigationDestination(isPresented: $opensCamera) { ScopeSightView(mode: .camera, source: .objects) }
         .confirmationDialog("このオブジェクトを削除しますか", isPresented: Binding(get: { objectToDelete != nil }, set: { if !$0 { objectToDelete = nil } }),
                             titleVisibility: .visible) {
             Button("削除(置いたものも消えます)", role: .destructive) {
@@ -178,6 +186,13 @@ struct ObjectListView: View {
         env.objects.placements.compactMap { placement in
             env.objects.object(id: placement.objectID).flatMap { ObjectMapShapes.footprintLine(placement, object: $0) }
         }
+    }
+
+    /// 作る画面で「カメラ表示で撮る」を押していたら、カメラ表示を開く(撮って囲んで「オブジェクトを作る」で、作る画面に戻る)
+    private func openCameraIfRequested() {
+        guard opensCameraAfterCompose else { return }
+        opensCameraAfterCompose = false
+        opensCamera = true
     }
 
     private func placementSummary(_ placement: ObjectPlacement) -> String {

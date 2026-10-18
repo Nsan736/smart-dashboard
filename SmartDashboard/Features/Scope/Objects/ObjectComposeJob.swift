@@ -86,6 +86,10 @@ final class ObjectComposeJob {
     }
     /// 写真から作る(v0.9.30): 選んだ写真(端末には保存しない)と、分かっている寸法・説明(残す)
     private(set) var photos: [ObjectPhotoDraft] = []
+    /// スコープのカメラ表示で、オブジェクトの写真を撮り足している間(v0.9.31。カメラ表示に帯を出す)
+    var isCollectingPhotos = false
+    /// 「撮って聞く」で「オブジェクトを作る」を選んだ(聞く画面を閉じたら、カメラ表示が作る画面を出す)
+    var opensPhotoComposer = false
     var photoHeight = "" { didSet { savePhotoDraft() } }
     var photoWidth = "" { didSet { savePhotoDraft() } }
     var photoDepth = "" { didSet { savePhotoDraft() } }
@@ -127,9 +131,18 @@ final class ObjectComposeJob {
         defaults.set([photoHeight, photoWidth, photoDepth, photoNote], forKey: Self.photoKey)
     }
 
-    func addPhoto(_ image: CGImage) {
+    func addPhoto(_ image: CGImage, shape: [CGPoint]? = nil) {
         guard photos.count < ObjectPhotoImage.maxPhotos else { return }
-        photos.append(ObjectPhotoDraft(image: image))
+        photos.append(ObjectPhotoDraft(image: image, shape: shape))
+    }
+
+    var canAddPhoto: Bool { photos.count < ObjectPhotoImage.maxPhotos }
+
+    /// 「撮って聞く」で撮って囲んだ写真を、オブジェクトの写真にする(作る画面を出す)
+    func addCapturedPhoto(_ image: CGImage, shape: [CGPoint]?) {
+        addPhoto(image, shape: shape)
+        isCollectingPhotos = true
+        opensPhotoComposer = true
     }
 
     func removePhoto(_ id: UUID) {
@@ -164,6 +177,7 @@ final class ObjectComposeJob {
         viewingID = nil
         progress = ObjectGenerationProgress()
         isRunning = true
+        isCollectingPhotos = false
         let detail = detail
         let note = photoNote.trimmingCharacters(in: .whitespacesAndNewlines)
         let dimensions = photoDimensionsText

@@ -7,12 +7,15 @@ struct ObjectComposeView: View {
     @Environment(\.dismiss) private var dismiss
     /// 写真から作る(v0.9.30)
     @State private var usesPhotos: Bool
+    /// 「カメラ表示で撮る」を押したとき(スコープのカメラ表示へ。v0.9.31)
+    private let onCameraCapture: (() -> Void)?
     @State private var removesHidden = true
     @State private var safariURL: ScopeAskURL?
     @State private var recordToDelete: ObjectComposeRecord?
 
-    init(photos: Bool = false) {
+    init(photos: Bool = false, onCameraCapture: (() -> Void)? = nil) {
         _usesPhotos = State(initialValue: photos)
+        self.onCameraCapture = onCameraCapture
     }
 
     var body: some View {
@@ -29,7 +32,11 @@ struct ObjectComposeView: View {
                 }
                 .disabled(job.isRunning)
                 if usesPhotos {
-                    ObjectPhotoInputSections()
+                    ObjectPhotoInputSections {
+                        // 作る画面を閉じて、カメラ表示で撮る(呼んだ画面が、カメラ表示を開くか、カメラ表示に戻る)
+                        onCameraCapture?()
+                        dismiss()
+                    }
                 } else {
                     Section {
                         TextEditor(text: $bindable.instruction)

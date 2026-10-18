@@ -148,45 +148,40 @@ struct PhotoCropView: View {
     }
 }
 
-/// カメラで写真を撮る(UIImagePickerController)
-struct CameraCaptureView: UIViewControllerRepresentable {
-    let onImage: (UIImage) -> Void
-    @Environment(\.dismiss) private var dismiss
+/// カメラ表示で、オブジェクトの写真を撮り足している間に出す帯(v0.9.31)
+struct ObjectPhotoCollectingBanner: View {
+    let count: Int
+    let onOpen: () -> Void
+    let onCancel: () -> Void
 
-    final class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
-        let parent: CameraCaptureView
-
-        init(parent: CameraCaptureView) {
-            self.parent = parent
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "cube").foregroundStyle(Color.accentColor)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("オブジェクトの写真 \(count)/\(ObjectPhotoImage.maxPhotos)枚").font(.subheadline.weight(.semibold))
+                Text("「撮って聞く」で撮って囲み、「オブジェクトの写真に足す」").font(.caption2).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 4)
+            Button("作る画面へ", action: onOpen).buttonStyle(.borderedProminent).font(.caption)
+            Button(action: onCancel) {
+                Image(systemName: "xmark")
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("撮り足すのをやめる")
         }
-
-        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
-            if let image = info[.originalImage] as? UIImage { parent.onImage(image) }
-            parent.dismiss()
-        }
-
-        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
-            parent.dismiss()
-        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
     }
-
-    func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
-
-    func makeUIViewController(context: Context) -> UIImagePickerController {
-        let picker = UIImagePickerController()
-        picker.sourceType = .camera
-        picker.delegate = context.coordinator
-        return picker
-    }
-
-    func updateUIViewController(_ controller: UIImagePickerController, context: Context) {}
 }
 
 /// 作る画面の、写真・寸法・説明の欄
 struct ObjectPhotoInputSections: View {
     @Environment(AppEnvironment.self) private var env
+    /// スコープのカメラ表示で撮る(撮って囲む操作)。作る画面を閉じて、カメラ表示へ
+    let onCameraCapture: () -> Void
     @State private var pickerItems: [PhotosPickerItem] = []
-    @State private var showsCamera = false
     @State private var cropping: ObjectPhotoDraft?
     @State private var loadError: String?
     @FocusState private var isEditingNumber: Bool
@@ -231,7 +226,7 @@ struct ObjectPhotoInputSections: View {
         } header: {
             Text("写真(\(job.photos.count) / \(ObjectPhotoImage.maxPhotos))")
         } footer: {
-            Text("送るのは、写真(長い辺\(ObjectPhotoImage.maxEdge)pxに縮めたもの。位置情報などは消します)と、下の寸法・説明だけです。今いる場所は送りません。写真は端末に保存しません。")
+            Text("「カメラ表示で撮る」で、スコープのカメラ表示に移ります。「撮って聞く」で撮って指で囲み、「オブジェクトを作る」を押すと、この画面に戻ります(別の角度から撮り足すときも同じ)。送るのは、写真(長い辺\(ObjectPhotoImage.maxEdge)pxに縮めたもの。位置情報などは消します)と、下の寸法・説明だけです。今いる場所は送りません。写真は端末に保存しません。")
         }
         Section {
             HStack {
@@ -261,12 +256,6 @@ struct ObjectPhotoInputSections: View {
         .sheet(item: $cropping) { photo in
             PhotoCropView(image: photo.image, shape: photo.shape) { shape in job.setShape(shape, for: photo.id) }
         }
-        .fullScreenCover(isPresented: $showsCamera) {
-            CameraCaptureView { image in
-                if let data = image.jpegData(compressionQuality: 0.92), let loaded = ObjectPhotoImage.load(data) { job.addPhoto(loaded) }
-            }
-            .ignoresSafeArea()
-        }
         .onChange(of: pickerItems) { _, items in
             guard !items.isEmpty else { return }
             Task {
@@ -284,13 +273,12 @@ struct ObjectPhotoInputSections: View {
 
     @ViewBuilder
     private func addButtons(_ job: ObjectComposeJob) -> some View {
-        if UIImagePickerController.isSourceTypeAvailable(.camera) {
-            Button {
-                loadError = nil
-                showsCamera = true
-            } label: {
-                Label("撮る", systemImage: "camera")
-            }
+        Button {
+            loadError = nil
+            job.isCollectingPhotos = true
+            onCameraCapture()
+        } label: {
+            Label(job.photos.isEmpty ? "カメラ表示で撮る" : "カメラ表示で撮り足す", systemImage: "camera.viewfinder")
         }
         PhotosPicker(selection: $pickerItems, maxSelectionCount: max(1, ObjectPhotoImage.maxPhotos - job.photos.count), matching: .images) {
             Label("ライブラリから選ぶ", systemImage: "photo.on.rectangle")
