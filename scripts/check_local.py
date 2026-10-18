@@ -11,6 +11,9 @@
 - make_apps_json.py が動き、履歴を引き継ぐか
 - Swiftのソースの括弧の対応(簡易チェック)
 - @MainActor な型(View に準拠した型を含む)の静的メンバーを、@MainActor でないテストから呼んでいないか
+- Swift の文字列が行の途中で切れていないか(パッチの文字列の改行の記号が、本物の改行になる誤り。v0.9.17 の ci で起きた)
+- アプリに同梱した小ツールの形式の説明が、docs/tools-format.md と同じか
+- Claude の APIキーらしき文字列(sk-ant-)が、Git の管理下のファイルに書かれていないか
 """
 import glob
 import json
@@ -31,6 +34,7 @@ def check(condition, message):
 
 # トークンらしき文字列: 小文字の16進で40文字以上、または英数字だけで48文字以上(ODPT の ucode の @id は大文字の16進32文字なので当たらない)
 TOKEN_LIKE = re.compile(r"(?<![0-9A-Za-z])(?:[0-9a-f]{40,}|[0-9A-Za-z]{48,})(?![0-9A-Za-z])")
+ANTHROPIC_KEY = re.compile(r"sk-ant-[A-Za-z0-9_-]{16,}")
 TOKEN_KEYS = re.compile(r"consumerKey|acl:|api[_-]?key|access[_-]?token", re.IGNORECASE)
 
 
@@ -85,6 +89,7 @@ def check_committed_secrets():
             continue
         for match in assigned.finditer(text):
             check(match.group(1).startswith(placeholders), f"{name}: acl:consumerKey に値が書かれています")
+        check(ANTHROPIC_KEY.search(text) is None, f"{name}: Claude の APIキーらしき文字列(sk-ant-)が書かれています")
 
 
 def check_yaml():
@@ -215,7 +220,39 @@ def check_main_actor_statics():
                         check(ok, f"{os.path.basename(path)}:{i + 1}: {cls}.{member} は @MainActor。テストを @MainActor にするか nonisolated にする")
 
 
-for step in (check_fixtures, check_committed_secrets, check_yaml, check_apps_json, check_swift_brackets, check_double_backslash, check_main_actor_statics):
+def check_unterminated_strings():
+    """1行の中で引用符の数が奇数の行(複数行の文字列 \"\"\" と #"..."# の行は除く)。文字列の途中の改行を見つける。"""
+    backslash = chr(92)
+    for path in glob.glob(os.path.join(ROOT, "SmartDashboard*", "**", "*.swift"), recursive=True):
+        in_multiline = False
+        for number, line in enumerate(open(path, encoding="utf-8").read().splitlines(), 1):
+            if '"""' in line:
+                if line.count('"""') % 2 == 1:
+                    in_multiline = not in_multiline
+                continue
+            if in_multiline or '#"' in line:
+                continue
+            count, i = 0, 0
+            while i < len(line):
+                if line[i] == backslash:
+                    i += 2
+                    continue
+                if line[i] == '"':
+                    count += 1
+                i += 1
+            check(count % 2 == 0, f"{os.path.relpath(path, ROOT)}:{number}: 文字列が行の途中で切れている可能性(引用符の数が奇数)")
+
+
+def check_bundled_docs():
+    """Claude に送る形式の説明(アプリに同梱)が、docs/tools-format.md と同じか"""
+    source = os.path.join(ROOT, "docs", "tools-format.md")
+    bundled = os.path.join(ROOT, "SmartDashboard", "Resources", "tools-format.md")
+    same = os.path.exists(bundled) and open(source, "rb").read() == open(bundled, "rb").read()
+    check(same, "SmartDashboard/Resources/tools-format.md が docs/tools-format.md と違います(docs のほうを写してください)")
+
+
+for step in (check_fixtures, check_committed_secrets, check_yaml, check_apps_json, check_swift_brackets, check_double_backslash,
+             check_main_actor_statics, check_unterminated_strings, check_bundled_docs):
     step()
 
 if errors:
