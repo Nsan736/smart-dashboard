@@ -55,13 +55,36 @@ final class WaypointTracker: NSObject, CLLocationManagerDelegate {
     /// 端末の上端が向いている方位(真北基準)。コンパス表示に使う。端末を水平に持っていても使える。
     private(set) var compassHeading: Double?
     private(set) var headingAccuracy: Double?
+    /// CLHeading の真北・磁北の値(方角のデバッグ表示で比べる。無効なら nil)
+    private(set) var compassTrueHeading: Double?
+    private(set) var compassMagneticHeading: Double?
     /// 平滑化した端末の向き。カメラ越しの表示に使う。
     private(set) var attitude: CameraAttitude?
     /// 真北基準の向きが使えず、磁北基準で代用している
     private(set) var usesMagneticNorth = false
 
+    // 方角のデバッグ表示に使う値(CoreMotion の更新のたびに入れる)
+    /// 平滑化する前の CoreMotion の姿勢(ジャイロで保つときも、補正する前の値)
+    private(set) var rawAttitude: CameraAttitude?
+    private(set) var diagnostics = HeadingDiagnostics()
+    /// 頼んだ基準と、CMMotionManager が実際に使っている基準(attitudeReferenceFrame)
+    private(set) var requestedFrame: CMAttitudeReferenceFrame?
+    private(set) var activeFrame: CMAttitudeReferenceFrame?
+    /// CoreMotion を始めた回数と、使っている基準が頼んだものと違った(変わった)回数
+    private(set) var motionStartCount = 0
+    private(set) var frameChangeCount = 0
+    /// 磁気の較正の状態(CMMagneticFieldCalibrationAccuracy。−1 は未較正)と、CMDeviceMotion.heading(度)
+    private(set) var magneticAccuracy: Int?
+    private(set) var motionHeading: Double?
+    /// 方角をジャイロで保つ(試験。磁気による補正を打ち消す。設定の開発者向け)
+    @ObservationIgnored var holdsHeadingWithGyro = false
+
     @ObservationIgnored private let manager = CLLocationManager()
-    @ObservationIgnored private let motion = CMMotionManager()
+    /// CMMotionManager はアプリで1つにするよう求められているので、スコープの画面どうしでは使い回す。
+    /// 止めるのは、今使っている画面(owner)だけ(別の画面が始めたものを止めない)
+    private static let sharedMotion = CMMotionManager()
+    private static var motionOwner: ObjectIdentifier?
+    private var motion: CMMotionManager { Self.sharedMotion }
     @ObservationIgnored private var isRunning = false
     /// 位置が変わったとき(一覧とホームの距離の表示用に保存する)
     @ObservationIgnored var onLocation: (@MainActor (CLLocation) -> Void)?
@@ -100,12 +123,25 @@ final class WaypointTracker: NSObject, CLLocationManagerDelegate {
     }
 
     private func stopMotion() {
-        if motion.isDeviceMotionActive { motion.stopDeviceMotionUpdates() }
+        if Self.motionOwner == ObjectIdentifier(self) {
+            if motion.isDeviceMotionActive { motion.stopDeviceMotionUpdates() }
+            Self.motionOwner = nil
+        }
         attitude = nil
+        rawAttitude = nil
+    }
+
+    /// ジャイロで保つときの補正を0に戻す(今の CoreMotion の方角に合わせ直す)
+    func resetHeadingDiagnostics() {
+        diagnostics.reset()
     }
 
     private func startMotion() {
-        guard !motion.isDeviceMotionActive else { return }
+        if motion.isDeviceMotionActive {
+            if Self.motionOwner == ObjectIdentifier(self) { return }
+            // 別の画面が始めたままのものは、止めてから始め直す
+            motion.stopDeviceMotionUpdates()
+        }
         guard motion.isDeviceMotionAvailable else {
             motionAvailability = .unsupported
             return
@@ -124,19 +160,58 @@ final class WaypointTracker: NSObject, CLLocationManagerDelegate {
         }
         motion.deviceMotionUpdateInterval = Self.updateInterval
         motion.showsDeviceMovementDisplay = true
+        Self.motionOwner = ObjectIdentifier(self)
+        requestedFrame = frame
+        activeFrame = nil
+        motionStartCount += 1
+        // 始め直したら、前の平滑化と診断は使わない(新しい基準の値と混ぜない)
+        attitude = nil
+        rawAttitude = nil
+        diagnostics.reset()
+        let owner = ObjectIdentifier(self)
         motion.startDeviceMotionUpdates(using: frame, to: .main) { [weak self] data, error in
             MainActor.assumeIsolated {
-                guard let self else { return }
-                guard let matrix = data?.attitude.rotationMatrix else {
+                guard let self, Self.motionOwner == owner else { return }
+                guard let data else {
                     if error != nil { self.motionAvailability = .unsupported }
                     return
                 }
                 self.motionAvailability = .available
-                let new = CameraAttitude(m11: matrix.m11, m12: matrix.m12, m13: matrix.m13,
+                let matrix = data.attitude.rotationMatrix
+                let raw = CameraAttitude(m11: matrix.m11, m12: matrix.m12, m13: matrix.m13,
                                          m21: matrix.m21, m22: matrix.m22, m23: matrix.m23,
                                          m31: matrix.m31, m32: matrix.m32, m33: matrix.m33)
-                self.attitude = self.attitude?.smoothed(toward: new, weight: Self.smoothingWeight) ?? new
+                self.recordDiagnostics(data, raw: raw)
+                // ジャイロで保つ(試験)ときは、ジャイロで説明できない回転の累計を打ち消す
+                let used = self.holdsHeadingWithGyro ? raw.rotatedClockwise(by: -self.diagnostics.correction) : raw
+                self.attitude = self.attitude?.smoothed(toward: used, weight: Self.smoothingWeight) ?? used
             }
+        }
+    }
+
+    private func recordDiagnostics(_ data: CMDeviceMotion, raw: CameraAttitude) {
+        rawAttitude = raw
+        let rate = data.rotationRate
+        let gravity = data.gravity
+        diagnostics.update(MotionSample(attitude: raw, rotationRate: Vector3(x: rate.x, y: rate.y, z: rate.z),
+                                        gravity: Vector3(x: gravity.x, y: gravity.y, z: gravity.z), timestamp: data.timestamp))
+        magneticAccuracy = Int(data.magneticField.accuracy.rawValue)
+        motionHeading = data.heading >= 0 ? data.heading : nil
+        let frame = motion.attitudeReferenceFrame
+        if let activeFrame, activeFrame != frame { frameChangeCount += 1 }
+        if activeFrame == nil, let requestedFrame, requestedFrame != frame { frameChangeCount += 1 }
+        activeFrame = frame
+    }
+
+    /// 基準の名前(デバッグ表示)
+    static func frameName(_ frame: CMAttitudeReferenceFrame?) -> String {
+        guard let frame else { return "なし" }
+        switch frame {
+        case .xTrueNorthZVertical: return "xTrueNorthZVertical"
+        case .xMagneticNorthZVertical: return "xMagneticNorthZVertical"
+        case .xArbitraryCorrectedZVertical: return "xArbitraryCorrectedZVertical"
+        case .xArbitraryZVertical: return "xArbitraryZVertical"
+        default: return "不明(\(frame.rawValue))"
         }
     }
 
@@ -168,6 +243,8 @@ final class WaypointTracker: NSObject, CLLocationManagerDelegate {
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateHeading newHeading: CLHeading) {
         MainActor.assumeIsolated {
             headingAccuracy = newHeading.headingAccuracy
+            compassTrueHeading = newHeading.trueHeading >= 0 ? newHeading.trueHeading : nil
+            compassMagneticHeading = newHeading.magneticHeading >= 0 ? newHeading.magneticHeading : nil
             guard newHeading.headingAccuracy >= 0 else { return }
             compassHeading = newHeading.trueHeading >= 0 ? newHeading.trueHeading : newHeading.magneticHeading
         }
@@ -418,8 +495,19 @@ struct CameraPreviewView: UIViewRepresentable {
         view.backgroundColor = .black
         view.previewLayer?.session = session
         view.previewLayer?.videoGravity = .resizeAspectFill
+        Self.keepPortrait(view)
         return view
     }
 
-    func updateUIView(_ view: PreviewView, context: Context) {}
+    func updateUIView(_ view: PreviewView, context: Context) {
+        // 接続はセッションの設定のあとにできるので、更新のたびに確かめる
+        Self.keepPortrait(view)
+    }
+
+    /// 映像はいつも縦向き(画面が横に回っても回さない。重ねる印の計算は縦向きの前提)
+    static func keepPortrait(_ view: PreviewView) {
+        guard let connection = view.previewLayer?.connection, connection.videoRotationAngle != 90,
+              connection.isVideoRotationAngleSupported(90) else { return }
+        connection.videoRotationAngle = 90
+    }
 }

@@ -292,6 +292,24 @@ struct Vector3: Equatable {
     func mixed(with other: Vector3, weight: Double) -> Vector3 {
         Vector3(x: x + (other.x - x) * weight, y: y + (other.y - y) * weight, z: z + (other.z - z) * weight)
     }
+
+    static func cross(_ a: Vector3, _ b: Vector3) -> Vector3 {
+        Vector3(x: a.y * b.z - a.z * b.y, y: a.z * b.x - a.x * b.z, z: a.x * b.y - a.y * b.x)
+    }
+
+    func scaled(_ factor: Double) -> Vector3 {
+        Vector3(x: x * factor, y: y * factor, z: z * factor)
+    }
+
+    func minus(_ other: Vector3) -> Vector3 {
+        Vector3(x: x - other.x, y: y - other.y, z: z - other.z)
+    }
+
+    /// 鉛直のまわりに、上から見て時計回りに degrees 度回す(方角が degrees 増える)
+    func rotatedClockwise(by degrees: Double) -> Vector3 {
+        let t = degrees * .pi / 180
+        return Vector3(x: x * cos(t) + y * sin(t), y: y * cos(t) - x * sin(t), z: z)
+    }
 }
 
 /// 端末の向き(縦向きに持ったとき)。基準の座標系で表した、画面の右・画面の上・背面カメラの向き。
@@ -315,11 +333,30 @@ struct CameraAttitude: Equatable {
         self.forward = forward
     }
 
-    /// センサーの値を軽く平滑化する(ベクトルのまま混ぜるので、0度/360度の境目の問題が起きない)
+    /// 1回の更新でこれより大きく変わったら、混ぜずに新しい値を使う(再開の直後など。混ぜると、逆向きに近いベクトルの平均で向きが崩れる)
+    static let smoothingSnapDegrees = 45.0
+
+    /// センサーの値を軽く平滑化する(ベクトルのまま混ぜるので、0度/360度の境目の問題が起きない)。
+    /// 混ぜたあとは、背面の向きを基準に、右と上を直交させ直す(3つを別々に混ぜると直交が崩れ、少しずつ向きがゆがむため)
     func smoothed(toward new: CameraAttitude, weight: Double) -> CameraAttitude {
-        CameraAttitude(right: right.mixed(with: new.right, weight: weight).unit,
-                       up: up.mixed(with: new.up, weight: weight).unit,
-                       forward: forward.mixed(with: new.forward, weight: weight).unit)
+        let limit = cos(Self.smoothingSnapDegrees * .pi / 180)
+        guard Vector3.dot(forward, new.forward) > limit, Vector3.dot(right, new.right) > limit else { return new }
+        let f = forward.mixed(with: new.forward, weight: weight).unit
+        let mixedRight = right.mixed(with: new.right, weight: weight)
+        let r = mixedRight.minus(f.scaled(Vector3.dot(mixedRight, f))).unit
+        // 端末の軸は右手系(右 × 上 = 画面の手前 = 背面の逆)なので、上 = 右 × 背面
+        return CameraAttitude(right: r, up: Vector3.cross(r, f), forward: f)
+    }
+
+    /// 鉛直のまわりに、上から見て時計回りに degrees 度回した姿勢(方角だけが変わり、仰角と傾きは変わらない)
+    func rotatedClockwise(by degrees: Double) -> CameraAttitude {
+        CameraAttitude(right: right.rotatedClockwise(by: degrees), up: up.rotatedClockwise(by: degrees),
+                       forward: forward.rotatedClockwise(by: degrees))
+    }
+
+    /// 左右の傾き(度)。縦に持って水平なら0、右が下がると正
+    var roll: Double {
+        atan2(-right.z, up.z) * 180 / .pi
     }
 
     /// カメラが向いている方位(真北基準)。東は −y。
