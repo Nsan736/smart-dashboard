@@ -71,12 +71,16 @@ final class WaypointTests: XCTestCase {
         // 東を向いたとき(カメラ=東=−y)
         let facingEast = CameraAttitude(right: Vector3(x: -1, y: 0, z: 0), up: Vector3(x: 0, y: 0, z: 1), forward: Vector3(x: 0, y: -1, z: 0))
         XCTAssertEqual(facingEast.azimuth, 90, accuracy: 0.001)
-        // 平滑化: 重み1なら新しい値、重み0なら元のまま。長さは1に保つ
-        XCTAssertEqual(facingNorth.smoothed(toward: facingEast, weight: 1), facingEast)
-        XCTAssertEqual(facingNorth.smoothed(toward: facingEast, weight: 0), facingNorth)
-        let halfway = facingNorth.smoothed(toward: facingEast, weight: 0.5)
+        // 平滑化: 重み1なら新しい値、重み0なら元のまま。長さは1に保つ(45°より大きく変わったときは、混ぜずに新しい値)
+        let rad = 30 * Double.pi / 180
+        let thirty = CameraAttitude(right: Vector3(x: -sin(rad), y: -cos(rad), z: 0), up: Vector3(x: 0, y: 0, z: 1),
+                                    forward: Vector3(x: cos(rad), y: -sin(rad), z: 0))
+        XCTAssertEqual(facingNorth.smoothed(toward: thirty, weight: 1).azimuth, 30, accuracy: 1e-9)
+        XCTAssertEqual(facingNorth.smoothed(toward: thirty, weight: 0).azimuth, 0, accuracy: 1e-9)
+        let halfway = facingNorth.smoothed(toward: thirty, weight: 0.5)
         XCTAssertEqual(halfway.forward.length, 1, accuracy: 0.0001)
-        XCTAssertEqual(halfway.azimuth, 45, accuracy: 0.001)
+        XCTAssertEqual(halfway.azimuth, 15, accuracy: 0.001)
+        XCTAssertEqual(facingNorth.smoothed(toward: facingEast, weight: 0.5), facingEast)
     }
 
     func testFieldOfViewOnScreen() {
