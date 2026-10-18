@@ -29,6 +29,12 @@ struct ScopeSightView: View {
     @State private var captureError: String?
     /// タップした山
     @State private var mountainDetail: SceneryMountain?
+    /// タップしたオブジェクト
+    @State private var objectDetail: ObjectTap?
+
+    struct ObjectTap: Identifiable {
+        let id: UUID
+    }
 
     init(mode: ScopeSightMode, source: ScopeSightSource) {
         _mode = State(initialValue: mode)
@@ -67,6 +73,9 @@ struct ScopeSightView: View {
                     }
                     Toggle("向いている方角を表示", isOn: $settings.waypointShowsHeading)
                     Toggle("高さを反映する", isOn: $settings.scopeUsesHeight)
+                    if source != .objects {
+                        Toggle("オブジェクトを重ねる", isOn: $settings.objectsOverlayOthers)
+                    }
                     Menu("景色") {
                         SceneryLayerToggles()
                         Toggle("隠れた山も薄く表示", isOn: $settings.sceneryShowsHiddenMountains)
@@ -123,10 +132,14 @@ struct ScopeSightView: View {
             // 景色の層を切り替えたら、景色の保存と計算を始める・止める
             if isVisible { startAll() }
         }
+        .onChange(of: showsObjects) { _, _ in
+            if isVisible { startAll() }
+        }
         .sheet(item: $trainDetail) { target in
             ScopeTrainDetailSheet(target: target)
         }
         .sheet(item: $mountainDetail) { SceneryMountainSheet(mountain: $0) }
+        .sheet(item: $objectDetail) { ObjectPlacementInfoSheet(placementID: $0.id, user: userPoint) }
         .task(id: isVisible) {
             // 位置のデバッグの間は、仮想の位置で景色を計算する(2秒ごとに見て、200m以上動いたときだけ計算し直す)
             while isVisible, !Task.isCancelled {
@@ -157,7 +170,32 @@ struct ScopeSightView: View {
         case .route: return "経路の目的地・曲がり角"
         case .trains: return "電車"
         case .scenery: return "山"
+        case .objects: return "置いたオブジェクト"
         }
+    }
+
+    /// オブジェクトを重ねるか(置いたものがあり、オブジェクトの表示か、ほかの表示にも重ねる設定のとき)
+    private var showsObjects: Bool {
+        !env.objects.visiblePlacements.isEmpty && (source == .objects || env.settings.objectsOverlayOthers)
+    }
+
+    /// 現在地(位置のデバッグの間は、仮想の位置)
+    private var userPoint: GeoPoint? {
+        env.movement.isVirtual ? env.movement.currentPoint : tracker.coordinate.map { GeoPoint($0) }
+    }
+
+    /// カメラ表示に重ねる景色とオブジェクト
+    private var extras: ScopeExtras {
+        var extras = ScopeExtras(scenery: sceneryScene, sceneryOptions: sceneryOptions)
+        extras.onMountain = { mountainDetail = $0 }
+        if showsObjects, let user = userPoint {
+            // 位置のデバッグの間は、仮想の位置の地面 + 手の高さから見る
+            let altitude = env.movement.isVirtual || !env.settings.scopeUsesHeight ? nil : observer?.meters
+            extras.objects = ObjectDrawInput(items: env.objects.drawItems(), user: user, observerAltitude: altitude,
+                                             handHeight: env.settings.scopeHandHeight)
+            extras.onObject = { objectDetail = ObjectTap(id: $0) }
+        }
+        return extras
     }
 
     /// 景色を重ねるか(層を1つ以上選んでいて、景色の表示か、ほかの表示にも重ねる設定のとき)
@@ -219,6 +257,7 @@ struct ScopeSightView: View {
         case .route: return "経路の案内"
         case .trains: return mode == .camera ? "電車をカメラで見る" : "電車のコンパス"
         case .scenery: return mode == .camera ? "景色をカメラで見る" : "景色のコンパス"
+        case .objects: return mode == .camera ? "オブジェクトをカメラで見る" : "オブジェクトのコンパス"
         }
     }
 
@@ -250,6 +289,16 @@ struct ScopeSightView: View {
                                      longitude: mountain.entry.longitude, color: .brown, altitude: mountain.entry.elevation)
                 mark.note = mountain.isHidden ? "手前の地形に隠れて見えない" : SceneryText.elevation(mountain.entry.elevation)
                 return mark
+            }
+        case .objects:
+            // カメラ表示では立体で描くので、印はコンパス表示のときだけ
+            guard mode == .compass else { return [] }
+            return env.objects.drawItems().map { item in
+                let placement = item.placement
+                let ground = placement.groundElevation
+                return ScopeMark(id: "object.\(placement.id.uuidString)", name: placement.name, latitude: placement.latitude,
+                                 longitude: placement.longitude, color: ObjectColor.color(item.object.shapes.first?.color ?? ObjectShape.defaultColor),
+                                 altitude: ground.map { $0 + placement.heightAboveGround + item.height * placement.scale / 2 })
             }
         }
     }
@@ -288,6 +337,7 @@ struct ScopeSightView: View {
                 return elevation.observerHeight(latitude: coordinate.latitude, longitude: coordinate.longitude, gpsAltitude: tracker.gpsAltitude)?.meters
             })
         }
+        if showsObjects, env.movement.isVirtual { env.movement.setVisible(true) }
         if showsScenery {
             env.scenery.setActive(true, reason: "scope.sight")
             // 位置のデバッグの間は、仮想の位置を進める
@@ -313,7 +363,7 @@ struct ScopeSightView: View {
         env.scenery.setActive(false, reason: "scope.sight")
         let wasTrains = trainFeed.isRunning
         if wasTrains { trainFeed.stop(env: env) }
-        if env.movement.isVirtual, wasTrains || showsScenery { env.movement.setVisible(false) }
+        if env.movement.isVirtual, wasTrains || showsScenery || showsObjects { env.movement.setVisible(false) }
     }
 
     // MARK: - カメラ越しの表示
@@ -344,13 +394,11 @@ struct ScopeSightView: View {
                 } else if let attitude = tracker.attitude {
                     let tangents = WaypointProjection.tangents(fieldOfView: env.camera.fieldOfView, videoAspect: env.camera.videoAspect, viewSize: size)
                     if source == .trains {
-                        ScopeTrainOverlay(feed: trainFeed, attitude: attitude, tangents: tangents, scenery: sceneryScene,
-                                          sceneryOptions: sceneryOptions, onMountain: { mountainDetail = $0 }) { id in
+                        ScopeTrainOverlay(feed: trainFeed, attitude: attitude, tangents: tangents, extras: extras) { id in
                             trainDetail = ScopeTrainDetailSheet.Target(selection: .train(id))
                         }
                     } else {
-                        ScopeOverlay(targets: targets, attitude: attitude, tangents: tangents, scenery: sceneryScene,
-                                     sceneryOptions: sceneryOptions, onMountain: { mountainDetail = $0 })
+                        ScopeOverlay(targets: targets, attitude: attitude, tangents: tangents, extras: extras)
                     }
                     VStack(alignment: .trailing, spacing: 6) {
                         Spacer()
@@ -563,8 +611,11 @@ struct ScopeSightView: View {
                     Text("デバッグ中(仮想の位置と時刻)").foregroundStyle(.red)
                 }
                 Text(trainStatusText)
-            } else if showsScenery, env.movement.isVirtual {
-                Text("デバッグ中(景色は仮想の位置で計算)").foregroundStyle(.red)
+            } else if (showsScenery || showsObjects), env.movement.isVirtual {
+                Text("デバッグ中(景色とオブジェクトは仮想の位置から)").foregroundStyle(.red)
+            }
+            if showsObjects {
+                Text("オブジェクト \(env.objects.visiblePlacements.count)個(タップで情報)")
             }
             if showsScenery {
                 Text(sceneryStatusText)
@@ -587,19 +638,13 @@ struct ScopeOverlay: View {
     let targets: [ScopeTarget]
     let attitude: CameraAttitude
     let tangents: (horizontal: Double, vertical: Double)
-    /// 景色(同じ Canvas に、印より先に描く)。重ねないときは nil
-    var scenery: SceneryScene? = nil
-    var sceneryOptions = SceneryDrawOptions(layers: [], showsHiddenMountains: true)
-    /// 山をタップしたとき
-    var onMountain: ((SceneryMountain) -> Void)? = nil
+    /// 景色とオブジェクト(同じ Canvas に、印より先に描く)
+    var extras = ScopeExtras()
 
     var body: some View {
         GeometryReader { geometry in
             Canvas(rendersAsynchronously: false) { context, size in
-                if let scenery {
-                    SceneryRenderer.draw(&context, layout: SceneryRenderer.layout(scene: scenery, options: sceneryOptions, attitude: attitude,
-                                                                                  tangents: tangents, size: size))
-                }
+                extras.draw(&context, attitude: attitude, tangents: tangents, size: size)
                 for target in targets {
                     guard let point = WaypointProjection.point(bearing: target.bearing, elevation: target.elevationAngle, attitude: attitude,
                                                                tangents: tangents, viewSize: size) else { continue }
@@ -608,12 +653,9 @@ struct ScopeOverlay: View {
             }
             .contentShape(Rectangle())
             .gesture(SpatialTapGesture().onEnded { value in
-                guard let scenery, let onMountain else { return }
-                let layout = SceneryRenderer.layout(scene: scenery, options: sceneryOptions, attitude: attitude, tangents: tangents,
-                                                    size: geometry.size)
-                if let mountain = SceneryRenderer.hitMountain(value.location, layout: layout) { onMountain(mountain) }
+                extras.tap(value.location, attitude: attitude, tangents: tangents, size: geometry.size)
             })
-            .allowsHitTesting(scenery != nil && onMountain != nil && sceneryOptions.layers.contains(.mountains))
+            .allowsHitTesting(extras.isTappable)
         }
     }
 

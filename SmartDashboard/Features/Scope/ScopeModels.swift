@@ -8,6 +8,7 @@ enum ScopeSection: String, CaseIterable, Identifiable {
     case route
     case trains
     case scenery
+    case objects
 
     var id: String { rawValue }
 
@@ -18,6 +19,7 @@ enum ScopeSection: String, CaseIterable, Identifiable {
         case .route: return "経路"
         case .trains: return "電車"
         case .scenery: return "景色"
+        case .objects: return "オブジェクト"
         }
     }
 }
@@ -96,6 +98,8 @@ enum ScopeSightSource: Equatable {
     case trains
     /// 景色(山・稜線・海と湖と川・地名)
     case scenery
+    /// 地図に置いたオブジェクト
+    case objects
 }
 
 /// 経路の目的地(地点、または周辺の施設)

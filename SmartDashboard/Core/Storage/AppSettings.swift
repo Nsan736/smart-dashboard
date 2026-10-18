@@ -197,6 +197,10 @@ final class AppSettings {
     var sceneryShowsHiddenMountains: Bool {
         didSet { defaults.set(sceneryShowsHiddenMountains, forKey: Keys.sceneryShowsHiddenMountains) }
     }
+    /// スコープのオブジェクト: 地点・周辺・経路・電車・景色のカメラ表示にも重ねる(初期値オン)
+    var objectsOverlayOthers: Bool {
+        didSet { defaults.set(objectsOverlayOthers, forKey: Keys.objectsOverlayOthers) }
+    }
     /// スコープの景色: 地点・周辺・経路・電車のカメラ表示にも重ねる(初期値オン)
     var sceneryOverlaysOthers: Bool {
         didSet { defaults.set(sceneryOverlaysOthers, forKey: Keys.sceneryOverlaysOthers) }
@@ -280,6 +284,7 @@ final class AppSettings {
         sceneryRadiusKm = SceneryRadius.clamped(defaults.object(forKey: Keys.sceneryRadiusKm) as? Int ?? SceneryRadius.initial)
         sceneryShowsHiddenMountains = defaults.object(forKey: Keys.sceneryShowsHiddenMountains) as? Bool ?? true
         sceneryOverlaysOthers = defaults.object(forKey: Keys.sceneryOverlaysOthers) as? Bool ?? true
+        objectsOverlayOthers = defaults.object(forKey: Keys.objectsOverlayOthers) as? Bool ?? true
         claude = Self.loadJSON(ClaudeSettings.self, from: defaults, forKey: Keys.claude) ?? ClaudeSettings()
         scriptToolsStopped = defaults.bool(forKey: Keys.scriptToolsStopped)
         disabledScriptTools = defaults.stringArray(forKey: Keys.disabledScriptTools) ?? []
@@ -352,6 +357,7 @@ final class AppSettings {
         static let sceneryRadiusKm = "scope.sceneryRadiusKm"
         static let sceneryShowsHiddenMountains = "scope.sceneryShowsHiddenMountains"
         static let sceneryOverlaysOthers = "scope.sceneryOverlaysOthers"
+        static let objectsOverlayOthers = "scope.objectsOverlayOthers"
         static let claude = "claude.settings"
         static let scriptToolsStopped = "tools.scriptStopped"
         static let disabledScriptTools = "tools.scriptDisabled"

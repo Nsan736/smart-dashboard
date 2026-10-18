@@ -11,18 +11,33 @@ struct ScopeView: View {
             set: { sectionRaw = $0.rawValue })
         NavigationStack {
             VStack(spacing: 0) {
-                Picker("表示", selection: section) {
-                    ForEach(ScopeSection.allCases) { Text($0.label).tag($0) }
+                // 6つあるので、横にスクロールできる切り替え(最小の画面幅でも文字が切れない)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(ScopeSection.allCases) { item in
+                            Button {
+                                section.wrappedValue = item
+                            } label: {
+                                Text(item.label)
+                                    .font(.subheadline.weight(.semibold))
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 6)
+                                    .foregroundStyle(section.wrappedValue == item ? Color.white : Color.primary)
+                                    .background(section.wrappedValue == item ? Color.accentColor : Color(.tertiarySystemFill), in: Capsule())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal)
+                    .padding(.vertical, 8)
                 }
-                .pickerStyle(.segmented)
-                .padding(.horizontal)
-                .padding(.vertical, 8)
                 switch section.wrappedValue {
                 case .places: WaypointListView(section: section)
                 case .nearby: NearbyView(section: section)
                 case .route: RouteView(section: section)
                 case .trains: ScopeTrainsView()
                 case .scenery: SceneryView()
+                case .objects: ObjectListView()
                 }
             }
             .background(Color(.systemGroupedBackground))
