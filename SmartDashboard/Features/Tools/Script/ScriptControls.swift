@@ -1,5 +1,8 @@
 import Foundation
 
+/// 部品の読み取りの誤りを Result で返すため
+extension ToolIssue: Error {}
+
 /// 入力の部品の値
 enum ScriptControlValue: Equatable {
     case number(Double)
