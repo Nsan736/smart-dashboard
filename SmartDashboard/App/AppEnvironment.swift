@@ -42,6 +42,7 @@ final class AppEnvironment {
     let discovery: OperatorDiscoveryStore
     let trains: TrainStore
     let tiles: TileDownloader
+    let scenery: SceneryStore
     let radar: RadarStore
     let rain: RainNowcastStore
     let live: TrainLiveStore
@@ -138,6 +139,11 @@ final class AppEnvironment {
                                  settings: settings, trains: trainStore, live: live, network: network)
         let tiles = TileDownloader(store: TileStore(root: TileStore.defaultRoot()), http: http, settings: settings, network: network)
         self.tiles = tiles
+        let scenery = SceneryStore(store: SceneryTileStore(root: SceneryTileStore.defaultRoot()), http: http, settings: settings,
+                                   network: network, tiles: tiles)
+        self.scenery = scenery
+        // 地図タイルの保存の上限には、景色のタイルも含める
+        tiles.otherStoredBytes = { [weak scenery] in scenery?.storedBytes ?? 0 }
         let radarLoader = RadarTileLoader(http: http, root: RadarTileLoader.defaultRoot())
         radar = RadarStore(http: http, network: network, loader: radarLoader)
         rain = RainNowcastStore(http: http, cache: cache, settings: settings, network: network, loader: radarLoader,

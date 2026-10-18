@@ -185,6 +185,22 @@ final class AppSettings {
     var scopeUndergroundDepth: Double {
         didSet { defaults.set(scopeUndergroundDepth, forKey: Keys.scopeUndergroundDepth) }
     }
+    /// スコープの景色: 表示する層(初期値は山・稜線・海と湖と川。地名は任意)
+    var sceneryLayers: [SceneryLayer] {
+        didSet { defaults.set(sceneryLayers.map(\.rawValue), forKey: Keys.sceneryLayers) }
+    }
+    /// スコープの景色: 山と稜線の範囲(km、初期値100)
+    var sceneryRadiusKm: Int {
+        didSet { defaults.set(sceneryRadiusKm, forKey: Keys.sceneryRadiusKm) }
+    }
+    /// スコープの景色: 手前の地形に隠れて見えない山も、薄く表示する(初期値オン)
+    var sceneryShowsHiddenMountains: Bool {
+        didSet { defaults.set(sceneryShowsHiddenMountains, forKey: Keys.sceneryShowsHiddenMountains) }
+    }
+    /// スコープの景色: 地点・周辺・経路・電車のカメラ表示にも重ねる(初期値オン)
+    var sceneryOverlaysOthers: Bool {
+        didSet { defaults.set(sceneryOverlaysOthers, forKey: Keys.sceneryOverlaysOthers) }
+    }
     /// 気圧: 無音のオーディオでアプリを起こしておき、バックグラウンドでも記録する(初期値はオフ)
     var backgroundPressureEnabled: Bool {
         didSet { defaults.set(backgroundPressureEnabled, forKey: Keys.backgroundPressureEnabled) }
@@ -260,6 +276,10 @@ final class AppSettings {
         scopeCarOverrides = defaults.dictionary(forKey: Keys.scopeCarOverrides) as? [String: Int] ?? [:]
         scopeElevatedHeight = defaults.object(forKey: Keys.scopeElevatedHeight) as? Double ?? 8
         scopeUndergroundDepth = defaults.object(forKey: Keys.scopeUndergroundDepth) as? Double ?? 15
+        sceneryLayers = SceneryLayer.decode(defaults.stringArray(forKey: Keys.sceneryLayers))
+        sceneryRadiusKm = SceneryRadius.clamped(defaults.object(forKey: Keys.sceneryRadiusKm) as? Int ?? SceneryRadius.initial)
+        sceneryShowsHiddenMountains = defaults.object(forKey: Keys.sceneryShowsHiddenMountains) as? Bool ?? true
+        sceneryOverlaysOthers = defaults.object(forKey: Keys.sceneryOverlaysOthers) as? Bool ?? true
         claude = Self.loadJSON(ClaudeSettings.self, from: defaults, forKey: Keys.claude) ?? ClaudeSettings()
         scriptToolsStopped = defaults.bool(forKey: Keys.scriptToolsStopped)
         disabledScriptTools = defaults.stringArray(forKey: Keys.disabledScriptTools) ?? []
@@ -328,6 +348,10 @@ final class AppSettings {
         static let scopeCarOverrides = "scope.carOverrides"
         static let scopeElevatedHeight = "scope.elevatedHeight"
         static let scopeUndergroundDepth = "scope.undergroundDepth"
+        static let sceneryLayers = "scope.sceneryLayers"
+        static let sceneryRadiusKm = "scope.sceneryRadiusKm"
+        static let sceneryShowsHiddenMountains = "scope.sceneryShowsHiddenMountains"
+        static let sceneryOverlaysOthers = "scope.sceneryOverlaysOthers"
         static let claude = "claude.settings"
         static let scriptToolsStopped = "tools.scriptStopped"
         static let disabledScriptTools = "tools.scriptDisabled"

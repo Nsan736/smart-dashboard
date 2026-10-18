@@ -56,6 +56,9 @@ enum UsageCategory: String, Codable, CaseIterable, Sendable {
         if host.hasSuffix("jma.go.jp"), url?.path.contains("/bosai/warning/") == true { return .alerts }
         // 国土地理院は、地図タイルと標高APIでホストが同じ系統なので、パスで分ける
         if host.hasSuffix("gsi.go.jp"), url?.path.contains("/general/dem/") == true { return .scope }
+        // スコープの景色(標高タイル、ベクトルタイルの水部・注記)
+        if host.hasSuffix("gsi.go.jp"), let path = url?.path,
+           path.contains("/xyz/dem_png/") || path.contains("/xyz/experimental_bvmap/") { return .scope }
         return from(host: url?.host)
     }
 

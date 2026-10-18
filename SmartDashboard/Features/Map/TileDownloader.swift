@@ -61,7 +61,9 @@ final class TileDownloader {
     }
 
     var storageLimitBytes: Int64 { Int64(settings.tileStorageLimitMB) * 1_000_000 }
-    var isOverLimit: Bool { storedBytes >= storageLimitBytes }
+    /// 景色のタイル(標高・水部)も同じ上限に数える
+    @ObservationIgnored var otherStoredBytes: () -> Int64 = { 0 }
+    var isOverLimit: Bool { storedBytes + otherStoredBytes() >= storageLimitBytes }
     var canDownloadNow: Bool { isForeground && MapMode.canDownloadTiles(network: network.status) }
 
     /// 地理院タイル(淡色地図)
