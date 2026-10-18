@@ -1,12 +1,13 @@
 import Foundation
 import SwiftUI
 
-/// スコープの画面の上部で切り替える3つの表示
+/// スコープの画面の上部で切り替える表示
 enum ScopeSection: String, CaseIterable, Identifiable {
     case places
     case nearby
     case route
     case trains
+    case scenery
 
     var id: String { rawValue }
 
@@ -16,6 +17,7 @@ enum ScopeSection: String, CaseIterable, Identifiable {
         case .nearby: return "周辺"
         case .route: return "経路"
         case .trains: return "電車"
+        case .scenery: return "景色"
         }
     }
 }
@@ -92,6 +94,8 @@ enum ScopeSightSource: Equatable {
     case route
     /// 電車(移動タブと同じ計算の列車の位置)
     case trains
+    /// 景色(山・稜線・海と湖と川・地名)
+    case scenery
 }
 
 /// 経路の目的地(地点、または周辺の施設)

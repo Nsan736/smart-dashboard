@@ -272,6 +272,10 @@ struct ScopeTrainOverlay: View {
     let feed: ScopeTrainFeed
     let attitude: CameraAttitude
     let tangents: (horizontal: Double, vertical: Double)
+    /// 景色(同じ Canvas に、電車より先に描く)。重ねないときは nil
+    var scenery: SceneryScene? = nil
+    var sceneryOptions = SceneryDrawOptions(layers: [], showsHiddenMountains: true)
+    var onMountain: ((SceneryMountain) -> Void)? = nil
     let onSelect: (String) -> Void
 
     var body: some View {
@@ -281,6 +285,10 @@ struct ScopeTrainOverlay: View {
                                                  elevated: settings.scopeElevatedHeight, underground: settings.scopeUndergroundDepth)
         GeometryReader { geometry in
             Canvas(rendersAsynchronously: false) { context, size in
+                if let scenery {
+                    SceneryRenderer.draw(&context, layout: SceneryRenderer.layout(scene: scenery, options: sceneryOptions, attitude: attitude,
+                                                                                  tangents: tangents, size: size))
+                }
                 guard let user else { return }
                 let items = ScopeTrainRenderer.layout(trains: feed.trains, rides: feed.rides, user: user, heights: heights, attitude: attitude,
                                                       tangents: tangents, size: size, now: env.movement.currentTime())
@@ -291,7 +299,13 @@ struct ScopeTrainOverlay: View {
                 guard let user else { return }
                 let items = ScopeTrainRenderer.layout(trains: feed.trains, rides: feed.rides, user: user, heights: heights, attitude: attitude,
                                                       tangents: tangents, size: geometry.size, now: env.movement.currentTime())
-                if let id = ScopeTrainRenderer.hit(value.location, items: items) { onSelect(id) }
+                if let id = ScopeTrainRenderer.hit(value.location, items: items) {
+                    onSelect(id)
+                } else if let scenery, let onMountain,
+                          let mountain = SceneryRenderer.hitMountain(value.location, layout: SceneryRenderer.layout(
+                              scene: scenery, options: sceneryOptions, attitude: attitude, tangents: tangents, size: geometry.size)) {
+                    onMountain(mountain)
+                }
             })
         }
     }

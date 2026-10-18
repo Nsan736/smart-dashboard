@@ -50,9 +50,15 @@ struct MapSettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-                LabeledContent("保存済み", value: "\(Formatters.bytes(tiles.storedBytes)) / \(settings.tileStorageLimitMB) MB")
+                LabeledContent("保存済み", value: "\(Formatters.bytes(tiles.storedBytes + env.scenery.storedBytes)) / \(settings.tileStorageLimitMB) MB")
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
+                if env.scenery.storedBytes > 0 {
+                    // スコープの景色(標高タイル・水部)も、同じ上限に数える
+                    LabeledContent("うち景色のデータ", value: Formatters.bytes(env.scenery.storedBytes))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                }
                 LabeledContent("回線", value: env.network.summary)
             }
 
