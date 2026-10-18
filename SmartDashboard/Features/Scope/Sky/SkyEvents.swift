@@ -80,7 +80,7 @@ enum SkyEvents {
     /// 本当の日の出・日の入り: 景色の稜線(方角ごとの見える高さ)に、太陽の上の縁が隠れる・出てくる時刻。
     /// horizon(方角) は、その方角の稜線の見える高さ(度)。分からない方角は nil(そのときは求めない)
     static func terrainRiseSet(_ body: SkyBody, on day: Date, latitude: Double, longitude: Double,
-                               horizon: (Double) -> Double?) -> (rise: SkyEvent?, set: SkyEvent?) {
+                               horizon: @escaping (Double) -> Double?) -> (rise: SkyEvent?, set: SkyEvent?) {
         let start = startOfDay(day)
         let end = start.addingTimeInterval(86_400)
         let value: (Date) -> Double = { date in
