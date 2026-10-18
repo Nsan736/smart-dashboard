@@ -1,0 +1,30 @@
+{
+  "format": 1,
+  "id": "bouncing-ball",
+  "name": "跳ねるボール",
+  "type": "script",
+  "description": "壁で跳ね返るボール。タップで足せます(スクリプト型のサンプル)",
+  "icon": "circle.circle",
+  "category": "play",
+  "keywords": [
+    "ぼーる",
+    "アニメーション"
+  ],
+  "controls": [
+    {
+      "id": "speed",
+      "type": "slider",
+      "label": "速さ",
+      "min": 50,
+      "max": 400,
+      "step": 10,
+      "value": 200
+    },
+    {
+      "id": "clear",
+      "type": "button",
+      "label": "すべて消す"
+    }
+  ],
+  "script": "// 跳ねるボール: スライダー(速さ)、ボタン(消す)、タップで足す。グラデーションの例。\nvar balls = [];\nvar speed = 200;\n\nfunction add(x, y) {\n  if (balls.length >= 30) balls.shift();\n  var a = random.range(0, Math.PI * 2);\n  balls.push({ x: x, y: y, vx: Math.cos(a), vy: Math.sin(a), r: random.range(12, 26), hue: random.int(0, 359) });\n}\n\nfunction setup() {\n  for (var i = 0; i < 3; i++) add(random.range(40, screen.width - 40), random.range(40, screen.height - 40));\n}\n\nfunction onInput(name, value) {\n  if (name === 'speed') speed = value;\n  if (name === 'clear') balls = [];\n}\n\nfunction onTouch(e) {\n  if (e.type === 'down') {\n    add(e.x, e.y);\n    sound.play('pop');\n  }\n}\n\nfunction frame(t, dt) {\n  var w = screen.width, h = screen.height;\n  ctx.fillStyle = screen.dark ? '#111111' : '#f4f4f4';\n  ctx.fillRect(0, 0, w, h);\n  for (var i = 0; i < balls.length; i++) {\n    var b = balls[i];\n    b.x += b.vx * speed * dt;\n    b.y += b.vy * speed * dt;\n    if (b.x < b.r) { b.x = b.r; b.vx = Math.abs(b.vx); }\n    if (b.x > w - b.r) { b.x = w - b.r; b.vx = -Math.abs(b.vx); }\n    if (b.y < b.r) { b.y = b.r; b.vy = Math.abs(b.vy); }\n    if (b.y > h - b.r) { b.y = h - b.r; b.vy = -Math.abs(b.vy); }\n    var g = ctx.createRadialGradient(b.x - b.r * 0.3, b.y - b.r * 0.3, 2, b.x, b.y, b.r);\n    g.addColorStop(0, 'hsl(' + b.hue + ', 90%, 75%)');\n    g.addColorStop(1, 'hsl(' + b.hue + ', 80%, 45%)');\n    ctx.fillStyle = g;\n    ctx.beginPath();\n    ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);\n    ctx.fill();\n  }\n  ctx.fillStyle = screen.dark ? '#aaaaaa' : '#555555';\n  ctx.font = '13px sans-serif';\n  ctx.textAlign = 'left';\n  ctx.textBaseline = 'top';\n  ctx.fillText('タップでボールを足す(' + balls.length + '個)', 10, 10);\n}\n"
+}

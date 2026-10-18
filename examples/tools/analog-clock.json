@@ -1,0 +1,17 @@
+{
+  "format": 1,
+  "id": "analog-clock",
+  "name": "アナログ時計",
+  "type": "script",
+  "description": "端末の時刻で動くアナログ時計(スクリプト型のサンプル)",
+  "icon": "clock",
+  "category": "time",
+  "keywords": [
+    "とけい",
+    "時計",
+    "clock"
+  ],
+  "fps": 15,
+  "aspect": 1,
+  "script": "// アナログ時計: 変形(translate・rotate)と文字の例。1秒に15コマで十分なので、fps は15にしている。\nfunction hand(angle, length, width, color) {\n  ctx.save();\n  ctx.rotate(angle);\n  ctx.strokeStyle = color;\n  ctx.lineWidth = width;\n  ctx.lineCap = 'round';\n  ctx.beginPath();\n  ctx.moveTo(0, length * 0.15);\n  ctx.lineTo(0, -length);\n  ctx.stroke();\n  ctx.restore();\n}\n\nfunction frame(t, dt) {\n  var w = screen.width, h = screen.height, r = Math.min(w, h) * 0.42;\n  var ink = screen.dark ? '#dddddd' : '#222222';\n  ctx.fillStyle = screen.dark ? '#000000' : '#ffffff';\n  ctx.fillRect(0, 0, w, h);\n  ctx.save();\n  ctx.translate(w / 2, h / 2);\n  ctx.strokeStyle = ink;\n  ctx.lineWidth = 4;\n  ctx.beginPath();\n  ctx.arc(0, 0, r, 0, Math.PI * 2);\n  ctx.stroke();\n  ctx.lineCap = 'round';\n  for (var i = 0; i < 60; i++) {\n    var a = i * Math.PI / 30;\n    var major = i % 5 === 0;\n    var inner = major ? 0.85 : 0.92;\n    ctx.lineWidth = major ? 4 : 1.5;\n    ctx.beginPath();\n    ctx.moveTo(Math.sin(a) * r * inner, -Math.cos(a) * r * inner);\n    ctx.lineTo(Math.sin(a) * r * 0.97, -Math.cos(a) * r * 0.97);\n    ctx.stroke();\n  }\n  ctx.fillStyle = ink;\n  ctx.font = 'bold ' + Math.round(r * 0.16) + 'px sans-serif';\n  ctx.textAlign = 'center';\n  ctx.textBaseline = 'middle';\n  for (var n = 1; n <= 12; n++) {\n    var b = n * Math.PI / 6;\n    ctx.fillText(String(n), Math.sin(b) * r * 0.7, -Math.cos(b) * r * 0.7);\n  }\n  var now = new Date();\n  var s = now.getSeconds() + now.getMilliseconds() / 1000;\n  var m = now.getMinutes() + s / 60;\n  var hr = (now.getHours() % 12) + m / 60;\n  hand(hr * Math.PI / 6, r * 0.5, 8, ink);\n  hand(m * Math.PI / 30, r * 0.75, 5, ink);\n  hand(s * Math.PI / 30, r * 0.85, 2, 'crimson');\n  ctx.fillStyle = 'crimson';\n  ctx.beginPath();\n  ctx.arc(0, 0, 6, 0, Math.PI * 2);\n  ctx.fill();\n  ctx.restore();\n}\n"
+}

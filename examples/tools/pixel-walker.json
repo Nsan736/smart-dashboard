@@ -1,0 +1,27 @@
+{
+  "format": 1,
+  "id": "pixel-walker",
+  "name": "ドット絵のアニメーション",
+  "type": "script",
+  "description": "ピクセルの配列から作ったドット絵が歩きます(スクリプト型のサンプル)",
+  "icon": "figure.walk",
+  "category": "play",
+  "keywords": [
+    "どっとえ",
+    "ドット",
+    "ピクセル"
+  ],
+  "fps": 20,
+  "controls": [
+    {
+      "id": "size",
+      "type": "slider",
+      "label": "大きさ",
+      "min": 2,
+      "max": 10,
+      "step": 1,
+      "value": 6
+    }
+  ],
+  "script": "// ドット絵のアニメーション: 文字で描いた絵からピクセルの配列を作り(image.create)、補間しないで拡大して描く。\nvar palette = {\n  '.': [0, 0, 0, 0], 'k': [30, 30, 40, 255], 's': [255, 205, 160, 255],\n  'r': [220, 50, 60, 255], 'b': [50, 90, 200, 255], 'w': [255, 255, 255, 255]\n};\nvar body = [\n  '................',\n  '.....kkkkkk.....',\n  '....krrrrrrk....',\n  '...krrrrrrrrk...',\n  '...kssssssssk...',\n  '...kskssssksk...',\n  '...kssssssssk...',\n  '....kssrrssk....',\n  '.....kkkkkk.....',\n  '....kbbbbbbk....',\n  '...kbbwbbwbbk...',\n  '...kbbbbbbbbk...',\n  '....kbbbbbbk....'\n];\nvar legsA = ['....kk....kk....', '...kkk....kkk...', '................'];\nvar legsB = ['.....kk..kk.....', '....kkk..kkk....', '................'];\nvar sprites = [];\nvar x = -100;\nvar scale = 6;\n\nfunction build(rows) {\n  var w = 16, h = 16, px = new Uint8ClampedArray(w * h * 4);\n  for (var y = 0; y < h; y++) {\n    for (var i = 0; i < w; i++) {\n      var c = palette[rows[y].charAt(i)] || palette['.'];\n      var o = (y * w + i) * 4;\n      px[o] = c[0]; px[o + 1] = c[1]; px[o + 2] = c[2]; px[o + 3] = c[3];\n    }\n  }\n  return image.create(w, h, px);\n}\n\nfunction setup() {\n  sprites = [build(body.concat(legsA)), build(body.concat(legsB))];\n}\n\nfunction onInput(name, value) {\n  if (name === 'size') scale = value;\n}\n\nfunction frame(t, dt) {\n  var w = screen.width, h = screen.height, size = 16 * scale, groundY = Math.round(h * 0.7);\n  ctx.fillStyle = screen.dark ? '#1b2a3a' : '#bfe3ff';\n  ctx.fillRect(0, 0, w, groundY);\n  ctx.fillStyle = '#5a9e3c';\n  ctx.fillRect(0, groundY, w, h - groundY);\n  x += 10 * scale * dt;\n  if (x > w + size) x = -size;\n  var f = Math.floor(t * 6) % 2;\n  var bob = f === 0 ? 0 : -scale;\n  ctx.imageSmoothingEnabled = false;\n  ctx.drawImage(sprites[f], Math.round(x), groundY - size + scale + bob, size, size);\n  ctx.imageSmoothingEnabled = true;\n}\n"
+}

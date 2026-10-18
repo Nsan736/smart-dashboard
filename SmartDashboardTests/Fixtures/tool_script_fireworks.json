@@ -1,0 +1,14 @@
+{
+  "format": 1,
+  "id": "fireworks",
+  "name": "花火",
+  "type": "script",
+  "description": "パーティクルの花火。タップした所に打ち上げます(スクリプト型のサンプル)",
+  "icon": "sparkles",
+  "category": "play",
+  "keywords": [
+    "はなび",
+    "パーティクル"
+  ],
+  "script": "// 花火: パーティクル(火花は400個まで)、タップで打ち上げ、効果音と振動。\nvar rockets = [];\nvar sparks = [];\nvar timer = 0;\n\nfunction launch(x, y) {\n  rockets.push({ x: x, y: screen.height, ty: y, vy: -Math.max(260, (screen.height - y) * 1.6), hue: random.int(0, 359) });\n  sound.play('jump');\n}\n\nfunction burst(x, y, hue) {\n  var n = 60;\n  for (var i = 0; i < n; i++) {\n    if (sparks.length >= 400) sparks.shift();\n    var a = (i / n) * Math.PI * 2 + random.range(-0.05, 0.05);\n    var sp = random.range(60, 180);\n    sparks.push({ x: x, y: y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: random.range(0.9, 1.6), age: 0, hue: hue + random.int(-20, 20) });\n  }\n  sound.play('pop');\n  haptic('light');\n}\n\nfunction onTouch(e) {\n  if (e.type === 'down') launch(e.x, e.y);\n}\n\nfunction frame(t, dt) {\n  var w = screen.width, h = screen.height;\n  ctx.fillStyle = '#05060f';\n  ctx.fillRect(0, 0, w, h);\n  timer -= dt;\n  if (timer <= 0) {\n    timer = random.range(0.9, 1.8);\n    launch(random.range(w * 0.2, w * 0.8), random.range(h * 0.15, h * 0.45));\n  }\n  for (var i = rockets.length - 1; i >= 0; i--) {\n    var r = rockets[i];\n    r.y += r.vy * dt;\n    ctx.fillStyle = '#ffffff';\n    ctx.fillRect(r.x - 1.5, r.y, 3, 8);\n    if (r.y <= r.ty) {\n      burst(r.x, r.ty, r.hue);\n      rockets.splice(i, 1);\n    }\n  }\n  for (var j = sparks.length - 1; j >= 0; j--) {\n    var s = sparks[j];\n    s.age += dt;\n    if (s.age >= s.life) { sparks.splice(j, 1); continue; }\n    s.vy += 90 * dt;\n    s.vx *= 0.985;\n    s.vy *= 0.985;\n    s.x += s.vx * dt;\n    s.y += s.vy * dt;\n    ctx.globalAlpha = 1 - s.age / s.life;\n    ctx.fillStyle = 'hsl(' + s.hue + ', 100%, 65%)';\n    ctx.fillRect(s.x - 1.5, s.y - 1.5, 3, 3);\n  }\n  ctx.globalAlpha = 1;\n}\n"
+}

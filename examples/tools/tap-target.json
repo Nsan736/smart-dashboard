@@ -1,0 +1,22 @@
+{
+  "format": 1,
+  "id": "tap-target",
+  "name": "的あてゲーム",
+  "type": "script",
+  "description": "30秒で、出てくる的をタップします。最高点を保存します(スクリプト型のサンプル)",
+  "icon": "target",
+  "category": "play",
+  "keywords": [
+    "まと",
+    "ゲーム",
+    "タップ"
+  ],
+  "controls": [
+    {
+      "id": "start",
+      "type": "button",
+      "label": "はじめから"
+    }
+  ],
+  "script": "// 的あてゲーム: 30秒で、出てくる的をタップする。最高点は保存領域(storage)に残す。効果音と振動。\nvar ROUND = 30;\nvar targets = [];\nvar effects = [];\nvar score = 0;\nvar best = 0;\nvar timeLeft = 0;\nvar playing = false;\nvar spawn = 0;\n\nfunction setup() {\n  best = storage.get('best') || 0;\n}\n\nfunction start() {\n  targets = [];\n  effects = [];\n  score = 0;\n  timeLeft = ROUND;\n  playing = true;\n  spawn = 0;\n  sound.play('beep');\n}\n\nfunction onInput(name) {\n  if (name === 'start') start();\n}\n\nfunction onTouch(e) {\n  if (e.type !== 'down') return;\n  if (!playing) { start(); return; }\n  for (var i = targets.length - 1; i >= 0; i--) {\n    var tg = targets[i], dx = e.x - tg.x, dy = e.y - tg.y;\n    if (dx * dx + dy * dy <= tg.r * tg.r) {\n      var points = tg.r < 24 ? 3 : 1;\n      score += points;\n      effects.push({ x: tg.x, y: tg.y, age: 0, text: '+' + points });\n      targets.splice(i, 1);\n      sound.play('coin');\n      haptic('light');\n      return;\n    }\n  }\n  sound.play('click');\n}\n\nfunction update(dt, w, h) {\n  timeLeft -= dt;\n  spawn -= dt;\n  if (spawn <= 0 && targets.length < 6) {\n    spawn = random.range(0.35, 0.8);\n    var r = random.range(18, 40);\n    targets.push({ x: random.range(r, w - r), y: random.range(60 + r, h - r), r: r, life: random.range(1.2, 2.2), age: 0 });\n  }\n  for (var i = targets.length - 1; i >= 0; i--) {\n    targets[i].age += dt;\n    if (targets[i].age >= targets[i].life) targets.splice(i, 1);\n  }\n  if (timeLeft <= 0) {\n    playing = false;\n    targets = [];\n    if (score > best) {\n      best = score;\n      storage.set('best', best);\n      sound.play('success');\n      haptic('success');\n    } else {\n      sound.play('failure');\n    }\n  }\n}\n\nfunction frame(t, dt) {\n  var w = screen.width, h = screen.height;\n  if (playing) update(dt, w, h);\n  ctx.fillStyle = screen.dark ? '#101820' : '#eef4f8';\n  ctx.fillRect(0, 0, w, h);\n  for (var j = 0; j < targets.length; j++) {\n    var g = targets[j];\n    ctx.globalAlpha = Math.min(1, (1 - g.age / g.life) * 3);\n    ctx.fillStyle = '#e63946';\n    ctx.beginPath(); ctx.arc(g.x, g.y, g.r, 0, Math.PI * 2); ctx.fill();\n    ctx.fillStyle = '#ffffff';\n    ctx.beginPath(); ctx.arc(g.x, g.y, g.r * 0.62, 0, Math.PI * 2); ctx.fill();\n    ctx.fillStyle = '#e63946';\n    ctx.beginPath(); ctx.arc(g.x, g.y, g.r * 0.28, 0, Math.PI * 2); ctx.fill();\n  }\n  ctx.globalAlpha = 1;\n  ctx.font = 'bold 20px sans-serif';\n  ctx.textAlign = 'center';\n  ctx.textBaseline = 'middle';\n  for (var m = effects.length - 1; m >= 0; m--) {\n    var fx = effects[m];\n    fx.age += dt;\n    if (fx.age > 0.6) { effects.splice(m, 1); continue; }\n    ctx.globalAlpha = 1 - fx.age / 0.6;\n    ctx.fillStyle = '#2a9d8f';\n    ctx.fillText(fx.text, fx.x, fx.y - fx.age * 40);\n  }\n  ctx.globalAlpha = 1;\n  ctx.fillStyle = screen.dark ? '#eeeeee' : '#222222';\n  ctx.font = 'bold 18px sans-serif';\n  ctx.textBaseline = 'top';\n  ctx.textAlign = 'left';\n  ctx.fillText('点 ' + score, 12, 12);\n  ctx.textAlign = 'right';\n  ctx.fillText(playing ? '残り ' + Math.ceil(timeLeft) + '秒' : '最高 ' + best, w - 12, 12);\n  if (!playing) {\n    ctx.textAlign = 'center';\n    ctx.textBaseline = 'middle';\n    ctx.font = 'bold 22px sans-serif';\n    ctx.fillText('タップで始める(' + ROUND + '秒)', w / 2, h / 2);\n    ctx.font = '14px sans-serif';\n    ctx.fillText('小さい的は3点', w / 2, h / 2 + 30);\n  }\n}\n"
+}

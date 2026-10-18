@@ -1,0 +1,46 @@
+{
+  "format": 1,
+  "id": "pattern-maker",
+  "name": "模様のテクスチャ",
+  "type": "script",
+  "description": "模様の画像を作って、PNG で書き出します(スクリプト型のサンプル)",
+  "icon": "square.grid.3x3",
+  "category": "other",
+  "keywords": [
+    "もよう",
+    "テクスチャ",
+    "パターン",
+    "png"
+  ],
+  "fps": 15,
+  "controlsPosition": "top",
+  "controls": [
+    {
+      "id": "kind",
+      "type": "choice",
+      "label": "模様",
+      "options": [
+        "チェック",
+        "しま",
+        "水玉",
+        "ノイズ"
+      ],
+      "value": "チェック"
+    },
+    {
+      "id": "hue",
+      "type": "slider",
+      "label": "色合い",
+      "min": 0,
+      "max": 359,
+      "step": 1,
+      "value": 200
+    },
+    {
+      "id": "export",
+      "type": "button",
+      "label": "PNGで書き出す(512×512)"
+    }
+  ],
+  "script": "// 模様のテクスチャ: 64×64 のピクセルを作って並べて表示し、PNG(8倍の 512×512)で書き出す。\nvar N = 64;\nvar kind = 'チェック';\nvar hue = 200;\nvar img = null;\n\nfunction rgb(h, s, l) {\n  var q = l < 0.5 ? l * (1 + s) : l + s - l * s, p = 2 * l - q;\n  function f(t) {\n    t = (t + 1) % 1;\n    if (t < 1 / 6) return p + (q - p) * 6 * t;\n    if (t < 1 / 2) return q;\n    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;\n    return p;\n  }\n  var hh = h / 360;\n  return [Math.round(f(hh + 1 / 3) * 255), Math.round(f(hh) * 255), Math.round(f(hh - 1 / 3) * 255)];\n}\n\nfunction pixels() {\n  var px = new Uint8ClampedArray(N * N * 4);\n  var c1 = rgb(hue, 0.7, 0.55), c2 = rgb((hue + 40) % 360, 0.6, 0.85);\n  random.seed(7);\n  for (var y = 0; y < N; y++) {\n    for (var x = 0; x < N; x++) {\n      var on;\n      if (kind === 'チェック') on = ((x >> 3) + (y >> 3)) % 2 === 0;\n      else if (kind === 'しま') on = ((x + y) >> 2) % 2 === 0;\n      else if (kind === '水玉') { var dx = (x % 16) - 8, dy = (y % 16) - 8; on = dx * dx + dy * dy < 20; }\n      else on = random.next() < 0.5;\n      var c = on ? c1 : c2, o = (y * N + x) * 4;\n      px[o] = c[0]; px[o + 1] = c[1]; px[o + 2] = c[2]; px[o + 3] = 255;\n    }\n  }\n  return px;\n}\n\nfunction rebuild() {\n  if (img) image.update(img, pixels());\n  else img = image.create(N, N, pixels());\n}\n\nfunction setup() {\n  rebuild();\n}\n\nfunction onInput(name, value) {\n  if (name === 'kind') { kind = value; rebuild(); }\n  if (name === 'hue') { hue = value; rebuild(); }\n  if (name === 'export') image.exportPNG(img, { scale: 8, name: 'pattern' });\n}\n\nfunction frame() {\n  var w = screen.width, h = screen.height;\n  ctx.imageSmoothingEnabled = false;\n  for (var y = 0; y < h; y += 128) {\n    for (var x = 0; x < w; x += 128) ctx.drawImage(img, x, y, 128, 128);\n  }\n  ctx.imageSmoothingEnabled = true;\n  ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';\n  ctx.fillRect(0, h - 28, w, 28);\n  ctx.fillStyle = '#ffffff';\n  ctx.font = '13px sans-serif';\n  ctx.textAlign = 'left';\n  ctx.textBaseline = 'middle';\n  ctx.fillText('64×64 の模様を並べて表示。書き出すと 512×512', 8, h - 14);\n}\n"
+}
