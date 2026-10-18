@@ -10,7 +10,7 @@ iOS向けの個人用「手元ダッシュボード」アプリ。SwiftUI製。A
 
 ## 現在の状況と引き継ぎ
 
-- 最新のリリースは **v0.9.21**(2026-10-18)。**v1.0.0 は、利用者が判断したときに付ける。それまでは 0.9.x で進める**(次は v0.9.22)。勝手に 1.0.0 にしない
+- 最新のリリースは **v0.9.22**(2026-10-18)。**v1.0.0 は、利用者が判断したときに付ける。それまでは 0.9.x で進める**(次は v0.9.23)。勝手に 1.0.0 にしない
 - 新しい会話で作業を続けるときは、まず [docs/handoff.md](docs/handoff.md) を読む。次の内容をまとめてある
   - 実装済みの機能の一覧
   - 実機(iPhone SE 第2世代、LiveContainer)で確認済みの点と、まだ未確認の点。開発機は Windows で実機がないので、画面・センサー・MapKit・カメラの動作は、利用者の報告に頼っている。未確認のものを「動く」と書かない
@@ -49,7 +49,7 @@ iOS向けの個人用「手元ダッシュボード」アプリ。SwiftUI製。A
 
 ## 画面構成(TabView)
 
-ホーム(まとめ) / 天気(Open-Meteo) / スコープ(地点・周辺・経路・電車) / 移動(以前の電車。ODPT API v4、乗車中の判定) / 為替(open.er-api.com、JPY基準、1日1回) / センサー(すべて通信なし、表示中のみ動作) / 小ツール(タイマーとストップウォッチを含む) / 設定
+ホーム(まとめ) / 天気(Open-Meteo) / スコープ(地点・周辺・経路・電車・景色) / 移動(以前の電車。ODPT API v4、乗車中の判定) / 為替(open.er-api.com、JPY基準、1日1回) / センサー(すべて通信なし、表示中のみ動作) / 小ツール(タイマーとストップウォッチを含む) / 設定
 
 - タブの種類と初期の並びは `AppTab`。先頭の4つがタブバーに並び、残りはiOSの「その他」に入る(`TabOrder.barTabs` / `moreTabs`)。並びは設定の「タブの並び順」で変えられ、`AppSettings.tabOrder` に保存する。保存がなければ初期の並び。タブを増やすときは `AppTab` に足す(保存済みの並びには末尾に追加される)
 
@@ -311,6 +311,17 @@ iOS向けの個人用「手元ダッシュボード」アプリ。SwiftUI製。A
     - 地図: 移動タブの地図(`TrainLiveMapView`)をそのまま使い、スコープの列車だけを出す(`TrainLiveBoard.restricted(to:)`。表示範囲は別に覚える `memoryKey: "scope.trains"`)
     - 自分の高さ: 地点と同じ決め方(`ElevationStore.observerHeight`。「地点の高さを反映する」がオフなら使わず、電車も地面に置く)。一覧の画面は1回だけの測位の値。仮想の移動の間は、近くの線路(300m以内)の地面の標高 + 手の高さ(`ScopeTrainFeed.trackGroundAltitude`。通信しない)
     - 位置のデバッグ: 仮想の移動の間は、仮想の位置と時刻で計算する。移動タブを離れても仮想の移動が進むように、スコープの電車の画面の表示中は `MovementStore.setVisible(true)` にする(仮想の移動の間だけ)
+  - 景色(v0.9.22、`Features/Scope/Scenery`。上部の切り替えの5つめ `ScopeSection.scenery`、`ScopeSightSource.scenery`)。山・稜線・海と湖と川・地名の層(`SceneryLayer`、`AppSettings.sceneryLayers`。初期値は地名以外オン)。選んだ層は、景色のカメラ表示のほか、地点・周辺・経路・電車のカメラ表示にも重ねる(`sceneryOverlaysOthers`、初期値オン)。範囲は 30/50/100km(`sceneryRadiusKm`、初期値100km。利用者の判断: 50kmだと東京の中心から富士山などが入らないため)
+    - 山(`MountainCatalog`、`Resources/mountains.json`): 国土地理院「日本の主な山岳標高」(1003山、山頂ごとに1,059件、2026-03-31版)の CSV から、山名・山頂名・標高・緯度経度・都道府県だけを同梱(約64KB、圧縮後約22KB)。作り直すときは `python scripts/update_mountains.py`(www.gsi.go.jp は古い TLS の再ネゴシエーションを使うので、そのサーバーへの接続だけ OP_LEGACY_SERVER_CONNECT を付ける)。ベクトルタイルの山名の注記(annoCtg 312〜316)は、位置が文字の置き場所で山頂から0.7〜4kmずれ、標高もないので使わない(利用者の判断)
+    - 山の選び方(`MountainSelection`): 範囲の中の山の方角・距離・仰角(`WaypointElevation.angle`、地点と同じ)と、稜線から見えるか(`Skyline.visibility`)。優先 = (標高+300) ÷ √(距離km)、見えない山は0.1倍。カメラ表示では山の形の印(三角、頂点が山頂。見えない山は点線で薄く、設定 `sceneryShowsHiddenMountains` で隠せる)、名前は印の上に3段まで、優先の高い順に重ならない段へ(`SceneryLabelLayout`。文字の幅は見積もり)、1コマ30山まで。タップで詳細(`SceneryMountainSheet`)と「地点に登録」(標高は山岳標高の値を手入力として入れ、標高APIは呼ばない)。コンパス表示では、優先の高い12山を印にする
+    - 稜線(`SkylineCalculator`、`Skyline`): 現在地から方角0.5°ごと(720本)に、25mから距離の1.2%ずつ(半径100kmで約400点)標高を引き、地点と同じ仰角の式で、見える高さが上がった所を記録する(0.02°未満の上がり方は最後の記録を更新するだけ)。最後が地平線。隠れているか: 目標の手前(2%か300m)までで一番高い仰角より低ければ隠れている(隣の方角も見て、どれかで見えていれば見える)。手前のデータがなければ「分からない」。描く線(`RidgeExtractor`): 次に見える所まで距離が開いている点(奥が谷)と地平線を、隣の方角で距離の比が1.25以内の点とつなぐ。濃さと太さは距離で決める(1kmで0.95、100kmで0.25)
+    - 地形(`TerrainGrid`、`GSIElevationTile`): 地理院の標高タイル(dem_png、DEM10B)を、5kmまでズーム12(約30m)、30kmまでズーム10(約125m)、それより遠くはズーム9(約250m)で使う(なければ粗いほうへ)。海の上は「データなし」なので海(0m)、タイルがない所は分からない。PNG は CGImage のビットの並びをそのまま読む(色の変換をしない)。404 は空のファイルで覚え、海として扱う。自分の高さが分からないときは、標高タイルの地面 + 手の高さ
+    - 水面(`WaterMap`、`WaterBands`、`SceneryLabelReader`、`VectorTile`): ベクトルタイル提供実験のズーム8(128km四方)の waterarea(ftCode 5000。海も湖も面で入っている)を、1タイル512×512のます目に偶奇の規則で塗り、隣り合う水面を1つの区域にまとめる(タイルの境目もつなぐ)。名前は注記の 321(湖)・344/345(海・湾・水道)を、区域の中(5ますまで)に付ける。小さいズームの注記は1文字ずつに分かれているが、annoChar に名前全体があるので、同じ名前で30km以内の文字をまとめる。稜線の計算と同じ道のりで、方角ごとに一番手前の見える水面を記録し、同じ名前が続く方角を帯にする(1°未満は出さない。名前がなければ、標高タイルで海なら「海」、ほかは「湖・川」)。川の名前(322、30kmまで)と地名(記号の name、範囲まで)は、地面の高さで見えるものだけ点と文字で出す。protobuf の読み取りは自前(外部のライブラリは使わない)
+    - 計算(`SceneryEngine`、actor): メインスレッドの外。読み込んだ標高タイルとベクトルタイルは覚えておき、使わなくなったタイルは捨てる。計算し直すのは、200m以上動いたとき、自分の高さが20m以上変わったとき、範囲や層を変えたとき、タイルを保存し終えたときだけ(`SceneryStore.update`)。計算中の依頼は、終わってから最後の1つだけ
+    - 保存(`SceneryStore`、`SceneryTileStore`): Application Support/SmartDashboard/tiles/terrain/(dem|vector)/z/x/y。景色の画面かカメラ表示を開いている間(`setActive`)で、従量制でも省データでもない回線(`MapMode.canDownloadTiles`)のときだけ、2本ずつ取得する。地図タイルと合わせて、地図の設定の保存の上限まで(`TileDownloader.otherStoredBytes`)。モバイル通信では保存済みの範囲だけで計算し、その旨を出す。受信量は「スコープ」(`UsageCategory`。パスが /xyz/dem_png/ か /xyz/experimental_bvmap/)。景色の画面から削除できる。1か所あたりの量(実測): 30kmで約1.3〜2.2MB、50kmで約2.5〜3.4MB、100kmで約2.6〜4.6MB
+    - 描画(`SceneryRenderer`): 地点・電車の印と同じ Canvas の中で、印より先に描く(`ScopeOverlay` / `ScopeTrainOverlay` に scenery を渡す)。毎コマ、画面の中心の方角から(画角+12°)より離れた点は投影しない。順に、稜線(遠い線から、暗い縁取り+白い線)、水面の帯(青、文字「東京湾 8km」)、川と地名、山(優先の低い順に描き、優先の高い山が上)
+    - 位置のデバッグ: 仮想の移動の間は、景色を仮想の位置で計算する(カメラ表示は2秒ごとに見て、200m以上動いたら計算し直す。`MovementStore.setVisible(true)` で仮想の位置を進める)。自分の高さは標高タイルの地面 + 手の高さ
+    - 出典(`SceneryAttribution`): 景色の画面と山の詳細、README
 - Claude API(v0.9.18、`Features/Claude`)。小ツールを文章から作る・直す機能と、スコープのカメラの「撮って聞く」に使う。使う操作をしたときだけ通信する(自動では呼ばない)
   - 仕様の確認(2026-10-18、platform.claude.com のドキュメント): Claude Haiku 5.5 の ID は `claude-haiku-5-5`(別名も同じ)。画像の入力に対応。料金は100万トークンあたり 入力0.10ドル・出力0.50ドル・キャッシュの書き込み(5分)0.125ドル・(1時間)0.20ドル・読み込み0.01ドル(プロンプトが10万トークン以下のとき。超えると5倍の料金)。コンテキスト100万、最大出力12.8万。思考は適応的思考で、何も指定しなければオン。`thinking: {"type": "disabled"}` で切れる(effort が high 以下のとき)。`"enabled"`(budget_tokens)は 400 エラー。思考のトークンは出力として課金され、`usage.output_tokens` に含まれ、内訳が `usage.output_tokens_details.thinking_tokens`。思考の文章は初期値で返らない(display: omitted)
   - 呼び出し(`HTTPClaudeClient`): POST https://api.anthropic.com/v1/messages、ヘッダー x-api-key・anthropic-version: 2023-06-01・content-type: application/json。待つ時間は180秒(思考で時間がかかるため)。`HTTPClient.send(_:)`(v0.9.18 で追加した POST)を通すので、通信量の記録に入る(機能別の「Claude(送信を含む)」。Claude だけは送信量も数える `UsageCategory.countsSentBytes`)。呼び出しは `ClaudeClient` プロトコルで、テストでは決まった応答に差し替える
@@ -342,7 +353,7 @@ iOS向けの個人用「手元ダッシュボード」アプリ。SwiftUI製。A
 
 ## データ使用量の記録
 
-- `MeteredHTTPClient` が URLSessionTaskMetrics の transactionMetrics(isCellular / isExpensive)で通信1回ごとに回線を判定し、通信先のホストとパスから機能(天気、為替、電車、レーダー、地図タイル、警報・地震、スコープ、Claude)を判定して `DataUsageStore` に記録する。従量制の回線はモバイル通信に含める。Claude API だけは、送る画像のほうが大きいので送信量も数える
+- `MeteredHTTPClient` が URLSessionTaskMetrics の transactionMetrics(isCellular / isExpensive)で通信1回ごとに回線を判定し、通信先のホストとパスから機能(天気、為替、電車、レーダー、地図タイル、警報・地震、スコープ(標高API・景色のタイル)、Claude)を判定して `DataUsageStore` に記録する。従量制の回線はモバイル通信に含める。Claude API だけは、送る画像のほうが大きいので送信量も数える
 - 回線別に分ける前の記録は「回線不明」として残す
 - 地名(CLGeocoder)と Apple Maps の通信はiOSが行うため計測できない。地名は取得回数だけを記録する
 - 任意の設定で、今月のモバイル通信量が上限を超えたら自動更新を止める(初期値オフ)
@@ -387,7 +398,7 @@ iOS向けの個人用「手元ダッシュボード」アプリ。SwiftUI製。A
 - コミットは細かく分けてよいが、push と ci の実行は「段階の区切り」ごとに1回だけにする(指示があれば、全項目を実装してから最後に1回だけ)
 - 実行は手動: `gh workflow run ci.yml --ref main`
 - 実行する前に、Swiftの文法や型の誤り、Info.plist・project.yml の整合性を、コードを読んで自分で確認する
-- 同梱データの更新(警報の地域の表 `scripts/update_jma_areas.py`、震度観測点の一覧 `scripts/update_jma_stations.py`、線路の形 `scripts/update_railway_shapes.py`)は手元のスクリプトで行う。Actions では実行しない
+- 同梱データの更新(警報の地域の表 `scripts/update_jma_areas.py`、震度観測点の一覧 `scripts/update_jma_stations.py`、線路の形 `scripts/update_railway_shapes.py`、山の一覧 `scripts/update_mountains.py`)は手元のスクリプトで行う。Actions では実行しない
 - 実行する前に `python scripts/check_local.py` を通す(フィクスチャのJSON、YAML、ワークフローのトリガー、apps.json生成、括弧の対応、@MainActor の静的メンバーをテストから呼ぶ誤り、文字列が行の途中で切れていないか、同梱した形式の説明が docs と同じか、Claude の APIキーらしき文字列)。macOSが不要な確認をActionsで回さない
 - 失敗したときは `gh run view --log-failed` でログから原因をまとめて特定し、関連する修正を1回で直してから再実行する。1行ずつ直して何度も回さない
 - 段階の報告には、その段階で Actions を何回実行したかを書く
