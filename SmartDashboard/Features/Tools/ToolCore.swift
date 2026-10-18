@@ -91,6 +91,11 @@ struct ToolDescriptor: Equatable, Identifiable {
         if case .custom = source { return true }
         return false
     }
+
+    var isScript: Bool {
+        if case .custom(let tool) = source { return tool.kind == .script }
+        return false
+    }
 }
 
 enum BuiltinTools {
@@ -165,8 +170,15 @@ final class ToolLibrary {
     private(set) var customSources: [String: String] = [:]
     private(set) var customTools: [CustomTool] = []
 
+    /// 前回、スクリプト型のツールの実行中にアプリが止まった記録(起動したときに読む。利用者が選ぶまで残す)
+    var crashedScript: ScriptRunRecord?
+
     @ObservationIgnored private let fileURL: URL
     @ObservationIgnored private let defaults: UserDefaults
+    /// 「実行中のツール」の記録(Application Support/script-running.json)
+    @ObservationIgnored let runGuard: ScriptRunGuard
+    /// ツールごとの保存領域(Application Support/script-storage/)
+    @ObservationIgnored let scriptStorageDirectory: URL
 
     static let maxRecents = 8
     private static let favoritesKey = "tools.favorites"
@@ -175,6 +187,10 @@ final class ToolLibrary {
     init(fileURL: URL, defaults: UserDefaults = .standard) {
         self.fileURL = fileURL
         self.defaults = defaults
+        let base = fileURL.deletingLastPathComponent()
+        runGuard = ScriptRunGuard(fileURL: base.appendingPathComponent("script-running.json"))
+        scriptStorageDirectory = base.appendingPathComponent("script-storage", isDirectory: true)
+        crashedScript = runGuard.load()
         favorites = defaults.stringArray(forKey: Self.favoritesKey) ?? []
         recents = defaults.stringArray(forKey: Self.recentsKey) ?? []
         if let data = try? Data(contentsOf: fileURL), let saved = try? JSONDecoder().decode([String: String].self, from: data) {
@@ -222,9 +238,19 @@ final class ToolLibrary {
         defaults.set(favorites, forKey: Self.favoritesKey)
         defaults.set(recents, forKey: Self.recentsKey)
         defaults.removeObject(forKey: "tools.checklist." + customID)
+        // スクリプト型の保存領域も消す
+        try? FileManager.default.removeItem(at: ScriptStorage.storageURL(toolID: customID, directory: scriptStorageDirectory))
         persist()
         rebuild()
     }
+
+    /// 前回止まったツールについて、利用者が選んだら記録を消す
+    func resolveCrashedScript() {
+        crashedScript = nil
+        runGuard.end()
+    }
+
+    func customTool(id: String) -> CustomTool? { customTools.first { $0.id == id } }
 
     private func rebuild() {
         customTools = customSources.values.compactMap { json -> CustomTool? in

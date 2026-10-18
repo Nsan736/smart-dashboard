@@ -10,6 +10,11 @@ struct SmartDashboardApp: App {
             RootTabView()
                 .environment(env)
                 .task { env.network.start() }
+                // 前回、スクリプト型のツールの実行中に止まっていたら、そのツールは開かずに、どうするかを選んでもらう
+                .sheet(item: Binding(get: { env.tools.crashedScript }, set: { if $0 == nil { env.tools.resolveCrashedScript() } })) { record in
+                    ScriptCrashRecoveryView(record: record)
+                        .environment(env)
+                }
                 .onChange(of: scenePhase, initial: true) { _, phase in
                     guard phase == .active else {
                         // フォアグラウンドを離れたら地図の保存を止める

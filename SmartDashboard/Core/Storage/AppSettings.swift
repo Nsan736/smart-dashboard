@@ -165,6 +165,15 @@ final class AppSettings {
         didSet { defaults.set(scopeElevatedHeight, forKey: Keys.scopeElevatedHeight) }
     }
     /// スコープの電車: 地下の線路の、地面からの深さの目安(m、初期値15)
+    /// スクリプト型のツールを、すべて止める(安全のための切り替え。初期値はオフ)
+    var scriptToolsStopped: Bool {
+        didSet { defaults.set(scriptToolsStopped, forKey: Keys.scriptToolsStopped) }
+    }
+    /// 無効にしたスクリプト型のツール(ID)。前回の実行中に止まったツールを「無効にする」と、ここに入る。
+    var disabledScriptTools: [String] {
+        didSet { defaults.set(disabledScriptTools, forKey: Keys.disabledScriptTools) }
+    }
+
     /// Claude API の設定(モデル、料金、上限、思考、カメラの質問で送る情報)。APIキーは Keychain。
     var claude: ClaudeSettings {
         didSet { saveJSON(claude, forKey: Keys.claude) }
@@ -248,6 +257,8 @@ final class AppSettings {
         scopeElevatedHeight = defaults.object(forKey: Keys.scopeElevatedHeight) as? Double ?? 8
         scopeUndergroundDepth = defaults.object(forKey: Keys.scopeUndergroundDepth) as? Double ?? 15
         claude = Self.loadJSON(ClaudeSettings.self, from: defaults, forKey: Keys.claude) ?? ClaudeSettings()
+        scriptToolsStopped = defaults.bool(forKey: Keys.scriptToolsStopped)
+        disabledScriptTools = defaults.stringArray(forKey: Keys.disabledScriptTools) ?? []
         nearbyRadius = NearbyRadius.clamped(defaults.object(forKey: Keys.nearbyRadius) as? Int ?? NearbyRadius.initial)
         nearbyCategories = NearbyCategory.normalizedOrder(defaults.stringArray(forKey: Keys.nearbyCategories))
         tabOrder = TabOrder.decode(defaults.stringArray(forKey: Keys.tabOrder))
@@ -313,6 +324,8 @@ final class AppSettings {
         static let scopeElevatedHeight = "scope.elevatedHeight"
         static let scopeUndergroundDepth = "scope.undergroundDepth"
         static let claude = "claude.settings"
+        static let scriptToolsStopped = "tools.scriptStopped"
+        static let disabledScriptTools = "tools.scriptDisabled"
         static let nearbyRadius = "scope.nearbyRadius"
         static let nearbyCategories = "scope.nearbyCategories"
         static let tabOrder = "tabs.order"

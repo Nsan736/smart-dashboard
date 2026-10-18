@@ -12,6 +12,7 @@ struct CustomToolRunner: View {
             Form { ListPickerView(mode: tool.listMode, items: tool.items) }
         case .table: TableToolView(tool: tool)
         case .checklist: ChecklistToolView(tool: tool)
+        case .script: ScriptToolView(tool: tool)
         }
     }
 }
@@ -320,6 +321,57 @@ struct ToolPreviewSections: View {
             Section("表") {
                 LabeledContent("列", value: tool.columns.joined(separator: " / "))
                 LabeledContent("行数", value: "\(tool.rows.count)")
+            }
+        case .script:
+            ScriptPreviewSection(tool: tool)
+        }
+    }
+}
+
+/// スクリプト型の確認: 「スクリプトを含みます」と、コード、実際に動かしてみるボタン
+struct ScriptPreviewSection: View {
+    let tool: CustomTool
+    @State private var showsCode = false
+    @State private var isPreviewing = false
+
+    /// 画面に出すコードの長さの上限(長いコードは途中まで)
+    static let shownLength = 20_000
+
+    var body: some View {
+        let content = tool.script
+        Section {
+            Label("スクリプトを含みます", systemImage: "curlybraces")
+                .font(.headline)
+                .foregroundStyle(.orange)
+            Text("JavaScript で動くツールです。使えるのは、アプリが渡した機能(描画、入力の部品、音、振動、このツールだけの保存領域、PNG の書き出し)だけで、通信・ファイル・位置情報・カメラ・アプリのほかのデータには触れられません。固まったときは、閉じるボタンで打ち切れます。")
+                .font(.footnote)
+                .fixedSize(horizontal: false, vertical: true)
+            LabeledContent("コードの長さ", value: "\(content?.script.count ?? 0)文字")
+            LabeledContent("入力の部品", value: "\(content?.controls.count ?? 0)個")
+            LabeledContent("1秒あたりのコマ", value: "\(content?.fps ?? ScriptToolContent.defaultFPS)")
+            DisclosureGroup("コードを見る", isExpanded: $showsCode) {
+                let script = content?.script ?? ""
+                Text(String(script.prefix(Self.shownLength)) + (script.count > Self.shownLength ? "\n…(以下略)" : ""))
+                    .font(.caption2.monospaced())
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Button {
+                isPreviewing = true
+            } label: {
+                Label("保存する前に動かしてみる", systemImage: "play.circle")
+            }
+        } header: {
+            Text("スクリプト")
+        }
+        .sheet(isPresented: $isPreviewing) {
+            NavigationStack {
+                ScriptToolView(tool: tool, isPreview: true)
+                    .navigationTitle(tool.name + "(プレビュー)")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) { Button("閉じる") { isPreviewing = false } }
+                    }
             }
         }
     }

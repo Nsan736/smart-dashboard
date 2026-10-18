@@ -8,6 +8,8 @@ struct CustomTool: Equatable, Identifiable {
         case list
         case table
         case checklist
+        /// JavaScript で動くツール(v0.9.19)。アプリが渡した機能(描画・入力の部品・音・保存など)だけを使える。
+        case script
 
         var label: String {
             switch self {
@@ -15,6 +17,7 @@ struct CustomTool: Equatable, Identifiable {
             case .list: return "リスト型"
             case .table: return "表型"
             case .checklist: return "チェックリスト型"
+            case .script: return "スクリプト型"
             }
         }
     }
@@ -70,6 +73,8 @@ struct CustomTool: Equatable, Identifiable {
     var items: [String] = []
     var columns: [String] = []
     var rows: [[String]] = []
+    /// スクリプト型の中身
+    var script: ScriptToolContent?
 }
 
 /// 形式の誤り。どこが違うかが分かるように、場所(path)を付ける。
@@ -157,7 +162,7 @@ enum CustomToolParser {
         }
         let kindText = string(root, "type", path: "type", required: true)
         guard let kind = CustomTool.Kind(rawValue: kindText) else {
-            if !kindText.isEmpty { issues.append(ToolIssue(path: "type", message: "calc / list / table / checklist のどれかにしてください")) }
+            if !kindText.isEmpty { issues.append(ToolIssue(path: "type", message: "calc / list / table / checklist / script のどれかにしてください")) }
             return .failure(issues)
         }
         var tool = CustomTool(id: id, name: name, summary: summary, symbol: symbol, category: category, keywords: keywords, kind: kind)
@@ -266,6 +271,8 @@ enum CustomToolParser {
             tool.items = stringList("items", limit: maxItems)
         case .checklist:
             tool.items = stringList("items", limit: maxItems)
+        case .script:
+            tool.script = ScriptToolContent.parse(root, issues: &issues)
         case .table:
             tool.columns = stringList("columns", limit: maxColumns)
             guard let rawRows = root["rows"] as? [[Any]] else {

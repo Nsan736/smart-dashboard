@@ -167,7 +167,7 @@ struct ToolsView: View {
                     HStack(spacing: 4) {
                         Text(tool.name).font(.headline)
                         if env.tools.isFavorite(tool.id) { Image(systemName: "star.fill").font(.caption2).foregroundStyle(.yellow) }
-                        if tool.isCustom { Text("JSON").font(.caption2.weight(.semibold)).foregroundStyle(.secondary) }
+                        if tool.isCustom { Text(tool.isScript ? "スクリプト" : "JSON").font(.caption2.weight(.semibold)).foregroundStyle(.secondary) }
                     }
                     Text(tool.summary).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                 }

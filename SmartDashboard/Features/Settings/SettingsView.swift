@@ -72,6 +72,17 @@ struct SettingsView: View {
                 } footer: {
                     Text("小ツールを文章から作る機能と、スコープのカメラで「撮って聞く」機能に使います。使うときだけ通信します。")
                 }
+                Section {
+                    Toggle("スクリプト型のツールをすべて止める", isOn: $settings.scriptToolsStopped)
+                    if !settings.disabledScriptTools.isEmpty {
+                        LabeledContent("無効にしたツール", value: "\(settings.disabledScriptTools.count)個")
+                        Button("無効にしたツールを、すべて有効に戻す") { settings.disabledScriptTools = [] }
+                    }
+                } header: {
+                    Text("小ツール")
+                } footer: {
+                    Text("スクリプト型のツール(JavaScript)は、アプリが渡した機能だけを使い、通信やほかのデータには触れません。固まったり落ちたりするツールがあるときは、ここで止められます。止めている間も、ツールの一覧と保存領域はそのまま残ります。")
+                }
                 AlertSettingsSections()
                 Section {
                     Toggle("センサー画面の表示中は画面を消さない", isOn: $settings.sensorsKeepAwake)
