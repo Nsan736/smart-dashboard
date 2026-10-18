@@ -128,6 +128,9 @@ struct ScopeSightView: View {
         .onChange(of: mode) { _, _ in
             if isVisible { startAll() }
         }
+        .onChange(of: env.settings.headingGyroHold) { _, hold in
+            tracker.holdsHeadingWithGyro = hold
+        }
         .onChange(of: showsScenery) { _, _ in
             // 景色の層を切り替えたら、景色の保存と計算を始める・止める
             if isVisible { startAll() }
@@ -324,6 +327,7 @@ struct ScopeSightView: View {
     private func startAll() {
         let camera = env.camera
         ScreenAwake.set("scope", true)
+        tracker.holdsHeadingWithGyro = env.settings.headingGyroHold
         // 位置とモーションは、カメラの準備を待たずに始める(カメラの設定と開始は専用のキューで進む)
         tracker.start(includesMotion: mode == .camera)
         if source == .trains, !trainFeed.isRunning {
@@ -422,6 +426,17 @@ struct ScopeSightView: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .trailing)
                     .padding(12)
+                    if env.settings.headingDebugEnabled {
+                        VStack {
+                            HStack {
+                                ScopeHeadingDebugView(tracker: tracker, attitude: attitude, viewSize: size)
+                                Spacer(minLength: 0)
+                            }
+                            Spacer()
+                        }
+                        .padding(.top, 50)
+                        .padding(.horizontal, 8)
+                    }
                     if env.settings.waypointShowsHeading {
                         VStack {
                             Text("\(WaypointMath.compassPoint(attitude.azimuth)) \(Int(attitude.azimuth.rounded()))°")

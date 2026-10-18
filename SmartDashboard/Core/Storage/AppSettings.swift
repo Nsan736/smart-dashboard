@@ -242,6 +242,16 @@ final class AppSettings {
         didSet { defaults.set(movementDebugEnabled, forKey: Keys.movementDebugEnabled) }
     }
 
+    /// 開発者向け: スコープのカメラ表示に方角のデバッグ表示を出す(初期値はオフ)
+    var headingDebugEnabled: Bool {
+        didSet { defaults.set(headingDebugEnabled, forKey: Keys.headingDebugEnabled) }
+    }
+
+    /// 開発者向け: 方角をジャイロで保つ(試験。CoreMotion の磁気による補正を打ち消す。初期値はオフ)
+    var headingGyroHold: Bool {
+        didSet { defaults.set(headingGyroHold, forKey: Keys.headingGyroHold) }
+    }
+
     static let defaultExchangeCodes = ["USD", "EUR", "GBP", "CNY", "KRW"]
 
     init(defaults: UserDefaults = .standard) {
@@ -299,6 +309,8 @@ final class AppSettings {
         rideDetectionEnabled = defaults.object(forKey: Keys.rideDetectionEnabled) as? Bool ?? true
         movementRetention = defaults.string(forKey: Keys.movementRetention).flatMap(MovementRetention.init(rawValue:)) ?? .today
         movementDebugEnabled = defaults.bool(forKey: Keys.movementDebugEnabled)
+        headingDebugEnabled = defaults.bool(forKey: Keys.headingDebugEnabled)
+        headingGyroHold = defaults.bool(forKey: Keys.headingGyroHold)
         walkRouteFactor = defaults.object(forKey: Keys.walkRouteFactor) as? Double ?? 1.3
         walkSpeedKmh = defaults.object(forKey: Keys.walkSpeedKmh) as? Double ?? 4.8
         stationAccessMinutes = defaults.object(forKey: Keys.stationAccessMinutes) as? Double ?? 2
@@ -372,6 +384,8 @@ final class AppSettings {
         static let rideDetectionEnabled = "movement.rideDetection"
         static let movementRetention = "movement.retention"
         static let movementDebugEnabled = "movement.debug"
+        static let headingDebugEnabled = "scope.headingDebug"
+        static let headingGyroHold = "scope.headingGyroHold"
         static let walkRouteFactor = "movement.walkRouteFactor"
         static let walkSpeedKmh = "movement.walkSpeedKmh"
         static let stationAccessMinutes = "movement.stationAccessMinutes"

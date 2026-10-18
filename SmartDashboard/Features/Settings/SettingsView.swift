@@ -157,6 +157,10 @@ struct SettingsView: View {
                             // オフにしたら、仮想の移動を止めて実際のGPSに戻す
                             if !value, env.movement.isVirtual { env.movement.stopVirtual() }
                         }))
+                    Toggle("方角のデバッグ表示", isOn: Binding(get: { env.settings.headingDebugEnabled },
+                                                       set: { env.settings.headingDebugEnabled = $0 }))
+                    Toggle("方角をジャイロで保つ(試験)", isOn: Binding(get: { env.settings.headingGyroHold },
+                                                           set: { env.settings.headingGyroHold = $0 }))
                     LabeledContent("カメラの起動時間") {
                         Text(env.camera.lastTiming?.text ?? "未計測(「カメラで見る」を開くと計測します)")
                             .font(.footnote)
@@ -169,7 +173,7 @@ struct SettingsView: View {
                 } header: {
                     Text("開発者向け")
                 } footer: {
-                    Text("遅延などが起きたときの応答を確認・コピーできます。保存するのは直近の1件だけで、追加の通信はしません。「位置のデバッグ」をオンにすると、移動タブの地図で仮想の移動やGPXの再生を使って、乗車中の判定を試せます。")
+                    Text("遅延などが起きたときの応答を確認・コピーできます。保存するのは直近の1件だけで、追加の通信はしません。「位置のデバッグ」をオンにすると、移動タブの地図で仮想の移動やGPXの再生を使って、乗車中の判定を試せます。「方角のデバッグ表示」をオンにすると、スコープのカメラ表示に、計算した方角・CoreMotion の基準・コンパスの方角などを出します。「方角をジャイロで保つ」は、開いたときの方角からジャイロだけで向きを追い、磁気による補正を打ち消す試験の機能です(長く使うと少しずつずれます)。")
                 }
 
                 Section("キャッシュ") {
