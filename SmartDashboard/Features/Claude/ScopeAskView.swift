@@ -1,3 +1,5 @@
+import CoreLocation
+import SafariServices
 import SwiftUI
 
 /// 「撮って聞く」の1回分(全画面で出すための入れ物)
@@ -23,6 +25,10 @@ struct ScopeAskView: View {
     @State private var jpeg: Data?
     @State private var task: Task<Void, Never>?
     @State private var notice: String?
+    /// 出典を開く(SFSafariViewController)
+    @State private var openedURL: ScopeAskURL?
+    /// 地点に登録する場所
+    @State private var registering: ScopeAskPlaceTarget?
     @FocusState private var isQuestionFocused: Bool
 
     init(snapshot: ScopeAskSnapshot) {
@@ -72,6 +78,12 @@ struct ScopeAskView: View {
                 snapshot.placeName = await env.placeNames.name(latitude: latitude, longitude: longitude)
             }
             .onDisappear { task?.cancel() }
+            .sheet(item: $openedURL) { item in
+                ScopeAskSafariView(url: item.url).ignoresSafeArea()
+            }
+            .sheet(item: $registering) { target in
+                ScopeAskPlaceSheet(target: target)
+            }
         }
     }
 
@@ -208,13 +220,71 @@ struct ScopeAskView: View {
                         .buttonStyle(.bordered)
                 }
             }
+            if !exchange.citations.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("出典(Web 検索)").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    ForEach(exchange.citations) { citation in
+                        Button {
+                            if let url = URL(string: citation.url), ["http", "https"].contains(url.scheme?.lowercased() ?? "") {
+                                openedURL = ScopeAskURL(url: url)
+                            }
+                        } label: {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(citation.title).font(.caption).multilineTextAlignment(.leading)
+                                Text(URL(string: citation.url)?.host ?? citation.url).font(.caption2).foregroundStyle(.secondary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Color.accentColor)
+                    }
+                }
+            }
+            if let place = exchange.place { placeView(place, exchange: exchange) }
+            if let note = exchange.note {
+                Text(note).font(.caption2).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+            }
             if let usage = exchange.usage, let cost = exchange.cost {
                 Text(usage.summary + "・" + ClaudePricing.text(cost))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            if !exchange.sentSummary.isEmpty {
+                Text(exchange.sentSummary).font(.caption2).foregroundStyle(.secondary)
+            }
         }
+    }
+
+    /// 答えで特定した場所と、撮った方向との照合
+    @ViewBuilder
+    private func placeView(_ place: ScopeAskPlace, exchange: ScopeAskExchange) -> some View {
+        let check = ScopeAskPlaceCheck.evaluate(place: place, observerLatitude: snapshot.latitude, observerLongitude: snapshot.longitude,
+                                                heading: snapshot.heading, halfFieldOfView: snapshot.halfFieldOfView)
+        VStack(alignment: .leading, spacing: 4) {
+            if place.hasCoordinate {
+                Label("\(place.name)(確からしさ: \(place.confidence?.label ?? "低"))", systemImage: "mappin.and.ellipse")
+                    .font(.subheadline.weight(.semibold))
+                if let check {
+                    ForEach(check.lines, id: \.self) { line in
+                        Text(line).font(.caption).foregroundStyle(check.isWarning ? Color.orange : Color.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                Button {
+                    registering = ScopeAskPlaceTarget(place: place, check: check, citations: exchange.citations)
+                } label: {
+                    Label("地点に登録", systemImage: "plus.circle")
+                }
+                .buttonStyle(.bordered)
+            } else {
+                Label("場所は特定できませんでした" + (place.reason.isEmpty ? "" : "(\(place.reason))"), systemImage: "mappin.slash")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(8)
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
     }
 
     private var questionArea: some View {
@@ -266,11 +336,17 @@ struct ScopeAskView: View {
     /// 送るものの説明
     private var sendingNote: String {
         let settings = env.settings.claude
-        var items = ["画像(長い辺\(settings.imageEdge(isExpensive: env.network.status.isExpensive))px程度のJPEG)"]
+        var items = ["画像(長い辺\(settings.imageEdge(isExpensive: env.network.status.isExpensive))px程度のJPEG。位置などのメタデータは含みません)", "質問"]
         if settings.sendsHeading { items.append("方角と端末の向き") }
         if settings.sendsPlace { items.append(settings.sendsCoordinates ? "おおよその地名と緯度経度" : "おおよその地名") }
         if settings.sendsTargets { items.append("撮った方向にある地点などの名前と距離") }
-        return "送るもの: " + items.joined(separator: "、") + "(設定の「Claude API」で選べます)。続けて質問するときは、同じ画像と直近\(ScopeAsk.keptExchanges)回のやり取りを送ります。取り消しても、Claude 側で処理が進んでいた分は料金がかかることがあります(使用量には記録されません)。画像は端末に保存しません。"
+        var text = "送るもの: " + items.joined(separator: "、") + "(設定の「Claude API」で選べます)。"
+        if settings.sendsPlace || settings.sendsTargets { text += "地名や周りの地点から、居場所が推測できます。" }
+        if settings.webSearch {
+            text += "Claude が必要なときに Web 検索を使います(1回の質問で\(settings.webSearchMaxUses)回まで、1回約0.01ドル。検索の言葉に現在地を入れないよう指示しています)。"
+        }
+        text += "続けて質問するときは、同じ画像と直近\(ScopeAsk.keptExchanges)回のやり取りを送ります。取り消しても、Claude 側で処理が進んでいた分は料金がかかることがあります(使用量には記録されません)。画像は端末に保存しません。"
+        return text
     }
 
     private func send() {
@@ -290,24 +366,34 @@ struct ScopeAskView: View {
             exchanges.append(ScopeAskExchange(question: question, error: "画像を用意できませんでした"))
             return
         }
-        let context = ScopeAsk.contextText(snapshot, options: ScopeAskOptions(settings))
+        let options = ScopeAskOptions(settings)
+        let context = ScopeAsk.contextText(snapshot, options: options)
         let messages = ScopeAsk.messages(jpeg: jpeg, context: context, history: exchanges, question: question)
         let request = ScopeAsk.request(messages: messages, settings: settings)
-        let exchange = ScopeAskExchange(question: question)
+        var pending = ScopeAskExchange(question: question)
+        pending.sentSummary = ScopeAsk.sentSummary(ScopeAsk.sentItems(snapshot, options: options))
+        let exchange = pending
         exchanges.append(exchange)
         questionText = ""
         let service = env.claude
         task = Task {
             var updated = exchange
             do {
-                let result = try await service.call(request)
+                let result = try await ScopeAsk.ask(request) { try await service.call($0) }
                 updated.usage = result.response.usage
                 updated.cost = result.cost
-                let text = result.response.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                if text.isEmpty {
+                updated.citations = result.response.citations
+                var notes: [String] = []
+                if result.searchFallback { notes.append("Web 検索を使う依頼が受け付けられなかったため、検索なしで答えています") }
+                if result.response.searchErrors.contains("max_uses_exceeded") { notes.append("Web 検索の上限(\(settings.webSearchMaxUses)回)に達しました") }
+                if result.response.stopReason == "pause_turn" { notes.append("検索に時間がかかったため、途中までの答えです") }
+                updated.note = notes.isEmpty ? nil : notes.joined(separator: "。")
+                let extracted = ScopeAskPlace.extract(from: result.response.text)
+                updated.place = extracted.place
+                if extracted.answer.isEmpty {
                     updated.error = ClaudeError.emptyAnswer(stopReason: result.response.stopReason).localizedDescription
                 } else {
-                    updated.answer = text
+                    updated.answer = extracted.answer
                 }
             } catch is CancellationError {
                 updated.error = "取り消しました"

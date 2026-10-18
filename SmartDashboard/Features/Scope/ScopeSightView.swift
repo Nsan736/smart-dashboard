@@ -155,7 +155,9 @@ struct ScopeSightView: View {
         askSession = ScopeAskSession(snapshot: ScopeAskSnapshot(
             image: image, heading: attitude?.azimuth, pitch: attitude?.elevation,
             latitude: coordinate?.latitude, longitude: coordinate?.longitude, placeName: nil,
-            targets: inView, takenAt: Date()))
+            targets: inView, takenAt: Date(),
+            // 答えの場所が写る範囲の中かを確かめるため(端末の中だけで使う)
+            halfFieldOfView: atan(tangents.horizontal) * 180 / .pi))
     }
 
     /// 電車の位置を計算する基準の現在地(位置のデバッグの間は、仮想の位置)
