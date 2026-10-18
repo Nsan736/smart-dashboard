@@ -10,57 +10,87 @@ struct ScopeHeadingDebugView: View {
     let attitude: CameraAttitude
     let viewSize: CGSize
 
+    /// 表示する1行
+    struct Line: Identifiable {
+        let id: Int
+        let text: String
+        let emphasized: Bool
+    }
+
     var body: some View {
-        let diagnostics = tracker.diagnostics
-        let compass = tracker.compassTrueHeading ?? tracker.compassMagneticHeading
-        let reference = HeadingDiagnostics.compassReference(attitude)
-        let difference: Double? = {
-            guard let compass, let reference else { return nil }
-            return HeadingDiagnostics.difference(reference.azimuth, compass)
-        }()
-        let warns = difference.map { abs($0) >= HeadingDiagnostics.warningDifference } ?? false
+        let report = Self.report(tracker: tracker, attitude: attitude, viewSize: viewSize)
         VStack(alignment: .leading, spacing: 2) {
-            Text("方角 \(Self.number(attitude.azimuth))°  仰角 \(Self.number(attitude.elevation))°  傾き \(Self.number(attitude.roll))°")
-                .font(.caption.weight(.bold).monospacedDigit())
-            if let raw = tracker.rawAttitude {
-                Text("CoreMotion の生の値 \(Self.number(raw.azimuth))°")
+            ForEach(report.lines) { line in
+                Text(line.text)
+                    .font(line.emphasized ? .caption.weight(.bold).monospacedDigit() : .caption2.monospacedDigit())
             }
-            Text("基準: \(WaypointTracker.frameName(tracker.requestedFrame))"
-                 + (tracker.activeFrame != nil && tracker.activeFrame != tracker.requestedFrame
-                    ? " → 実際は \(WaypointTracker.frameName(tracker.activeFrame))" : ""))
-            Text("開始 \(tracker.motionStartCount)回・基準が変わった \(tracker.frameChangeCount)回")
-            Text("情報源: CoreMotion" + (tracker.holdsHeadingWithGyro ? "(ジャイロで保つ)" : "") + "。コンパス表示は CLHeading")
-            Text("磁気の較正: \(Self.magneticText(tracker.magneticAccuracy))  CMDeviceMotion.heading "
-                 + (tracker.motionHeading.map { "\(Self.number($0))°" } ?? "なし"))
-            Text("コンパス 真北 " + (tracker.compassTrueHeading.map { "\(Self.number($0))°" } ?? "なし")
-                 + "  磁北 " + (tracker.compassMagneticHeading.map { "\(Self.number($0))°" } ?? "なし")
-                 + "  精度 " + (tracker.headingAccuracy.map { $0 >= 0 ? "±\(Int($0.rounded()))°" : "無効" } ?? "なし"))
-            if let reference, let difference {
-                Text("比べる軸 \(reference.axis): \(Self.number(reference.azimuth))°  コンパスとの差 \(Self.signed(difference))°")
-                    .fontWeight(warns ? .bold : .regular)
-                if warns {
-                    Text("コンパスと\(Int(HeadingDiagnostics.warningDifference))°以上違います")
-                        .font(.caption.weight(.bold))
-                }
-            } else {
-                Text("比べる軸: なし(端末が斜めのときは比べない)")
-            }
-            Text("ジャイロで説明できない回転の累計 \(Self.signed(diagnostics.correction))°  跳び \(diagnostics.jumpCount)回"
-                 + (diagnostics.lastJump.map { "(最後 \(Self.signed($0))°)" } ?? ""))
-            Text("行列と重力の差 " + (diagnostics.gravityMismatch.map { "\(Self.number($0))°" } ?? "なし"))
-            Text("画面 \(viewSize.width > viewSize.height ? "横" : "縦")(\(Int(viewSize.width))×\(Int(viewSize.height)))"
-                 + "  シーン \(Self.sceneOrientationText)  持ち方 \(diagnostics.posture?.rawValue ?? "不明")")
             Button("ジャイロの累計を0に戻す") { tracker.resetHeadingDiagnostics() }
                 .font(.caption2.weight(.semibold))
                 .buttonStyle(.bordered)
                 .tint(.white)
         }
-        .font(.caption2.monospacedDigit())
         .foregroundStyle(.white)
         .fixedSize(horizontal: false, vertical: true)
         .padding(8)
-        .background(warns ? Color.red.opacity(0.85) : Color.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
+        .background(report.warns ? Color.red.opacity(0.85) : Color.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
         .frame(maxWidth: 340, alignment: .leading)
+    }
+
+    /// 表示する行と、コンパスと30°以上違うか
+    static func report(tracker: WaypointTracker, attitude: CameraAttitude, viewSize: CGSize) -> (lines: [Line], warns: Bool) {
+        var texts: [(String, Bool)] = []
+        let diagnostics = tracker.diagnostics
+
+        let heading = "方角 \(number(attitude.azimuth))°  仰角 \(number(attitude.elevation))°  傾き \(number(attitude.roll))°"
+        texts.append((heading, true))
+        if let raw = tracker.rawAttitude {
+            texts.append(("CoreMotion の生の値 \(number(raw.azimuth))°", false))
+        }
+
+        var frame = "基準: " + WaypointTracker.frameName(tracker.requestedFrame)
+        if let active = tracker.activeFrame, active != tracker.requestedFrame {
+            frame += " → 実際は " + WaypointTracker.frameName(active)
+        }
+        texts.append((frame, false))
+        texts.append(("開始 \(tracker.motionStartCount)回・基準が変わった \(tracker.frameChangeCount)回", false))
+        let source = tracker.holdsHeadingWithGyro ? "CoreMotion(ジャイロで保つ)" : "CoreMotion"
+        texts.append(("情報源: " + source + "。コンパス表示は CLHeading", false))
+
+        let motionHeading = tracker.motionHeading.map { "\(number($0))°" } ?? "なし"
+        texts.append(("磁気の較正: " + magneticText(tracker.magneticAccuracy) + "  CMDeviceMotion.heading " + motionHeading, false))
+
+        let trueText = tracker.compassTrueHeading.map { "\(number($0))°" } ?? "なし"
+        let magneticHeading = tracker.compassMagneticHeading.map { "\(number($0))°" } ?? "なし"
+        let accuracy = accuracyText(tracker.headingAccuracy)
+        texts.append(("コンパス 真北 " + trueText + "  磁北 " + magneticHeading + "  精度 " + accuracy, false))
+
+        var warns = false
+        let compass = tracker.compassTrueHeading ?? tracker.compassMagneticHeading
+        if let reference = HeadingDiagnostics.compassReference(attitude), let compass {
+            let difference = HeadingDiagnostics.difference(reference.azimuth, compass)
+            warns = abs(difference) >= HeadingDiagnostics.warningDifference
+            let line = "比べる軸 " + reference.axis + ": \(number(reference.azimuth))°  コンパスとの差 \(signed(difference))°"
+            texts.append((line, warns))
+            if warns {
+                texts.append(("コンパスと\(Int(HeadingDiagnostics.warningDifference))°以上違います", true))
+            }
+        } else {
+            texts.append(("比べる軸: なし(端末が斜めのとき、コンパスがないときは比べない)", false))
+        }
+
+        var correction = "ジャイロで説明できない回転の累計 \(signed(diagnostics.correction))°  跳び \(diagnostics.jumpCount)回"
+        if let jump = diagnostics.lastJump { correction += "(最後 \(signed(jump))°)" }
+        texts.append((correction, false))
+        let gravity = diagnostics.gravityMismatch.map { "\(number($0))°" } ?? "なし"
+        texts.append(("行列と重力の差 " + gravity, false))
+
+        let screen = viewSize.width > viewSize.height ? "横" : "縦"
+        let posture = diagnostics.posture?.rawValue ?? "不明"
+        let orientation = "画面 " + screen + "(\(Int(viewSize.width))×\(Int(viewSize.height)))  シーン " + sceneOrientationText + "  持ち方 " + posture
+        texts.append((orientation, false))
+
+        let lines = texts.enumerated().map { Line(id: $0.offset, text: $0.element.0, emphasized: $0.element.1) }
+        return (lines, warns)
     }
 
     static func number(_ value: Double) -> String {
@@ -69,6 +99,11 @@ struct ScopeHeadingDebugView: View {
 
     static func signed(_ value: Double) -> String {
         String(format: "%+.1f", value)
+    }
+
+    static func accuracyText(_ accuracy: Double?) -> String {
+        guard let accuracy else { return "なし" }
+        return accuracy >= 0 ? "±\(Int(accuracy.rounded()))°" : "無効"
     }
 
     static func magneticText(_ accuracy: Int?) -> String {

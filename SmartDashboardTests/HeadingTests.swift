@@ -13,8 +13,8 @@ final class HeadingTests: XCTestCase {
         let forward = Vector3(x: cos(e) * cos(a), y: -cos(e) * sin(a), z: sin(e))
         let right0 = Vector3(x: cos(a + .pi / 2), y: -sin(a + .pi / 2), z: 0)
         let up0 = Vector3.cross(right0, forward)
-        let right = Vector3(x: right0.x * cos(r) - up0.x * sin(r), y: right0.y * cos(r) - up0.y * sin(r), z: right0.z * cos(r) - up0.z * sin(r))
-        let up = Vector3(x: up0.x * cos(r) + right0.x * sin(r), y: up0.y * cos(r) + right0.y * sin(r), z: up0.z * cos(r) + right0.z * sin(r))
+        let right = right0.scaled(cos(r)).minus(up0.scaled(sin(r)))
+        let up = up0.scaled(cos(r)).minus(right0.scaled(-sin(r)))
         return CameraAttitude(m11: right.x, m12: right.y, m13: right.z, m21: up.x, m22: up.y, m23: up.z,
                               m31: -forward.x, m32: -forward.y, m33: -forward.z)
     }
