@@ -1,0 +1,22 @@
+{
+  "id": "msg_test_0001",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-haiku-5-5",
+  "content": [
+    { "type": "thinking", "thinking": "", "signature": "test-signature" },
+    { "type": "text", "text": "画像から分かること: 赤い鉄塔が写っています。" },
+    { "type": "text", "text": "\n推測: 東京タワーの可能性があります。" }
+  ],
+  "stop_reason": "end_turn",
+  "stop_sequence": null,
+  "usage": {
+    "input_tokens": 120,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 1450,
+    "cache_creation": { "ephemeral_5m_input_tokens": 0, "ephemeral_1h_input_tokens": 0 },
+    "output_tokens": 640,
+    "output_tokens_details": { "thinking_tokens": 410 },
+    "service_tier": "standard"
+  }
+}
