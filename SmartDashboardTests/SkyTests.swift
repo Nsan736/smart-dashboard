@@ -235,6 +235,43 @@ final class ObjectPhotoTests: XCTestCase {
     }
 
     @MainActor
+    func testCapturedPhotosOpenComposerAndBuild() async throws {
+        let name = "ObjectPhotoCaptureTests"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defaults.removePersistentDomain(forName: name)
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("capture-\(UUID().uuidString)").appendingPathComponent("objects.json")
+        let job = ObjectComposeJob(defaults: defaults, fileURL: url)
+        let original = try jpegWithLocation()
+        let image = try XCTUnwrap(ObjectPhotoImage.load(original))
+        // 「撮って聞く」で撮って囲み、「オブジェクトを作る」
+        let shape = [CGPoint(x: 10, y: 10), CGPoint(x: 250, y: 10), CGPoint(x: 250, y: 350)]
+        job.addCapturedPhoto(image, shape: shape)
+        XCTAssertTrue(job.isCollectingPhotos)
+        XCTAssertTrue(job.opensPhotoComposer)
+        XCTAssertEqual(job.photos.first?.shape?.count, 3)
+        // 別の角度から撮り足す(3枚まで)
+        job.opensPhotoComposer = false
+        job.addCapturedPhoto(image, shape: nil)
+        job.addCapturedPhoto(image, shape: nil)
+        job.addCapturedPhoto(image, shape: nil)
+        XCTAssertEqual(job.photos.count, ObjectPhotoImage.maxPhotos)
+        XCTAssertFalse(job.canAddPhoto)
+        // 作り始めたら、撮り足すのは終わり
+        let json = #"{"format":1,"type":"scope-object","name":"家","shapes":[{"kind":"box"}]}"#
+        var sentImages = 0
+        job.startPhotos(model: "m", thinking: false) { request, _ in
+            sentImages = request.messages.first?.content.filter { if case .jpeg = $0 { return true } else { return false } }.count ?? 0
+            return ClaudeCallResult(response: ClaudeResponse(text: json, usage: ClaudeUsage(input: 1, output: 1), stopReason: "end_turn", model: "m"),
+                                    cost: 0.01)
+        }
+        XCTAssertFalse(job.isCollectingPhotos)
+        for _ in 0..<200 where job.isRunning { try await Task.sleep(nanoseconds: 10_000_000) }
+        XCTAssertEqual(sentImages, 3)
+        XCTAssertEqual(job.recents.entries.first?.photoCount, 3)
+        defaults.removePersistentDomain(forName: name)
+    }
+
+    @MainActor
     func testPhotoJobKeepsInputs() throws {
         let name = "ObjectPhotoTests"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
