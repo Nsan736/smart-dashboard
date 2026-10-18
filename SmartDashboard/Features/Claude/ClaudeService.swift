@@ -5,6 +5,8 @@ import Observation
 struct ClaudeSettings: Codable, Equatable {
     static let defaultModel = "claude-haiku-5-5"
     static let defaultMonthlyLimit = 5.0
+    static let currentPrivacyVersion = 2
+    static let maxWebSearches = 10
 
     var model = ClaudeSettings.defaultModel
     var pricing = ClaudePricing()
@@ -13,12 +15,21 @@ struct ClaudeSettings: Codable, Equatable {
     /// 機能ごとの思考(適応的思考)。初期値は、どちらもオン(正確さを優先)。
     var thinkingForTools = true
     var thinkingForCamera = true
-    /// カメラの質問で一緒に送る情報
+    /// カメラの質問で一緒に送る情報。居場所が推測できるもの(地名・緯度経度・周りの地点)は、初期値で送らない(v0.9.20)。
+    /// 撮ったときの方角と端末の上下の向き(居場所は分からない)
     var sendsHeading = true
-    var sendsPlace = true
-    /// 現在地の緯度経度(おおよそ。小数第3位まで)も送る
-    var sendsCoordinates = true
-    var sendsTargets = true
+    /// 現在地のおおよその地名(居場所が分かる)
+    var sendsPlace = false
+    /// 現在地の緯度経度(おおよそ。小数第3位まで。居場所が分かる)
+    var sendsCoordinates = false
+    /// 撮った方向にある登録した地点・周辺の施設・電車の名前と距離(居場所が推測できる)
+    var sendsTargets = false
+    /// カメラの質問で、Claude に Web 検索を使わせる(サーバー側の検索。1回ごとに料金がかかる)
+    var webSearch = true
+    /// 1回の質問で使う Web 検索の上限
+    var webSearchMaxUses = 3
+    /// 送る情報の初期値の版。2 から、居場所が推測できる情報を初期値で送らない(以前の版の設定も、読み込むときに合わせる)。
+    var privacyVersion = ClaudeSettings.currentPrivacyVersion
     /// 送る画像の長い辺(px)。モバイル通信のときは smallerOnCellular なら cellularImageEdge。
     var imageEdge = 1024
     var smallerOnCellular = true
@@ -42,6 +53,16 @@ struct ClaudeSettings: Codable, Equatable {
         imageEdge = try c.decodeIfPresent(Int.self, forKey: .imageEdge) ?? base.imageEdge
         smallerOnCellular = try c.decodeIfPresent(Bool.self, forKey: .smallerOnCellular) ?? base.smallerOnCellular
         cellularImageEdge = try c.decodeIfPresent(Int.self, forKey: .cellularImageEdge) ?? base.cellularImageEdge
+        webSearch = try c.decodeIfPresent(Bool.self, forKey: .webSearch) ?? base.webSearch
+        webSearchMaxUses = min(max(try c.decodeIfPresent(Int.self, forKey: .webSearchMaxUses) ?? base.webSearchMaxUses, 1), Self.maxWebSearches)
+        privacyVersion = try c.decodeIfPresent(Int.self, forKey: .privacyVersion) ?? 1
+        if privacyVersion < 2 {
+            // v0.9.19 までは、地名・緯度経度・周りの地点も初期値で送っていた。居場所が推測できるので、送らない設定に合わせる。
+            sendsPlace = false
+            sendsCoordinates = false
+            sendsTargets = false
+            privacyVersion = Self.currentPrivacyVersion
+        }
     }
 
     /// 回線に合わせた、送る画像の長い辺
