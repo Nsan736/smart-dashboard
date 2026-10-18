@@ -42,7 +42,7 @@ struct ToolComposeView: View {
                 } footer: {
                     Text(isRevising
                          ? "例: 「入力欄に燃料の単価を足して、1kmあたりの費用も出して」。今の JSON と、この文を Claude に送ります。"
-                         : "例: 「車の燃費と、1kmあたりのガソリン代を計算するツール」「今日の夕飯を決めるルーレット(和食・中華・洋食・麺類)」。この文を Claude に送ります。")
+                         : "例: 「車の燃費と、1kmあたりのガソリン代を計算するツール」「今日の夕飯を決めるルーレット(和食・中華・洋食・麺類)」「出てくる的をタップするゲーム」。動きや描画が必要なものは、スクリプト型(JavaScript)で作ります。この文を Claude に送ります。")
                 }
                 Section {
                     if isWorking {
@@ -70,7 +70,7 @@ struct ToolComposeView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 } footer: {
-                    Text("Claude(\(env.settings.claude.model)、思考\(env.settings.claude.thinkingForTools ? "あり" : "なし"))が、小ツールの形式に沿った JSON を作ります。返ってきた JSON はアプリで検証し、誤りがあれば誤りを添えて1回だけ作り直してもらいます。保存する前に、内容を確認する画面が出ます。")
+                    Text("Claude(\(env.settings.claude.model)、思考\(env.settings.claude.thinkingForTools ? "あり" : "なし"))が、小ツールの形式に沿った JSON を作ります。返ってきた JSON はアプリで検証し(スクリプト型は、構文と、試しに数秒動かしたときのエラーも)、誤りがあれば誤りを添えて1回だけ作り直してもらいます。スクリプト型は長くなるので、数分かかることがあります。保存する前に、内容を確認する画面が出ます。")
                 }
                 if let generation { resultSections(generation) }
             }
@@ -142,8 +142,10 @@ struct ToolComposeView: View {
         let service = env.claude
         task = Task {
             do {
+                // スクリプト型は、構文と、試しに数秒動かしたときのエラーも確かめる
                 generation = try await ToolGenerator.run(messages: messages, model: settings.model, thinking: settings.thinkingForTools,
-                                                         format: ToolGenerator.formatDocument) { request in
+                                                         format: ToolGenerator.formatDocument,
+                                                         validate: { await ScriptTrial.issues(for: $0) }) { request in
                     try await service.call(request)
                 }
             } catch is CancellationError {

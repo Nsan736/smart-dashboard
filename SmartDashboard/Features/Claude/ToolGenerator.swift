@@ -19,7 +19,10 @@ struct ToolGeneration: Equatable {
 }
 
 enum ToolGenerator {
-    static let maxTokens = 16_000
+    /// スクリプト型は長くなりやすいので、出力の上限を大きくとる(思考を含む)
+    static let maxTokens = 32_000
+    /// 出力が長いと時間がかかるので、待つ時間も長くする
+    static let timeout: TimeInterval = 360
     /// 依頼文の長さの上限(文字)
     static let maxInstruction = 2_000
 
@@ -39,7 +42,9 @@ enum ToolGenerator {
 
         守ること:
         - 返すのは JSON だけです。説明の文章、前置き、コードブロックの記号(```)は付けないでください。
-        - 形式の説明にない項目は使わないでください。型は calc / list / table / checklist のどれかです。
+        - 形式の説明にない項目は使わないでください。型は calc / list / table / checklist / script のどれかです。
+        - 計算・選ぶ・表・チェックで足りるときは、その型を使ってください。動き・描画・タップへの反応・ゲーム・模様の生成などが必要なときだけ script を使ってください。
+        - script では、形式の説明にある API だけを使ってください(fetch、XMLHttpRequest、setTimeout、document、window、require などは使えません)。毎コマ全体を描き直し、iPhone SE(第2世代)でも軽く動くように、1コマの描画の命令や計算を少なめにしてください。script の文字列の中の改行や引用符は、JSON として正しくエスケープしてください。
         - format は 1 にしてください。id は形式の説明にある文字(半角の英数字と . _ -)だけで、内容に合う名前にしてください。
         - 名前・説明・ラベル・項目は日本語にしてください。
         - 計算式は、説明にある演算子と関数だけを使い、入力欄の id を正しく参照してください。
@@ -87,11 +92,13 @@ enum ToolGenerator {
 
     static func request(messages: [ClaudeMessage], model: String, thinking: Bool, format: String) -> ClaudeRequest {
         ClaudeRequest(model: model, system: systemPrompt(format: format), cachesSystem: true, messages: messages,
-                      maxTokens: maxTokens, thinking: thinking)
+                      maxTokens: maxTokens, thinking: thinking, timeout: timeout)
     }
 
     /// 作る(直す)流れ。call は Claude を呼ぶ部分(本番は ClaudeService.call、テストでは決まった応答)。
+    /// validate: 形式の検証を通ったあとの確かめ(スクリプト型は、構文と、試しに動かしたときのエラー)。問題がなければ空。
     static func run(messages first: [ClaudeMessage], model: String, thinking: Bool, format: String,
+                    validate: (CustomTool) async -> [ToolIssue] = { _ in [] },
                     call: (ClaudeRequest) async throws -> ClaudeCallResult) async throws -> ToolGeneration {
         var messages = first
         var usage = ClaudeUsage()
@@ -109,15 +116,21 @@ enum ToolGenerator {
                 throw ClaudeError.emptyAnswer(stopReason: result.response.stopReason)
             }
             lastJSON = extractJSON(answer)
+            let issues: [ToolIssue]
             switch CustomToolParser.parse(lastJSON) {
             case .success(let tool):
-                return ToolGeneration(outcome: .valid(json: lastJSON, tool: tool), usage: usage, cost: cost, attempts: attempts)
-            case .failure(let issues):
-                lastIssues = issues
-                // 誤りを添えて、もう1回だけ頼む(思考の部分は送り返さない。ツールを使わない会話では不要)
-                messages.append(.assistant(answer))
-                messages.append(.user(retryMessage(issues: issues)))
+                let problems = await validate(tool)
+                guard !problems.isEmpty else {
+                    return ToolGeneration(outcome: .valid(json: lastJSON, tool: tool), usage: usage, cost: cost, attempts: attempts)
+                }
+                issues = problems
+            case .failure(let found):
+                issues = found
             }
+            lastIssues = issues
+            // 誤りを添えて、もう1回だけ頼む(思考の部分は送り返さない。ツールを使わない会話では不要)
+            messages.append(.assistant(answer))
+            messages.append(.user(retryMessage(issues: issues)))
         }
         return ToolGeneration(outcome: .invalid(json: lastJSON, issues: lastIssues), usage: usage, cost: cost, attempts: attempts)
     }

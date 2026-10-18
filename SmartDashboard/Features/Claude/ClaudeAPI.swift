@@ -97,6 +97,8 @@ struct ClaudeRequest: Equatable, Sendable {
     var maxTokens: Int
     /// true: 適応的思考(thinking.type = adaptive)。false: 思考なし(thinking.type = disabled)。
     var thinking: Bool
+    /// 応答を待つ時間(秒)。ストリーミングを使わないので、出力が終わるまで何も届かない。
+    var timeout: TimeInterval = HTTPClaudeClient.timeout
 
     /// 送る JSON。思考の文章は画面に出さないので、display は指定しない(初期値の omitted)。
     var jsonObject: [String: Any] {
@@ -235,7 +237,7 @@ struct HTTPClaudeClient: ClaudeClient {
     static func urlRequest(_ request: ClaudeRequest, apiKey: String) throws -> URLRequest {
         var urlRequest = URLRequest(url: endpoint)
         urlRequest.httpMethod = "POST"
-        urlRequest.timeoutInterval = timeout
+        urlRequest.timeoutInterval = request.timeout
         urlRequest.setValue(apiKey, forHTTPHeaderField: "x-api-key")
         urlRequest.setValue(version, forHTTPHeaderField: "anthropic-version")
         urlRequest.setValue("application/json", forHTTPHeaderField: "content-type")

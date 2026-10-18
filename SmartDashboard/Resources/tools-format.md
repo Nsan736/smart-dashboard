@@ -1,9 +1,10 @@
 # 小ツールのJSON形式(format 1)
 
 スマートダッシュボードの「小ツール」には、JSONで書いたツールを読み込めます。
-プログラムを実行する形式ではありません。決まった4つの「型」に、中身を当てはめるだけです。
+計算型・リスト型・表型・チェックリスト型の4つは、プログラムを実行しない形式です。決まった「型」に、中身を当てはめるだけです。
+スクリプト型(`script`、v0.9.19)だけは、JavaScript を動かします(アプリが渡した機能だけを使えます)。
 
-- 読み込んだツールは、通信・位置情報・カメラ・ファイル・アプリのほかのデータに、一切アクセスできません(そのための項目が、形式にありません)。
+- 読み込んだツールは、通信・位置情報・カメラ・ファイル・アプリのほかのデータに、一切アクセスできません(そのための項目や機能がありません。スクリプト型でも同じです)。
 - 計算式は、アプリ専用の小さな評価器で処理します。できるのは数の計算だけです。
 - サンプルは [examples/tools/](../examples/tools/) にあります。
 
@@ -25,7 +26,7 @@
 | `format` | 必須 | `1` |
 | `id` | 必須 | ツールを区別する名前。半角の英数字と `.` `_` `-`、60文字まで。同じ `id` を読み込むと、上書きします |
 | `name` | 必須 | 表示する名前(40文字まで) |
-| `type` | 必須 | `calc` / `list` / `table` / `checklist` |
+| `type` | 必須 | `calc` / `list` / `table` / `checklist` / `script` |
 | `description` | | 説明(200文字まで)。検索の対象になります |
 | `icon` | | SF Symbols の名前(例: `fuelpump`)。省略すると工具のアイコン |
 | `category` | | `time`(時間)/ `calc`(計算)/ `play`(決める・遊ぶ)/ `text`(文字)/ `measure`(測る)/ `other`(その他)。省略すると `other` |
@@ -140,6 +141,97 @@
 
 チェックの状態は、端末に保存されます(ツールを削除すると消えます)。
 
+## スクリプト型(`script`)
+
+JavaScript で、アニメーション、模様(テクスチャ)、タップへの反応、簡単なゲームなどを作れます。
+実行には iOS の JavaScriptCore を使います。外部のライブラリは読み込めません。
+
+| 項目 | 必須 | 内容 |
+|---|---|---|
+| `script` | 必須 | スクリプトの本体(文字列、100,000文字まで)。JSON の文字列なので、改行は `\n`、`"` は `\"` と書きます |
+| `controls` | | 入力の部品の配列(20個まで。下の「入力の部品」) |
+| `controlsPosition` | | 部品を置く場所。`bottom`(キャンバスの下、初期値)か `top` |
+| `fps` | | 1秒あたりのコマの数。15〜60、初期値30(iPhone SE 第2世代では30を勧めます) |
+| `aspect` | | キャンバスの幅÷高さ(0.25〜4)。省略すると、空いている場所いっぱい |
+
+```json
+{
+  "format": 1,
+  "id": "bouncing-ball",
+  "name": "跳ねるボール",
+  "type": "script",
+  "category": "play",
+  "controls": [ { "id": "speed", "type": "slider", "label": "速さ", "min": 50, "max": 400, "value": 200 } ],
+  "script": "var x = 50, y = 50, vx = 1, vy = 1, speed = 200;\nfunction onInput(name, value) { if (name === 'speed') speed = value; }\nfunction frame(t, dt) {\n  x += vx * speed * dt; y += vy * speed * dt;\n  if (x < 20 || x > screen.width - 20) vx = -vx;\n  if (y < 20 || y > screen.height - 20) vy = -vy;\n  ctx.fillStyle = screen.dark ? '#000' : '#fff';\n  ctx.fillRect(0, 0, screen.width, screen.height);\n  ctx.fillStyle = 'tomato';\n  ctx.beginPath(); ctx.arc(x, y, 20, 0, Math.PI * 2); ctx.fill();\n}"
+}
+```
+
+### 決まった関数
+
+スクリプトの中で、次の名前の関数を作っておくと、アプリが呼びます(どれも省略できます)。
+
+| 関数 | 呼ばれるとき |
+|---|---|
+| `setup()` | 始めたときに1回 |
+| `frame(t, dt)` | 毎コマ。`t` は始めてからの秒数、`dt` は前のコマからの秒数(最大0.1) |
+| `onTouch(event)` | 触れた・動かした・離したとき。`event.type` は `"down"` / `"move"` / `"up"`、`event.x` `event.y` はキャンバスの左上からの位置(pt) |
+| `onInput(name, value)` | 入力の部品が変わったとき。`name` は部品の `id`。始めたときにも、各部品の初期値で1回ずつ呼ばれます |
+| `onStop()` | 画面を閉じるとき |
+
+- 描いたものは、そのコマだけ表示されます(毎コマ、全体を描き直します)。1コマの中では、`onInput` → `onTouch` → `frame` の順に呼ばれ、描いた命令がつながって1枚になります。そのコマで何も描かなければ、前の表示が残ります。
+- 画面がバックグラウンドに回ると止まり、戻ると続きから動きます(止まっていた間の時間は `t` に含みません)。
+- 例外が起きると、そのツールは止まり、画面に内容が出ます(「ログ」と「最初から」)。
+
+### 描画(`ctx`)
+
+ブラウザの Canvas 2D に近い書き方です。座標の単位は pt(左上が原点、右と下が正)。
+
+- 図形: `fillRect(x, y, w, h)` `strokeRect` `clearRect` `beginPath()` `moveTo(x, y)` `lineTo` `quadraticCurveTo(cx, cy, x, y)` `bezierCurveTo(c1x, c1y, c2x, c2y, x, y)` `arc(x, y, r, start, end, anticlockwise)` `ellipse(x, y, rx, ry, rotation, start, end, anticlockwise)` `rect(x, y, w, h)` `closePath()` `fill()` `stroke()` `clip()`
+- 文字: `fillText(text, x, y)` `strokeText` `measureText(text).width`。`font`(例: `"bold 24px sans-serif"`、`monospace` `serif` も可)、`textAlign`(`left` `center` `right`)、`textBaseline`(`alphabetic` `top` `middle` `bottom`)
+- 線と色: `fillStyle` `strokeStyle`(CSS の色: `#rgb` `#rrggbb` `#rrggbbaa` `rgb()` `rgba()` `hsl()` `hsla()` と、よく使う色の名前)、`lineWidth` `lineCap` `lineJoin` `setLineDash([長さ, ...])` `globalAlpha`
+- グラデーション: `createLinearGradient(x0, y0, x1, y1)` `createRadialGradient(x0, y0, r0, x1, y1, r1)` に `addColorStop(位置, 色)` を足して、`fillStyle` か `strokeStyle` に入れます(文字には最初の色が使われます)
+- 変形: `save()` `restore()` `translate(x, y)` `rotate(ラジアン)` `scale(x, y)` `transform(a, b, c, d, e, f)` `setTransform(...)` `resetTransform()`
+- 画像: `drawImage(img, x, y)` `drawImage(img, x, y, w, h)` `drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh)`。`imageSmoothingEnabled = false` で、ドット絵をにじませずに拡大します
+
+描画の命令は、スクリプトの中でまとめておき、1コマに1回だけアプリに渡します。1コマの命令は約20,000個までです(超えた分は描かず、ログに出ます)。
+
+### 画像(`image`)・書き出し(`canvas`)
+
+- `image.create(width, height, pixels)`: ピクセルの配列(`Uint8ClampedArray`、1ピクセルが R, G, B, A の4つ、長さは 幅×高さ×4)から画像を作ります。`{ id, width, height }` を返します
+- `image.update(img, pixels)`: 同じ大きさのピクセルで描き直します
+- `image.release(img)`: 使わなくなった画像を消します
+- `image.exportPNG(img, { scale: 4, name: "pattern" })`: 画像を PNG にして共有シートを出します(`scale` は1〜16の整数倍。補間しないで拡大)
+- `canvas.exportPNG({ width: 2048, name: "art" })`: 今の表示を、指定の幅(px、4096まで)の PNG にして共有シートを出します
+- 上限: 1枚の大きさは 1〜1024px、32枚まで、合計32MBまで(超えると例外)
+
+### 画面・入力の部品・音・振動・保存・乱数・ログ
+
+- `screen.width` `screen.height`(キャンバスの大きさ、pt)、`screen.dark`(ダークモードなら true)、`screen.scale`(1ptのピクセル数)
+- 入力の部品(スクリプトから): `ui.slider(id, { label, min, max, step, value })` `ui.button(id, { label })` `ui.toggle(id, { label, value })` `ui.text(id, { label, value })` `ui.choice(id, { label, options: [...], value })` `ui.set(id, value)` `ui.remove(id)`。変わると `onInput(id, value)` が呼ばれます(ボタンは value が true)
+- 音: `sound.play(名前)`(`click` `pop` `beep` `coin` `success` `failure` `jump` `hit`)、`sound.tone(周波数Hz, 長さ秒, 音量0〜1)`(20〜8000Hz、2秒まで)。1秒に20回まで。ほかのアプリの音楽を止めません
+- 振動: `haptic(種類)`(`light` `medium` `heavy` `success` `warning` `error` `selection`)
+- 保存(このツールだけの領域): `storage.get(key)` `storage.set(key, value)`(JSON で表せる値) `storage.remove(key)` `storage.keys()` `storage.clear()`。合計256KBまで、キーは100文字・1000個まで。端末に書くのは2秒ごとと、閉じたとき
+- 乱数: `random.seed(n)` `random.next()`(0以上1未満) `random.range(a, b)` `random.int(a, b)`(a以上b以下の整数) `random.pick(配列)`。`Math.random()` も使えます
+- ログ: `console.log(...)` `console.warn` `console.error`。ツールの画面の「ログ」で直近300行を見られます
+
+### 入力の部品(`controls`)
+
+| 項目 | 必須 | 内容 |
+|---|---|---|
+| `id` | 必須 | 半角の英字か `_` で始まる、英数字と `_` だけの名前(30文字まで) |
+| `type` | 必須 | `slider` / `button` / `toggle` / `text` / `choice` |
+| `label` | | 表示する名前(40文字まで) |
+| `min` `max` `step` `value` | | スライダーの範囲・刻み・初期値 |
+| `value` | | 切り替えは true / false、文字は文字列、選択肢は選んでおく文字列 |
+| `options` | | 選択肢の文字列の配列(`choice` のとき、1〜30個) |
+
+### 使えないもの・上限・固まったとき
+
+- 使えないもの: 通信(`fetch` `XMLHttpRequest` `WebSocket`)、`setTimeout` `setInterval`、`document` `window`、`require` `import`、ファイル、位置情報、カメラ、アプリのほかのデータ。時間で動かすときは `frame(t, dt)` を使います
+- スクリプトは専用のスレッドで動き、画面の操作(閉じるボタンなど)は止まりません。1回の呼び出し(`setup` `frame` など)が2秒以上戻らないと「応答なし」と出て、閉じるボタンで実行を打ち切れます。端末の JavaScriptCore で実行時間の制限が使えるときは、5秒で自動的に止めます
+- 実行中にアプリが落ちたとき(固まって終了した、メモリを使いすぎた、など)は、次に起動したときに「前回このツールの実行中に止まりました」と出て、そのツールを開かずに「もう一度試す」「無効にする」「削除する」を選べます。設定の「小ツール」で、スクリプト型のツールをすべて止めることもできます
+- 軽く作るこつ(iPhone SE 第2世代を基準に): 1コマの図形は数百個まで、粒子(パーティクル)は数百個まで、`measureText` や `image.create` を毎コマ呼ばない、大きな画像は `setup` で1回だけ作る
+
 ## サンプル
 
 | ファイル | 型 | 内容 |
@@ -149,3 +241,9 @@
 | [clothing-size.json](../examples/tools/clothing-size.json) | 表型 | 服のサイズ表 |
 | [travel-packing.json](../examples/tools/travel-packing.json) | チェックリスト型 | 旅行の持ち物 |
 | [lunch-roulette.json](../examples/tools/lunch-roulette.json) | リスト型 | ランチのルーレット |
+| [analog-clock.json](../examples/tools/analog-clock.json) | スクリプト型 | アナログ時計(変形と文字) |
+| [bouncing-ball.json](../examples/tools/bouncing-ball.json) | スクリプト型 | 跳ねるボール(スライダー、タップで足す) |
+| [fireworks.json](../examples/tools/fireworks.json) | スクリプト型 | 花火(パーティクル、タップで打ち上げ、効果音) |
+| [pixel-walker.json](../examples/tools/pixel-walker.json) | スクリプト型 | ドット絵のアニメーション(`image.create` と `imageSmoothingEnabled`) |
+| [pattern-maker.json](../examples/tools/pattern-maker.json) | スクリプト型 | 模様のテクスチャを作って PNG で書き出す道具 |
+| [tap-target.json](../examples/tools/tap-target.json) | スクリプト型 | 出てくる的をタップするゲーム(最高点の保存、効果音、振動) |
