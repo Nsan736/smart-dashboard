@@ -68,6 +68,10 @@ final class AppEnvironment {
     @ObservationIgnored let http: HTTPClient
     @ObservationIgnored let keychain: KeychainStore
     @ObservationIgnored let location: LocationProvider
+    /// 地名(CLGeocoder、座標ごとのキャッシュ)。天気・警報・「撮って聞く」で共有する。
+    @ObservationIgnored let placeNames: PlaceNameResolver
+    /// Claude API(小ツールを文章から作る、カメラで見えているものを聞く)
+    let claude: ClaudeService
 
     private(set) var cacheSize: Int64 = 0
     private(set) var hasODPTToken = false
@@ -139,6 +143,8 @@ final class AppEnvironment {
         rain = RainNowcastStore(http: http, cache: cache, settings: settings, network: network, loader: radarLoader,
                                 onFetched: { fetchLog.mark(.rainNowcast, at: $0) })
         let placeNames = PlaceNameResolver(onRequest: { [weak usage] in usage?.addGeocodeRequest() })
+        self.placeNames = placeNames
+        claude = ClaudeService(client: HTTPClaudeClient(http: http), keychain: keychain, settings: settings, network: network)
         warnings = WarningStore(http: http, cache: cache, settings: settings, network: network, placeNames: placeNames,
                                 onFetched: { fetchLog.mark(.warning, at: $0) })
         quakes = QuakeStore(http: http, cache: cache, settings: settings, network: network,

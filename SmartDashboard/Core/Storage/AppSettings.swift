@@ -165,6 +165,10 @@ final class AppSettings {
         didSet { defaults.set(scopeElevatedHeight, forKey: Keys.scopeElevatedHeight) }
     }
     /// スコープの電車: 地下の線路の、地面からの深さの目安(m、初期値15)
+    /// Claude API の設定(モデル、料金、上限、思考、カメラの質問で送る情報)。APIキーは Keychain。
+    var claude: ClaudeSettings {
+        didSet { saveJSON(claude, forKey: Keys.claude) }
+    }
     var scopeUndergroundDepth: Double {
         didSet { defaults.set(scopeUndergroundDepth, forKey: Keys.scopeUndergroundDepth) }
     }
@@ -243,6 +247,7 @@ final class AppSettings {
         scopeCarOverrides = defaults.dictionary(forKey: Keys.scopeCarOverrides) as? [String: Int] ?? [:]
         scopeElevatedHeight = defaults.object(forKey: Keys.scopeElevatedHeight) as? Double ?? 8
         scopeUndergroundDepth = defaults.object(forKey: Keys.scopeUndergroundDepth) as? Double ?? 15
+        claude = Self.loadJSON(ClaudeSettings.self, from: defaults, forKey: Keys.claude) ?? ClaudeSettings()
         nearbyRadius = NearbyRadius.clamped(defaults.object(forKey: Keys.nearbyRadius) as? Int ?? NearbyRadius.initial)
         nearbyCategories = NearbyCategory.normalizedOrder(defaults.stringArray(forKey: Keys.nearbyCategories))
         tabOrder = TabOrder.decode(defaults.stringArray(forKey: Keys.tabOrder))
@@ -307,6 +312,7 @@ final class AppSettings {
         static let scopeCarOverrides = "scope.carOverrides"
         static let scopeElevatedHeight = "scope.elevatedHeight"
         static let scopeUndergroundDepth = "scope.undergroundDepth"
+        static let claude = "claude.settings"
         static let nearbyRadius = "scope.nearbyRadius"
         static let nearbyCategories = "scope.nearbyCategories"
         static let tabOrder = "tabs.order"

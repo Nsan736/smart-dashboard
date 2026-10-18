@@ -41,4 +41,5 @@ struct KeychainStore {
 
 enum KeychainAccount {
     static let odptToken = "odpt.consumerKey"
+    static let claudeAPIKey = "claude.apiKey"
 }

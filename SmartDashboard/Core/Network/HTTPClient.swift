@@ -5,11 +5,17 @@ protocol HTTPClient: Sendable {
     func get(_ url: URL) async throws -> Data
     /// 状態コードが200番台でなくても、本文と状態コードを返す(エラーの内容を表示したいとき)
     func response(_ url: URL) async throws -> (data: Data, status: Int)
+    /// 組み立てたリクエスト(POST など)を送る。状態コードが200番台でなくても、本文と状態コードを返す。
+    func send(_ request: URLRequest) async throws -> (data: Data, status: Int)
 }
 
 extension HTTPClient {
     func response(_ url: URL) async throws -> (data: Data, status: Int) {
         (try await get(url), 200)
+    }
+
+    func send(_ request: URLRequest) async throws -> (data: Data, status: Int) {
+        throw HTTPError.notHTTP
     }
 }
 
@@ -54,6 +60,10 @@ final class MeteredHTTPClient: NSObject, HTTPClient, URLSessionTaskDelegate, @un
     func response(_ url: URL) async throws -> (data: Data, status: Int) {
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
+        return try await send(request)
+    }
+
+    func send(_ request: URLRequest) async throws -> (data: Data, status: Int) {
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw HTTPError.notHTTP }
         return (data, http.statusCode)
@@ -68,7 +78,9 @@ final class MeteredHTTPClient: NSObject, HTTPClient, URLSessionTaskDelegate, @un
         let category = UsageCategory.from(url: task.originalRequest?.url)
         var totals: [UsageLink: Int64] = [:]
         for t in metrics.transactionMetrics {
-            let bytes = t.countOfResponseHeaderBytesReceived + t.countOfResponseBodyBytesReceived
+            var bytes = t.countOfResponseHeaderBytesReceived + t.countOfResponseBodyBytesReceived
+            // Claude API は送る画像のほうが大きいので、送信量も数える
+            if category.countsSentBytes { bytes += t.countOfRequestHeaderBytesSent + t.countOfRequestBodyBytesSent }
             guard bytes > 0 else { continue }
             totals[Self.link(isCellular: t.isCellular, isExpensive: t.isExpensive), default: 0] += bytes
         }

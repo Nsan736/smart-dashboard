@@ -61,6 +61,17 @@ struct SettingsView: View {
                 }
 
                 Group {
+                Section {
+                    NavigationLink {
+                        ClaudeSettingsView()
+                    } label: {
+                        LabeledContent("Claude API", value: env.claude.hasKey ? "今月 " + ClaudePricing.text(env.claude.thisMonth.cost) : "未設定")
+                    }
+                } header: {
+                    Text("AI")
+                } footer: {
+                    Text("小ツールを文章から作る機能と、スコープのカメラで「撮って聞く」機能に使います。使うときだけ通信します。")
+                }
                 AlertSettingsSections()
                 Section {
                     Toggle("センサー画面の表示中は画面を消さない", isOn: $settings.sensorsKeepAwake)

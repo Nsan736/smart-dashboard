@@ -28,6 +28,8 @@ enum UsageCategory: String, Codable, CaseIterable, Sendable {
     case alerts
     /// スコープ(国土地理院の標高API)
     case scope
+    /// Claude API(送信量も含む)
+    case claude
     case other
     /// 機能別の記録を始める前の記録
     case legacy
@@ -41,6 +43,7 @@ enum UsageCategory: String, Codable, CaseIterable, Sendable {
         case .mapTiles: return "地図タイル(地理院)"
         case .alerts: return "警報・地震"
         case .scope: return "スコープ"
+        case .claude: return "Claude(送信を含む)"
         case .other: return "その他"
         case .legacy: return "以前の記録"
         }
@@ -63,8 +66,12 @@ enum UsageCategory: String, Codable, CaseIterable, Sendable {
         if host.hasSuffix("odpt.org") { return .train }
         if host.hasSuffix("jma.go.jp") { return .radar }
         if host.hasSuffix("gsi.go.jp") { return .mapTiles }
+        if host.hasSuffix("anthropic.com") { return .claude }
         return .other
     }
+
+    /// 送信量も数える機能(Claude API は画像を送るため)
+    var countsSentBytes: Bool { self == .claude }
 }
 
 /// 通信1回分の記録
