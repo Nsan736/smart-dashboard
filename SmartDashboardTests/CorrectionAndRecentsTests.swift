@@ -247,7 +247,8 @@ final class ClaudeRecentsTests: XCTestCase {
     func testScopeAskKeepsConversationWithSmallImage() async throws {
         let url = temporaryURL("scope-ask.json")
         let job = ScopeAskJob(fileURL: url)
-        let snapshot = ScopeAskSnapshot(image: try sampleImage(), heading: 120, pitch: 3, latitude: 35.68, longitude: 139.76, placeName: nil,
+        let image = try sampleImage()
+        let snapshot = ScopeAskSnapshot(image: image, heading: 120, pitch: 3, latitude: 35.68, longitude: 139.76, placeName: nil,
                                         targets: [], takenAt: Date(), halfFieldOfView: 30)
         job.begin(snapshot)
         // 聞く前は残さない

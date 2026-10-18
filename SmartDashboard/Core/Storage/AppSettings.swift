@@ -320,8 +320,9 @@ final class AppSettings {
         movementRetention = defaults.string(forKey: Keys.movementRetention).flatMap(MovementRetention.init(rawValue:)) ?? .today
         movementDebugEnabled = defaults.bool(forKey: Keys.movementDebugEnabled)
         headingDebugEnabled = defaults.bool(forKey: Keys.headingDebugEnabled)
-        headingOffset = HeadingCorrection.normalized(defaults.double(forKey: HeadingCorrection.defaultsKey))
-        HeadingCorrection.current = headingOffset
+        let offset = HeadingCorrection.normalized(defaults.double(forKey: HeadingCorrection.defaultsKey))
+        headingOffset = offset
+        HeadingCorrection.current = offset
         headingGyroHold = defaults.bool(forKey: Keys.headingGyroHold)
         walkRouteFactor = defaults.object(forKey: Keys.walkRouteFactor) as? Double ?? 1.3
         walkSpeedKmh = defaults.object(forKey: Keys.walkSpeedKmh) as? Double ?? 4.8
