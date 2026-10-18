@@ -1,8 +1,9 @@
 import Foundation
 
-/// スクリプトの前に読み込む JavaScript。ctx(描画)・image・canvas・ui・sound・storage・random・haptic・screen・console を作る。
+/// スクリプトの前に読み込む JavaScript。ctx(描画)・image・canvas・ui・sound・storage・random・haptic・screen・console・app を作る。
 /// 描画の命令は Float64Array に数として貯め、1コマの終わりに1回だけアプリに渡す(命令ごとにアプリを呼ばない)。
 /// 命令の番号は ScriptOpCode と同じ。アプリの機能は __native(アプリが渡す関数)だけを通す。
+/// app.* は、アプリが __setData で入れたデータの写し(JSON の文字列)を、読むたびに新しいオブジェクトにして返す(読み取り専用)。
 enum ScriptPrelude {
     static let source = #"""
     (function (global) {
@@ -225,6 +226,43 @@ enum ScriptPrelude {
         warn: function () { native.log(1, text(arguments)); },
         error: function () { native.log(2, text(arguments)); }
       };
+
+      // アプリのデータ(許可した種類だけ。許可していない種類は null)
+      var D = {};
+      global.__setData = function (kind, raw) { D[String(kind)] = String(raw); };
+      function read(kind) {
+        var raw = D[kind];
+        if (raw === undefined || raw === 'null') return null;
+        try { return JSON.parse(raw); } catch (e) { return null; }
+      }
+      var app = {};
+      ['weather', 'warnings', 'quakes', 'pressure', 'exchange', 'trains', 'places', 'location', 'calendar', 'permissions'].forEach(function (k) {
+        Object.defineProperty(app, k, { get: function () { return read(k); }, enumerable: true });
+      });
+      var sensorKinds = ['steps', 'speed', 'heading', 'pressure', 'motion'];
+      function sensorKind(kind, name) {
+        kind = String(kind);
+        if (sensorKinds.indexOf(kind) < 0) throw new Error('app.sensors.' + name + ': ' + sensorKinds.join(' / ') + ' のどれかにしてください');
+        return kind;
+      }
+      var sensors = {
+        start: function (kind) { return native.sensor(sensorKind(kind, 'start'), true); },
+        stop: function (kind) { return native.sensor(sensorKind(kind, 'stop'), false); },
+        read: function () { return read('sensors'); }
+      };
+      sensorKinds.forEach(function (k) {
+        Object.defineProperty(sensors, k, { get: function () { var s = read('sensors'); return s && s[k] !== undefined ? s[k] : null; }, enumerable: true });
+      });
+      ['active', 'available', 'problems'].forEach(function (k) {
+        Object.defineProperty(sensors, k, { get: function () { var s = read('sensors'); return s ? s[k] : null; }, enumerable: true });
+      });
+      app.sensors = Object.freeze(sensors);
+      app.holidayName = function (y, m, d) {
+        if (y instanceof Date) { d = y.getDate(); m = y.getMonth() + 1; y = y.getFullYear(); }
+        var name = native.holidayName(y | 0, m | 0, d | 0);
+        return name ? name : null;
+      };
+      global.app = Object.freeze(app);
     })(this);
     """#
 }

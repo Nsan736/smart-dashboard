@@ -1,6 +1,7 @@
 import SwiftUI
 
 /// スクリプト型のツールの画面。キャンバス(1枚の Canvas)と入力の部品。スクリプトは専用のスレッドで動き、画面の操作は止まらない。
+/// アプリのデータを使うツールは、初めて開いたときに種類ごとの許可を求める。プレビューでは、実際のデータの代わりに仮のデータを渡す。
 struct ScriptToolView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.scenePhase) private var scenePhase
@@ -13,6 +14,7 @@ struct ScriptToolView: View {
     @State private var session: ScriptSession?
     @State private var showsLog = false
     @State private var isTouching = false
+    @State private var lastSize: CGSize = .zero
 
     var body: some View {
         if env.settings.scriptToolsStopped {
@@ -26,14 +28,41 @@ struct ScriptToolView: View {
                     .buttonStyle(.borderedProminent)
             }
         } else if let content = tool.script {
-            runner(content)
+            if !isPreview, !env.settings.scriptPermissions.undecided(content.permissions, toolID: tool.id).isEmpty {
+                ScriptPermissionRequestView(toolName: tool.name, requested: content.permissions, current: currentChoices(content)) { choices in
+                    env.settings.scriptPermissions.record(choices, toolID: tool.id)
+                }
+            } else {
+                runner(content)
+            }
         } else {
             ContentUnavailableView("スクリプトがありません", systemImage: "exclamationmark.triangle")
         }
     }
 
+    /// これまでに選んだ許可(まだ聞いていない種類は入らない)
+    private func currentChoices(_ content: ScriptToolContent) -> [ScriptPermission: Bool] {
+        let decided = env.settings.scriptPermissions.tools[tool.id] ?? [:]
+        var result: [ScriptPermission: Bool] = [:]
+        for permission in content.permissions { result[permission] = decided[permission.rawValue] }
+        return result
+    }
+
+    /// スクリプトに渡すデータの種類(プレビューは、JSON に書いた種類すべてを仮のデータで)
+    private func granted(_ content: ScriptToolContent) -> Set<ScriptPermission> {
+        isPreview ? Set(content.permissions) : env.settings.scriptPermissions.granted(content.permissions, toolID: tool.id)
+    }
+
     private func runner(_ content: ScriptToolContent) -> some View {
         VStack(spacing: 0) {
+            if isPreview, !content.permissions.isEmpty {
+                Text("プレビュー: アプリのデータの代わりに、仮のデータを渡しています")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 4)
+                    .background(Color(.secondarySystemBackground))
+            }
             if content.controlsAtTop { controls }
             canvasArea(content)
             if !content.controlsAtTop { controls }
@@ -65,6 +94,12 @@ struct ScriptToolView: View {
             }
         }
         .onDisappear { session?.close() }
+        .onChange(of: granted(content)) { _, _ in
+            // 許可を変えたら、新しい許可で最初から動かす
+            session?.close()
+            session = nil
+            prepare(size: lastSize)
+        }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { session?.resume() } else { session?.pause() }
         }
@@ -116,14 +151,22 @@ struct ScriptToolView: View {
     }
 
     private func prepare(size: CGSize) {
+        lastSize = size
         guard size.width > 1, size.height > 1, let content = tool.script else { return }
         let screen = ScriptScreen(width: Double(size.width), height: Double(size.height), dark: colorScheme == .dark, scale: Double(displayScale))
         if let session, session.status != .closed {
             session.update(screen: screen)
         } else {
             // 初めて出たとき、またはタブを切り替えて閉じたあとに、もう一度出たとき
+            let allowed = granted(content)
+            let data: ScriptDataSource
+            if isPreview {
+                data = ScriptMockDataSource(requested: content.permissions)
+            } else {
+                data = ScriptLiveData(env: env, requested: content.permissions, granted: allowed)
+            }
             let created = ScriptSession(tool: tool, content: content, isPreview: isPreview, runGuard: env.tools.runGuard,
-                                        storageDirectory: env.tools.scriptStorageDirectory)
+                                        storageDirectory: env.tools.scriptStorageDirectory, granted: allowed, data: data)
             session = created
             created.start(screen: screen)
         }

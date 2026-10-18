@@ -4,6 +4,7 @@ import UIKit
 
 /// 1つのスクリプト型のツールの実行(画面の側)。スクリプトは ScriptRunner の専用のスレッドで動き、結果をここに反映する。
 /// 呼び出しが2秒以上戻らなければ「応答なし」にする。実行中は「実行中のツール」を記録し、閉じたら消す。
+/// アプリのデータは data(本物か仮のデータ)から受け取ってスクリプトに渡す。閉じたときは、センサーも必ず止める。
 @MainActor
 @Observable
 final class ScriptSession {
@@ -31,6 +32,8 @@ final class ScriptSession {
     let tool: CustomTool
     let content: ScriptToolContent
     let isPreview: Bool
+    /// スクリプトに渡すデータの種類(JSON に書いてあって、許可したもの)
+    let granted: Set<ScriptPermission>
 
     @ObservationIgnored private var runner: ScriptRunner?
     @ObservationIgnored private var watchdog: Timer?
@@ -39,11 +42,15 @@ final class ScriptSession {
     @ObservationIgnored private let sound = ScriptSoundPlayer()
     @ObservationIgnored private var screen = ScriptScreen(width: 0, height: 0, dark: false, scale: 2)
     @ObservationIgnored private var isPaused = false
+    @ObservationIgnored private let data: ScriptDataSource
 
-    init(tool: CustomTool, content: ScriptToolContent, isPreview: Bool, runGuard: ScriptRunGuard, storageDirectory: URL) {
+    init(tool: CustomTool, content: ScriptToolContent, isPreview: Bool, runGuard: ScriptRunGuard, storageDirectory: URL,
+         granted: Set<ScriptPermission> = [], data: ScriptDataSource? = nil) {
         self.tool = tool
         self.content = content
         self.isPreview = isPreview
+        self.granted = granted.intersection(content.permissions)
+        self.data = data ?? ScriptMockDataSource(requested: [])
         self.runGuard = runGuard
         controls = content.controls
         // プレビューは端末に保存しない(保存する前のツールが、保存領域を作らないように)
@@ -65,8 +72,10 @@ final class ScriptSession {
         markRunning()
         let content = content
         let storageURL = storageURL
+        let granted = granted
+        let initial = data.initialData()
         let runner = ScriptRunner(screen: screen, fps: content.fps, makeRuntime: {
-            ScriptRuntime(content: content, storage: ScriptStorage(fileURL: storageURL))
+            ScriptRuntime(content: content, storage: ScriptStorage(fileURL: storageURL), data: initial, granted: granted)
         }, onOutput: { [weak self] output in
             DispatchQueue.main.async {
                 MainActor.assumeIsolated { self?.apply(output) }
@@ -74,6 +83,7 @@ final class ScriptSession {
         })
         self.runner = runner
         runner.start()
+        data.start { [weak runner] changes in runner?.update(data: changes) }
         // 初期値を、onInput で伝える(部品の初期値をスクリプトが知れるように)
         for control in content.controls where control.kind != .button {
             runner.send(input: control.id, value: control.value)
@@ -105,6 +115,7 @@ final class ScriptSession {
         watchdog?.invalidate()
         watchdog = nil
         sound.stop()
+        data.stop()
         runGuard.end()
         isUnresponsive = false
     }
@@ -116,12 +127,14 @@ final class ScriptSession {
         runner?.pause()
         runGuard.end()
         sound.stop()
+        data.pause()
     }
 
     func resume() {
         guard status == .running, isPaused else { return }
         isPaused = false
         markRunning()
+        data.resume()
         runner?.resume()
     }
 
@@ -170,6 +183,8 @@ final class ScriptSession {
         if !output.uiChanges.isEmpty { controls = ScriptUIChange.apply(output.uiChanges, to: controls) }
         for request in output.sounds { sound.play(request) }
         for kind in output.haptics { ScriptHaptics.play(kind) }
+        // バックグラウンドの間の依頼は、データの出どころが覚えておき、戻ったときに動かす
+        for request in output.sensorRequests where granted.contains(.sensors) { data.setSensor(request.kind, on: request.on) }
         for request in output.exports { export(request) }
         if let error = output.error {
             status = .failed(error)

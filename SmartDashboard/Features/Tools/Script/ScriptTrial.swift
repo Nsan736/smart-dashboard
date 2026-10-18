@@ -3,6 +3,7 @@ import JavaScriptCore
 
 /// スクリプトを、画面に出さずに数秒分だけ試しに動かして、エラーが出ないかを確かめる(Claude が作ったツールの確認に使う)。
 /// 時間を早回しにして、setup・2秒分のコマ・触れる・入力の部品・onStop を呼ぶ。音・振動・書き出しは行わず、保存領域は端末に書かない。
+/// アプリのデータは、実際のデータではなく仮のデータ(ScriptMockData)を渡す。途中で onData も呼び、センサーの開始・停止にも仮の値で応える。
 enum ScriptTrial {
     static let screen = ScriptScreen(width: 375, height: 500, dark: false, scale: 2)
     static let frames = 60
@@ -11,6 +12,8 @@ enum ScriptTrial {
     /// 全体を待つ時間(これを超えたら、無限ループとみなして打ち切る)
     static let overallTimeout = 8.0
     static let maxProblems = 10
+    /// このコマで、仮のデータをもう一度渡して onData を呼ぶ
+    static let dataFrame = 30
 
     /// 構文の誤り(実行はしない)。なければ nil。
     static func syntaxError(_ script: String) -> String? {
@@ -51,8 +54,19 @@ enum ScriptTrial {
 
     /// 同じスレッドで、続けて動かす(テストからも呼ぶ)
     static func run(_ content: ScriptToolContent) -> [String] {
-        let runtime = ScriptRuntime(content: content, storage: ScriptStorage(fileURL: nil), timeLimit: callTimeLimit, headless: true)
+        let initial = ScriptMockData.all(requested: content.permissions, now: Date())
+        let runtime = ScriptRuntime(content: content, storage: ScriptStorage(fileURL: nil), timeLimit: callTimeLimit, headless: true,
+                                    data: initial, granted: Set(content.permissions))
         var problems: [String] = []
+        var activeSensors = Set<String>()
+        var pendingData: [String: String] = [:]
+        func handleSensors(_ output: ScriptOutput) {
+            guard !output.sensorRequests.isEmpty else { return }
+            for request in output.sensorRequests {
+                if request.on { activeSensors.insert(request.kind.rawValue) } else { activeSensors.remove(request.kind.rawValue) }
+            }
+            pendingData[ScriptDataKind.sensors.rawValue] = ScriptJSON.string(ScriptMockData.sensors(now: Date(), active: activeSensors))
+        }
         func collect(_ output: ScriptOutput) {
             for line in output.logs where line.level == 2 && problems.count < maxProblems {
                 if line.text != output.error { problems.append("console.error: " + line.text) }
@@ -62,7 +76,8 @@ enum ScriptTrial {
         let first = runtime.load(screen: screen)
         collect(first)
         guard first.error == nil else { return problems }
-        let initial = content.controls.filter { $0.kind != .button }.map { ($0.id, $0.value) }
+        handleSensors(first)
+        let initialInputs = content.controls.filter { $0.kind != .button }.map { ($0.id, $0.value) }
         let buttons = content.controls.filter { $0.kind == .button }.map { ($0.id, ScriptControlValue.bool(true)) }
         let center = (x: screen.width / 2, y: screen.height / 2)
         let dt = 1.0 / Double(content.fps)
@@ -74,10 +89,18 @@ enum ScriptTrial {
             case 14: touches = [ScriptTouch(phase: .up, x: center.x + 20, y: center.y + 10)]
             default: break
             }
-            let inputs = frame == 0 ? initial : frame == 20 ? buttons : []
-            let output = runtime.tick(t: Double(frame + 1) * dt, dt: dt, screen: screen, touches: touches, inputs: inputs)
+            let inputs = frame == 0 ? initialInputs : frame == 20 ? buttons : []
+            if frame == dataFrame {
+                pendingData.merge(ScriptMockData.all(requested: content.permissions, now: Date())) { _, new in new }
+                if !activeSensors.isEmpty {
+                    pendingData[ScriptDataKind.sensors.rawValue] = ScriptJSON.string(ScriptMockData.sensors(now: Date(), active: activeSensors))
+                }
+            }
+            let output = runtime.tick(t: Double(frame + 1) * dt, dt: dt, screen: screen, touches: touches, inputs: inputs, data: pendingData)
+            pendingData = [:]
             collect(output)
             if output.error != nil { return problems }
+            handleSensors(output)
         }
         collect(runtime.stop())
         return problems

@@ -40,6 +40,12 @@ enum ScriptExportRequest {
     case image(CGImage, scale: Int, name: String)
 }
 
+/// app.sensors.start / stop の依頼(画面の側で、センサーを動かす・止める)
+struct ScriptSensorRequest: Equatable {
+    var kind: ScriptSensorKind
+    var on: Bool
+}
+
 struct ScriptSoundRequest: Equatable {
     var name: String
     var frequency: Double
@@ -58,6 +64,7 @@ struct ScriptOutput {
     var exports: [ScriptExportRequest] = []
     var sounds: [ScriptSoundRequest] = []
     var haptics: [String] = []
+    var sensorRequests: [ScriptSensorRequest] = []
     /// 止めるほどのエラー(例外、時間切れ)
     var error: String?
     var timedOut = false
@@ -65,7 +72,8 @@ struct ScriptOutput {
 
 /// JavaScriptCore でスクリプトを動かす。作るのも呼ぶのも、スクリプトの専用のスレッドだけで行う。
 /// スクリプトが使えるのは、ここで渡す関数(__native)と、ScriptPrelude の中のものだけ。
-/// 通信・ファイル・位置情報・カメラ・アプリのほかのデータに触れる関数は渡さない(JSContext には fetch なども元からない)。
+/// 通信・ファイル・カメラに触れる関数は渡さない(JSContext には fetch なども元からない)。
+/// アプリのデータは、許可した種類の写し(JSON の文字列)を画面の側から受け取って渡すだけで、スクリプトから取りに行く関数はない。
 final class ScriptRuntime {
     /// 1回の呼び出しの時間の上限(秒)。実行時間の制限が使えるときだけ効く。
     static let defaultTimeLimit = 5.0
@@ -73,12 +81,17 @@ final class ScriptRuntime {
     static let maxSoundsPerCall = 8
     static let maxHapticsPerCall = 2
     static let maxLogLength = 500
+    static let maxSensorRequestsPerCall = 20
 
     let content: ScriptToolContent
     let storage: ScriptStorage
     let images = ScriptImageStore()
     /// 音・振動・書き出しを使わない(試しの実行)
     let headless: Bool
+    /// 許可したデータの種類(JSON に書いてあって、利用者が許可したもの)
+    let granted: Set<ScriptPermission>
+    /// 始めたときのデータ(種類 → JSON)
+    private let initialData: [String: String]
     let timeLimit: Double
     private(set) var timeLimitApplied = false
 
@@ -90,11 +103,14 @@ final class ScriptRuntime {
     private var lastScreen: ScriptScreen?
     private var warnedOverflow = false
 
-    init(content: ScriptToolContent, storage: ScriptStorage, timeLimit: Double = ScriptRuntime.defaultTimeLimit, headless: Bool = false) {
+    init(content: ScriptToolContent, storage: ScriptStorage, timeLimit: Double = ScriptRuntime.defaultTimeLimit, headless: Bool = false,
+         data: [String: String] = [:], granted: Set<ScriptPermission> = []) {
         self.content = content
         self.storage = storage
         self.timeLimit = timeLimit
         self.headless = headless
+        self.granted = granted.intersection(content.permissions)
+        initialData = data
     }
 
     // MARK: - 呼び出し
@@ -119,6 +135,8 @@ final class ScriptRuntime {
             return pending
         }
         updateScreen(screen)
+        // setup の時点で app.* を読めるように、スクリプトより先にデータを入れる(onData は呼ばない)
+        setData(initialData)
         context.objectForKeyedSubscript("__begin")?.call(withArguments: [])
         let started = Date()
         exception = nil
@@ -131,8 +149,9 @@ final class ScriptRuntime {
         return finish()
     }
 
-    /// 1コマ。入力と触れたことを先に伝えてから frame を呼ぶ。
-    func tick(t: Double, dt: Double, screen: ScriptScreen, touches: [ScriptTouch], inputs: [(String, ScriptControlValue)]) -> ScriptOutput {
+    /// 1コマ。データの更新(onData)、入力、触れたことを先に伝えてから frame を呼ぶ。
+    func tick(t: Double, dt: Double, screen: ScriptScreen, touches: [ScriptTouch], inputs: [(String, ScriptControlValue)],
+              data: [String: String] = [:]) -> ScriptOutput {
         pending = ScriptOutput()
         guard let context else {
             pending.error = "スクリプトが読み込まれていません"
@@ -140,6 +159,9 @@ final class ScriptRuntime {
         }
         updateScreen(screen)
         context.objectForKeyedSubscript("__begin")?.call(withArguments: [])
+        for kind in setData(data) {
+            guard call("onData", [kind]) else { return finish() }
+        }
         for (name, value) in inputs {
             guard call("onInput", [name, value.jsObject]) else { return finish() }
         }
@@ -211,6 +233,24 @@ final class ScriptRuntime {
         }
         pending.ops = decoder.decode(values)
         return pending
+    }
+
+    /// データの写しを入れる。許可していない種類と、知らない種類は入れない。入れた種類を返す(名前の順)。
+    @discardableResult
+    private func setData(_ data: [String: String]) -> [String] {
+        guard !data.isEmpty, let setter = context?.objectForKeyedSubscript("__setData") else { return [] }
+        var applied: [String] = []
+        for (kind, json) in data.sorted(by: { $0.key < $1.key }) {
+            guard Self.accepts(kind, granted: granted) else { continue }
+            setter.call(withArguments: [kind, json])
+            applied.append(kind)
+        }
+        return applied
+    }
+
+    /// その種類のデータを、スクリプトに入れてよいか
+    static func accepts(_ kind: String, granted: Set<ScriptPermission>) -> Bool {
+        ScriptDataKind(rawValue: kind)?.isAllowed(granted) ?? false
     }
 
     private func updateScreen(_ screen: ScriptScreen) {
@@ -363,6 +403,21 @@ final class ScriptRuntime {
         let storageClear: @convention(block) () -> Void = { [weak self] in self?.storage.clear() }
         set("storageClear", unsafeBitCast(storageClear, to: AnyObject.self))
 
+        // センサーを動かす・止める依頼。センサーを許可していなければ受け付けない(false)。
+        let sensor: @convention(block) (String, Bool) -> Bool = { [weak self] name, on in
+            guard let self, self.granted.contains(.sensors), let kind = ScriptSensorKind(rawValue: name),
+                  self.pending.sensorRequests.count < Self.maxSensorRequestsPerCall else { return false }
+            self.pending.sensorRequests.append(ScriptSensorRequest(kind: kind, on: on))
+            return true
+        }
+        set("sensor", unsafeBitCast(sensor, to: AnyObject.self))
+
+        // 祝日の名前(計算だけ。祝日でなければ空の文字)
+        let holidayName: @convention(block) (Int, Int, Int) -> String = { year, month, day in
+            JapaneseHolidays.holidayName(year: year, month: month, day: day) ?? ""
+        }
+        set("holidayName", unsafeBitCast(holidayName, to: AnyObject.self))
+
         context.setObject(native, forKeyedSubscript: "__native" as NSString)
     }
 }
@@ -379,6 +434,8 @@ final class ScriptRunner: @unchecked Sendable {
     private var resumed = false
     private var touches: [ScriptTouch] = []
     private var inputs: [(String, ScriptControlValue)] = []
+    /// まだ渡していない、データの更新(種類ごとに最新の1つ)
+    private var dataChanges: [String: String] = [:]
     private var screen: ScriptScreen
     private var busySinceValue: Date?
     private let fps: Int
@@ -444,6 +501,10 @@ final class ScriptRunner: @unchecked Sendable {
         condition.withLock { screen = new }
     }
 
+    func update(data changes: [String: String]) {
+        condition.withLock { dataChanges.merge(changes) { _, new in new } }
+    }
+
     private func busy<T>(_ work: () -> T) -> T {
         condition.withLock { busySinceValue = Date() }
         let result = work()
@@ -485,8 +546,10 @@ final class ScriptRunner: @unchecked Sendable {
             }
             let currentTouches = touches
             let currentInputs = inputs
+            let currentData = dataChanges
             touches = []
             inputs = []
+            dataChanges = [:]
             let currentScreen = screen
             condition.unlock()
 
@@ -494,7 +557,9 @@ final class ScriptRunner: @unchecked Sendable {
             let dt = min(max(now.timeIntervalSince(last), 0), 0.1)
             last = now
             elapsed += dt
-            lastOutput = busy { runtime.tick(t: elapsed, dt: dt, screen: currentScreen, touches: currentTouches, inputs: currentInputs) }
+            lastOutput = busy {
+                runtime.tick(t: elapsed, dt: dt, screen: currentScreen, touches: currentTouches, inputs: currentInputs, data: currentData)
+            }
             onOutput(lastOutput)
             if lastOutput.error != nil { break }
             next = max(next.addingTimeInterval(interval), Date())
