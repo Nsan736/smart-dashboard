@@ -94,7 +94,7 @@ enum ObjectDetail: String, CaseIterable, Identifiable {
         }
     }
 
-    static let initial = ObjectDetail.detailed
+    static let initial = ObjectDetail.veryDetailed
 
     /// 形の数の上限
     var maxShapes: Int {

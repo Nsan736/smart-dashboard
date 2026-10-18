@@ -92,6 +92,107 @@ enum ObjectGeometry {
         return ObjectPoint(v.x * cos(y) + v.y * sin(y), -v.x * sin(y) + v.y * cos(y), v.z)
     }
 
+    /// rotate の逆(ヨー → ピッチ → ロールの順に戻す)
+    static func unrotate(_ p: ObjectPoint, yaw: Double, pitch: Double, roll: Double) -> ObjectPoint {
+        let r = roll * .pi / 180, pt = pitch * .pi / 180, y = yaw * .pi / 180
+        var v = ObjectPoint(p.x * cos(y) - p.y * sin(y), p.x * sin(y) + p.y * cos(y), p.z)
+        v = ObjectPoint(v.x, v.y * cos(pt) + v.z * sin(pt), -v.y * sin(pt) + v.z * cos(pt))
+        return ObjectPoint(v.x * cos(r) - v.z * sin(r), v.y, v.x * sin(r) + v.z * cos(r))
+    }
+
+    /// 形の中心(オブジェクトの中の座標)
+    static func center(of shape: ObjectShape) -> ObjectPoint {
+        ObjectPoint(shape.x, shape.y, shape.z + shape.height / 2)
+    }
+
+    /// 形を囲む、形と同じ向きの箱の8つの角(板は厚さ0なので4つが重なる)
+    static func corners(of shape: ObjectShape) -> [ObjectPoint] {
+        let size = ObjectPoint(shape.width, shape.kind == .plane ? 0 : shape.depth, shape.height)
+        let center = Self.center(of: shape)
+        var result: [ObjectPoint] = []
+        for x in [-0.5, 0.5] {
+            for y in [-0.5, 0.5] {
+                for z in [-0.5, 0.5] {
+                    result.append(rotate(ObjectPoint(x, y, z) * size, yaw: shape.yaw, pitch: shape.pitch, roll: shape.roll) + center)
+                }
+            }
+        }
+        return result
+    }
+
+    /// 隠れた形の判定で、入れ物の形を内側に縮める幅(m)。面に貼った板や、面がちょうど重なる形を隠れた形にしないため
+    static let hiddenMargin = 0.01
+
+    /// 点が形の内側(面から hiddenMargin 以上内側)にあるか。丸い形は、カメラ表示の多角形(12角形)の内側で判定する
+    static func isStrictlyInside(_ point: ObjectPoint, _ shape: ObjectShape) -> Bool {
+        let q = unrotate(point - center(of: shape), yaw: shape.yaw, pitch: shape.pitch, roll: shape.roll)
+        let margin = hiddenMargin
+        let hw = shape.width / 2, hd = shape.depth / 2, hh = shape.height / 2
+        guard abs(q.z) < hh - margin else { return false }
+        // 底面からの高さの割合(円錐・角錐は、上に行くほど細い)
+        let taper = (hh - q.z) / (2 * hh)
+        let polygon = cos(.pi / Double(roundSegments))
+        func insideEllipse(_ rx: Double, _ ry: Double) -> Bool {
+            guard rx > 0, ry > 0 else { return false }
+            return (q.x / rx) * (q.x / rx) + (q.y / ry) * (q.y / ry) < 1
+        }
+        switch shape.kind {
+        case .box:
+            return abs(q.x) < hw - margin && abs(q.y) < hd - margin
+        case .cylinder:
+            return insideEllipse(hw * polygon - margin, hd * polygon - margin)
+        case .cone:
+            return insideEllipse(hw * polygon * taper - margin, hd * polygon * taper - margin)
+        case .pyramid:
+            return abs(q.x) < hw * taper - margin && abs(q.y) < hd * taper - margin
+        case .sphere:
+            // 経度10×緯度6の多面体は、球より少し内側にくぼむので、0.8倍の楕円体で判定する
+            let rx = hw * 0.8 - margin, ry = hd * 0.8 - margin, rz = hh * 0.8 - margin
+            guard rx > 0, ry > 0, rz > 0 else { return false }
+            return (q.x / rx) * (q.x / rx) + (q.y / ry) * (q.y / ry) + (q.z / rz) * (q.z / rz) < 1
+        case .plane:
+            return false
+        }
+    }
+
+    /// ほかの形の中に完全に入っている形の番号(外から見えない形)。形を囲む同じ向きの箱の8つの角が、すべてほかの1つの形の内側にあれば隠れている。
+    /// 入れ物の形は凸なので、角がすべて内側なら形全体が内側。少しでもはみ出す形・面に接する形は対象にしない
+    static func hiddenShapeIndices(of object: ScopeObject) -> [Int] {
+        let shapes = object.shapes
+        let corners = shapes.map { Self.corners(of: $0) }
+        // 角を囲む、軸にそろえた箱(入らないものを先に外して、計算を減らす)
+        let bounds = corners.map { points -> (lo: ObjectPoint, hi: ObjectPoint) in
+            var lo = points[0], hi = points[0]
+            for p in points {
+                lo = ObjectPoint(min(lo.x, p.x), min(lo.y, p.y), min(lo.z, p.z))
+                hi = ObjectPoint(max(hi.x, p.x), max(hi.y, p.y), max(hi.z, p.z))
+            }
+            return (lo, hi)
+        }
+        var hidden: [Int] = []
+        for i in shapes.indices {
+            for j in shapes.indices where j != i && shapes[j].kind != .plane {
+                let inner = bounds[i], outer = bounds[j]
+                guard inner.lo.x > outer.lo.x, inner.lo.y > outer.lo.y, inner.lo.z > outer.lo.z,
+                      inner.hi.x < outer.hi.x, inner.hi.y < outer.hi.y, inner.hi.z < outer.hi.z else { continue }
+                if corners[i].allSatisfy({ isStrictlyInside($0, shapes[j]) }) {
+                    hidden.append(i)
+                    break
+                }
+            }
+        }
+        return hidden
+    }
+
+    /// 指定した番号の形を除いたオブジェクト(形が1つも残らないときは、そのまま)
+    static func removingShapes(_ indices: [Int], from object: ScopeObject) -> ScopeObject {
+        guard !indices.isEmpty else { return object }
+        let removed = Set(indices)
+        var result = object
+        result.shapes = object.shapes.enumerated().filter { !removed.contains($0.offset) }.map { $0.element }
+        return result.shapes.isEmpty ? object : result
+    }
+
     /// 形の面(オブジェクトの中の座標)。low: 丸い形を粗くする
     static func faces(of shape: ObjectShape, low: Bool = false) -> [ObjectFace] {
         let size = ObjectPoint(shape.width, shape.kind == .plane ? 0 : shape.depth, shape.height)
