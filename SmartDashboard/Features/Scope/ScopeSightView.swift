@@ -25,6 +25,11 @@ struct ScopeSightView: View {
     @State private var selectedPlaceID: UUID?
     @State private var showsLayers = false
     @State private var showsManage = false
+    /// 太陽と月: 1日分の計算、表示する日、選んだ時刻(nil なら今)、日時を変えるパネル
+    @State private var skyScene: SkyScene?
+    @State private var skyDay = Date()
+    @State private var skyTime: Date?
+    @State private var showsSkyPanel = false
     @State private var tracker = WaypointTracker()
     @State private var isVisible = false
     /// 電車(電車の表示がオンのときだけ動かす)
@@ -91,6 +96,9 @@ struct ScopeSightView: View {
                         showsCorrection = false
                     }
                 }
+                if has(.sunMoon), showsSkyPanel {
+                    SkyTimePanel(day: $skyDay, time: $skyTime, displayTime: skyDisplayTime, scene: skyScene) { showsSkyPanel = false }
+                }
                 if has(.route), !isRoot || env.route.navigator != nil { guidanceBar }
                 statusBar
             }
@@ -139,6 +147,13 @@ struct ScopeSightView: View {
                             ForEach(SceneryHeightScale.choices, id: \.self) { Text(SceneryHeightScale.label($0)).tag($0) }
                         }
                     }
+                    if has(.sunMoon) {
+                        Button {
+                            showsSkyPanel.toggle()
+                        } label: {
+                            Label("太陽と月の日時を変える", systemImage: "clock")
+                        }
+                    }
                     Button {
                         showsCorrection.toggle()
                     } label: {
@@ -159,6 +174,23 @@ struct ScopeSightView: View {
         .onChange(of: layers) { _, _ in
             // 重ねる表示を変えたら、電車・景色の取得と計算を始める・止める
             if isVisible { startAll() }
+        }
+        .task(id: skyKey) {
+            // 太陽と月の1日分は、日付か場所(約1km)か稜線が変わったときだけ作る(メインスレッドの外で)
+            guard has(.sunMoon), let point = userPoint else {
+                skyScene = nil
+                return
+            }
+            let skyline = showsScenery ? env.scenery.scene?.skyline : nil
+            let day = skyDay
+            let scene = await Task.detached(priority: .utility) { () -> SkyScene in
+                var horizon: ((Double) -> Double?)?
+                if let skyline {
+                    horizon = { bearing in skyline.horizonAngle(atBearing: bearing) }
+                }
+                return SkyScene.make(day: day, latitude: point.latitude, longitude: point.longitude, horizon: horizon)
+            }.value
+            skyScene = scene
         }
         .onAppear {
             isVisible = true
@@ -254,9 +286,26 @@ struct ScopeSightView: View {
         env.movement.isVirtual ? env.movement.currentPoint : tracker.coordinate.map { GeoPoint($0) }
     }
 
+    /// 太陽と月の1日分を作り直す目印(日付・約1kmの場所・稜線の計算の時刻)
+    private var skyKey: String {
+        guard has(.sunMoon), let point = userPoint else { return "off" }
+        let day = Int(SkyEvents.startOfDay(skyDay).timeIntervalSince1970)
+        let skyline = showsScenery ? env.scenery.scene?.computedAt.timeIntervalSince1970 ?? 0 : 0
+        return "\(day)|\((point.latitude * 100).rounded())|\((point.longitude * 100).rounded())|\(Int(skyline))"
+    }
+
+    /// 太陽と月を描く時刻(時刻を選んでいなければ今。今日以外の日は、その日の今の時刻)
+    private var skyDisplayTime: Date {
+        if let skyTime { return skyTime }
+        let now = Date()
+        if Calendar.japan.isDate(skyDay, inSameDayAs: now) { return now }
+        return SkyEvents.startOfDay(skyDay).addingTimeInterval(now.timeIntervalSince(SkyEvents.startOfDay(now)))
+    }
+
     /// カメラ表示に重ねる景色とオブジェクト
     private var extras: ScopeExtras {
         var extras = ScopeExtras(scenery: sceneryScene, sceneryOptions: sceneryOptions)
+        if has(.sunMoon), let skyScene { extras.sky = SkyRenderer.DrawInput(scene: skyScene, time: skyDisplayTime) }
         extras.onMountain = { mountainDetail = $0 }
         if showsObjects, let user = userPoint {
             // 位置のデバッグの間は、仮想の位置の地面 + 手の高さから見る
@@ -380,6 +429,7 @@ struct ScopeSightView: View {
         case .trains?: return mode == .camera ? "電車をカメラで見る" : "電車のコンパス"
         case .scenery?: return mode == .camera ? "景色をカメラで見る" : "景色のコンパス"
         case .objects?: return mode == .camera ? "オブジェクトをカメラで見る" : "オブジェクトのコンパス"
+        case .sunMoon?: return mode == .camera ? "太陽と月をカメラで見る" : "太陽と月のコンパス"
         case nil: return "スコープ"
         }
     }
@@ -432,6 +482,9 @@ struct ScopeSightView: View {
                                  longitude: placement.longitude, color: ObjectColor.color(item.object.shapes.first?.color ?? ObjectShape.defaultColor),
                                  altitude: ground.map { $0 + placement.heightAboveGround + item.height * placement.scale / 2 })
             }
+        case .sunMoon:
+            // 太陽と月は、カメラ表示で専用の描き方で描く(地上の地点ではないので、印にしない)
+            return []
         }
     }
 
@@ -593,6 +646,18 @@ struct ScopeSightView: View {
                             }
                         }
                         HeadingCorrectionBadge(offset: env.settings.headingOffset)
+                        if has(.sunMoon), skyTime != nil || !Calendar.japan.isDate(skyDay, inSameDayAs: Date()) {
+                            Button {
+                                showsSkyPanel = true
+                            } label: {
+                                Text("\(SkyText.dateTime(skyDisplayTime)) の空")
+                                    .font(.caption.weight(.semibold))
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(.thinMaterial, in: Capsule())
+                            }
+                            .buttonStyle(.plain)
+                        }
                         Spacer()
                     }
                     .frame(maxWidth: .infinity, alignment: .trailing)
@@ -745,6 +810,16 @@ struct ScopeSightView: View {
 
     // MARK: - 精度の表示
 
+    /// 太陽と月の1行(日の出・日の入り、月の満ち欠け)
+    private func skySummary(_ scene: SkyScene) -> String {
+        var parts: [String] = []
+        if let rise = scene.sunriseText() { parts.append(rise) }
+        if let set = scene.sunsetText() { parts.append(set) }
+        parts.append("月 \(Int((Astronomy.moonPhase(skyDisplayTime).illumination * 100).rounded()))%")
+        if !scene.hasTerrain { parts.append("稜線なし(地平線での時刻)") }
+        return "太陽と月: " + parts.joined(separator: "・")
+    }
+
     /// 電車の表示の状態(対象の路線と本数)
     private var trainStatusText: String {
         let settings = env.settings
@@ -794,6 +869,9 @@ struct ScopeSightView: View {
             }
             if has(.places) || has(.scenery) {
                 Text(observerText)
+            }
+            if has(.sunMoon), let skyScene {
+                Text(skySummary(skyScene))
             }
             if has(.trains) {
                 if env.movement.isVirtual {

@@ -8,6 +8,8 @@ enum ScopeLayer: String, CaseIterable, Codable, Identifiable {
     case route
     case trains
     case scenery
+    /// 太陽と月(v0.9.30)
+    case sunMoon
 
     var id: String { rawValue }
 
@@ -19,6 +21,7 @@ enum ScopeLayer: String, CaseIterable, Codable, Identifiable {
         case .route: return "経路"
         case .trains: return "電車"
         case .scenery: return "景色"
+        case .sunMoon: return "太陽と月"
         }
     }
 
@@ -30,6 +33,7 @@ enum ScopeLayer: String, CaseIterable, Codable, Identifiable {
         case .route: return "figure.walk"
         case .trains: return "tram"
         case .scenery: return "mountain.2"
+        case .sunMoon: return "sun.and.horizon"
         }
     }
 
@@ -42,6 +46,7 @@ enum ScopeLayer: String, CaseIterable, Codable, Identifiable {
         case .route: return "経路の目的地・曲がり角"
         case .trains: return "電車"
         case .scenery: return "山"
+        case .sunMoon: return "太陽・月"
         }
     }
 
@@ -49,7 +54,7 @@ enum ScopeLayer: String, CaseIterable, Codable, Identifiable {
         switch self {
         case .places, .nearby, .objects: return .marks
         case .route, .trains: return .movement
-        case .scenery: return .sky
+        case .scenery, .sunMoon: return .sky
         }
     }
 
@@ -92,6 +97,7 @@ struct ScopeLayerPreset: Identifiable, Equatable {
         ScopeLayerPreset(name: "電車", symbol: "tram", layers: [.trains, .places]),
         ScopeLayerPreset(name: "景色", symbol: "mountain.2", layers: [.scenery], sceneryLayers: [.mountains, .skyline]),
         ScopeLayerPreset(name: "周辺の施設", symbol: "building.2", layers: [.nearby, .places]),
+        ScopeLayerPreset(name: "空", symbol: "sun.and.horizon", layers: [.scenery, .sunMoon], sceneryLayers: [.mountains, .skyline]),
     ]
 }
 
@@ -147,7 +153,7 @@ struct ScopeLayerPickerView: View {
                 } header: {
                     Text("おすすめ")
                 } footer: {
-                    Text("歩く=地点・経路、電車=電車・地点、景色=山・稜線、周辺の施設=周辺・地点")
+                    Text("歩く=地点・経路、電車=電車・地点、景色=山・稜線、周辺の施設=周辺・地点、空=景色・太陽と月")
                 }
                 ForEach(ScopeLayerGroup.allCases) { group in
                     Section(group.label) {
@@ -161,11 +167,6 @@ struct ScopeLayerPickerView: View {
                                 SceneryLayerToggles()
                                     .padding(.leading, 24)
                             }
-                        }
-                        if group == .sky {
-                            Text("太陽と月は、次の版で加わります。")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -212,7 +213,11 @@ struct ScopeManageView: View {
             Section {
                 ForEach(ScopeLayer.allCases) { layer in
                     NavigationLink {
-                        ScopeManageDetail(layer: layer)
+                        if layer == .sunMoon {
+                            SkyDetailView()
+                        } else {
+                            ScopeManageDetail(layer: layer)
+                        }
                     } label: {
                         Label(layer.label, systemImage: layer.symbol)
                     }
@@ -220,7 +225,7 @@ struct ScopeManageView: View {
             } header: {
                 Text("一覧と設定")
             } footer: {
-                Text("地点の登録、周辺の施設の検索、経路の取得、電車の対象、景色の範囲、オブジェクトを作る・置く(文章から作るを含む)は、ここから開きます。")
+                Text("地点の登録、周辺の施設の検索、経路の取得、電車の対象、景色の範囲、オブジェクトを作る・置く(文章・写真から作るを含む)、太陽と月の出入りとダイヤモンド富士の予報は、ここから開きます。")
             }
             Section {
                 NavigationLink {

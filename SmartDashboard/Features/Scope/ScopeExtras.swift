@@ -2,6 +2,8 @@ import SwiftUI
 
 /// カメラ表示の Canvas に、地点・電車の印と一緒に描くもの(景色とオブジェクト)。印より先に(奥に)描く。
 struct ScopeExtras {
+    /// 太陽と月(景色より奥に描く)
+    var sky: SkyRenderer.DrawInput?
     var scenery: SceneryScene?
     var sceneryOptions = SceneryDrawOptions(layers: [], showsHiddenMountains: true)
     var objects: ObjectDrawInput?
@@ -16,6 +18,9 @@ struct ScopeExtras {
 
     /// 景色(遠く)→ オブジェクトの順に描く
     func draw(_ context: inout GraphicsContext, attitude: CameraAttitude, tangents: (horizontal: Double, vertical: Double), size: CGSize) {
+        if let sky {
+            SkyRenderer.draw(&context, input: sky, attitude: attitude, tangents: tangents, size: size)
+        }
         if let scenery {
             SceneryRenderer.draw(&context, layout: SceneryRenderer.layout(scene: scenery, options: sceneryOptions, attitude: attitude,
                                                                           tangents: tangents, size: size))
