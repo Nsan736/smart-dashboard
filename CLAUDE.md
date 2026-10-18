@@ -10,7 +10,7 @@ iOS向けの個人用「手元ダッシュボード」アプリ。SwiftUI製。A
 
 ## 現在の状況と引き継ぎ
 
-- 最新のリリースは **v0.9.18**(2026-10-18)。**v1.0.0 は、利用者が判断したときに付ける。それまでは 0.9.x で進める**(次は v0.9.19)。勝手に 1.0.0 にしない
+- 最新のリリースは **v0.9.19**(2026-10-18)。**v1.0.0 は、利用者が判断したときに付ける。それまでは 0.9.x で進める**(次は v0.9.20)。勝手に 1.0.0 にしない
 - 新しい会話で作業を続けるときは、まず [docs/handoff.md](docs/handoff.md) を読む。次の内容をまとめてある
   - 実装済みの機能の一覧
   - 実機(iPhone SE 第2世代、LiveContainer)で確認済みの点と、まだ未確認の点。開発機は Windows で実機がないので、画面・センサー・MapKit・カメラの動作は、利用者の報告に頼っている。未確認のものを「動く」と書かない
@@ -213,10 +213,24 @@ iOS向けの個人用「手元ダッシュボード」アプリ。SwiftUI製。A
   - 検索(`ToolSearch`): 名前・説明・カテゴリ・キーワードが対象。小文字化、全角→半角、カタカナ→ひらがな、空白・長音・中点の除去で、表記ゆれを吸収する。複数の語は、すべて含むものだけ
   - タイマーとストップウォッチは、小ツールの中に移した(`TimerTabView(initialMode:)`)。保存済みのタイマー(`TimerStore`)と、ホームのタイマーのカードは、そのまま。以前の「タイマー」のタブの位置は、保存済みの並びの中で「小ツール」に置き換える(`TabOrder.decode`)
   - JSONで読み込むツール(`CustomTool`、形式の説明は docs/tools-format.md、サンプルは examples/tools/。サンプルと同じものをテストのフィクスチャ tool_*.json にも置いてある)
-    - プログラムは実行しない。決まった型(計算型 calc / リスト型 list / 表型 table / チェックリスト型 checklist)に中身を当てはめるだけ。通信・位置情報・カメラ・ファイル・アプリのほかのデータに触れる項目は、形式に存在しない
+    - 計算型 calc / リスト型 list / 表型 table / チェックリスト型 checklist は、プログラムを実行しない。決まった型に中身を当てはめるだけ。通信・位置情報・カメラ・ファイル・アプリのほかのデータに触れる項目は、形式に存在しない。スクリプト型 script(v0.9.19)だけは JavaScript を動かす(下の「スクリプト型」)
     - 計算式は、アプリ専用の評価器(`ToolExpression`。再帰下降の構文解析 → 木を評価)。四則演算、べき乗、括弧、比較、論理、`if`、数学関数、丸め、`days`。NSExpression と JavaScript は使わない。上限は、式の長さ500文字、入れ子32段、計算5000回。ループも再帰もない。`if` と `&&` `||` は、必要な側だけを計算する
     - 検証(`CustomToolParser`): JSONSerialization で読み、項目ごとに確かめて、誤りを場所つき(`outputs[1].formula` など)で返す。全体200KB、入力欄20、出力20、項目500、行1000、列12まで。真偽値を数として受け取らない。式は、読み込みの時点で構文・変数・関数・引数の数を確かめる
     - 読み込みは、「ファイル」アプリ、クリップボード、https のURL(ボタンを押したときだけ。`HTTPClient` 経由で、受信量の記録は「その他」)。保存する前に、内容(名前・型・入力欄・式)を確認する画面を出す。保存は、もとのJSONのまま Application Support の custom-tools.json に入れる(キャッシュ削除では消さない)。書き出し(共有)、JSONの編集、削除ができる
+  - スクリプト型(v0.9.19、`Features/Tools/Script`)。JavaScriptCore(JSContext)で動かす。外部のライブラリは使わない。形式と API の説明は docs/tools-format.md の「スクリプト型」(Claude の system prompt にもそのまま入る)
+    - 形式(`ScriptToolContent`): script(100,000文字まで)、controls(入力の部品、20個まで、`ScriptControlSpec`)、controlsPosition(top/bottom)、fps(15〜60、初期値30)、aspect(幅÷高さ)。決まった関数 setup / frame(t, dt) / onTouch(event) / onInput(name, value) / onStop をアプリが呼ぶ。1コマの中は onInput → onTouch → frame の順で、描いた命令がつながって1枚になる(毎コマ描き直す。何も描かなければ前の表示のまま)
+    - スクリプトが使えるのは、アプリが渡した関数(`ScriptRuntime.installNatives` の __native。土台の JavaScript `ScriptPrelude` が読み込み時に global から消す)と、ScriptPrelude の中のもの(ctx、image、canvas、ui、sound、haptic、storage、random、screen、console)だけ。JSContext には fetch・XMLHttpRequest・setTimeout などが元からなく、渡してもいない(テストで確かめている)
+    - 描画: ctx は Canvas 2D に近い API。命令は JavaScript の側で Float64Array に数として貯め(文字は番号の表で送る)、1コマの終わりに1回だけアプリが読む(`ScriptRuntime.finish`、JSObjectGetTypedArrayBytesPtr でまとめて写す)。`ScriptDrawDecoder` が描画の命令 `ScriptDrawOp` に変え(色・書体の読み取りはキャッシュ、1コマ20,000命令まで、知らない命令で止める)、`ScriptRenderer` が SwiftUI の Canvas(GraphicsContext)1枚に描く。PNG の書き出しも同じ描き方(ImageRenderer)
+    - 画像: image.create(w, h, Uint8ClampedArray) で RGBA の CGImage(`ScriptImageStore`)。1枚1〜1024px、32枚まで、合計32MBまで。image.exportPNG(補間なしで整数倍、16倍まで)、canvas.exportPNG(幅4096pxまで)で共有シート
+    - 音(`ScriptSoundPlayer`、`ScriptSynth`): 効果音のプリセット8種と単音(20〜8000Hz、2秒まで)、1秒に20回まで。メトロノームと同じ .playback + .mixWithOthers、セッションが .playback か .playAndRecord ならカテゴリーを変えず、止めるときもセッションを非アクティブにしない。振動は `ScriptHaptics`
+    - 保存領域(`ScriptStorage`): ツールごとに Application Support/script-storage/ツールのID.json。キーと JSON の文字列、合計256KB、キー100文字・1000個まで。書くのは2秒ごとと閉じたとき、一時ファイルに書いてから置き換える(.atomic)。プレビューと試しの実行は端末に書かない。ツールを削除すると消す
+    - スレッド(`ScriptRunner`): 専用の Thread(スタック8MB)で、JSContext を作るのも呼ぶのもそのスレッドだけ。fps に合わせて frame を呼び、結果(`ScriptOutput`: 描画の命令、画像、ログ、部品の変更、音、振動、書き出し、エラー)をメインスレッドに渡す(`ScriptSession.apply`)。触れたこと・部品の変更は次のコマの前に渡す(動かしたことはまとめる)。バックグラウンドでは止める
+    - 固まったとき: 呼び出しの間は `ScriptRunner.busySince` に時刻を入れ、画面の側が0.5秒ごとに見て、2秒以上なら「応答なし」と閉じるボタン(閉じると実行を打ち切る。スレッドは戻ったところで終わる)。実行時間の制限 JSContextGroupSetExecutionTimeLimit は公開のヘッダーにない関数なので、利用者の判断で、実行時に dlsym で探して使う(`ScriptTimeLimit`。見つからなければ使わない)。1回の呼び出しが5秒を超えたら JavaScriptCore が打ち切り、ツールを止めて「無限ループの可能性」と出す
+    - 落ちたとき(`ScriptRunGuard`、`ToolLibrary.crashedScript`): 実行を始める前に Application Support/script-running.json に「実行中のツール」を書き(.atomic)、閉じたとき・バックグラウンドに回ったとき・エラーで止まったときに消す。起動したときに残っていれば、そのツールを開かずに「前回このツールの実行中に止まりました」(`ScriptCrashRecoveryView`、「もう一度試す」「無効にする」「削除する」)。メモリの使いすぎで落ちた場合も同じ。無効にしたツールは `AppSettings.disabledScriptTools`、設定の「小ツール」に「スクリプト型のツールをすべて止める」(`scriptToolsStopped`)
+    - データを壊さない: ツールの一覧(custom-tools.json)・保存領域・実行中の記録はどれも .atomic で書く。設定は UserDefaults。スクリプトの実行中に書くのは、そのツールの保存領域と実行中の記録だけ
+    - 読み込みの確認(`ScriptPreviewSection`): 「スクリプトを含みます」、コード(20,000文字まで表示)、「保存する前に動かしてみる」(プレビュー。保存領域を使わない)。書き出し・読み込み(ファイル、クリップボード、URL)は既存のまま
+    - Claude での作成(`ToolGenerator`): system prompt に script 型の使い分けと注意を足した。形式の検証を通ったスクリプト型は、構文(JSCheckScriptSyntax)と、試しの実行(`ScriptTrial`: 専用のスレッドで setup・2秒分のコマ・触れる・部品・onStop を早回し、1回の呼び出し2秒・全体8秒まで、音などは出さない)で確かめ、エラーがあれば添えて1回だけ作り直しを頼む。出力の上限は32,000トークン、待つ時間は360秒(`ClaudeRequest.timeout`)
+    - サンプル: examples/tools/src/*.js を `python scripts/build_tool_examples.py` で JSON(examples/tools と、テストのフィクスチャ tool_script_*.json)にする。check_local.py が一致を確かめ、テストが6つとも試しの実行でエラーがないことを確かめる
   - 内蔵ツール(第1弾、v0.9.7): タイマー、ストップウォッチ、日付計算、和暦・西暦・年齢、割り勘、パーセント・割引・消費税、単位換算、進数変換、ルーレット(くじ引きを含む)、サイコロ、コイントス、チーム分け、順番決め、トーナメント表(シードと不戦勝)、カウンター、文字数カウント、文字の変換、パスワード・乱数、懐中電灯
   - 内蔵ツール(第2弾、v0.9.8): 時間計算、世界時計、あみだくじ、スコアボード、メトロノーム。ロジックは `MoreToolLogic.swift`、画面は `MoreToolViews.swift` と `PlayToolViews.swift`
     - 世界時計の時差と夏時間は、iOS のタイムゾーンのデータ(TimeZone)から求める。通信しない。都市の表は `WorldClock.cities`
