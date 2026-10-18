@@ -83,22 +83,18 @@ enum SkyEvents {
                                horizon: (Double) -> Double?) -> (rise: SkyEvent?, set: SkyEvent?) {
         let start = startOfDay(day)
         let end = start.addingTimeInterval(86_400)
-        var unknown = false
         let value: (Date) -> Double = { date in
             let position = body.horizontal(date, latitude: latitude, longitude: longitude)
             // 稜線の高さは見かけの高さ(大気の屈折を含む)。上の縁(月は中心)が稜線に一致する所
             let edge = body == .sun ? body.semidiameter(date) : 0
-            guard let ridge = horizon(position.azimuth) else {
-                unknown = true
-                return position.apparentAltitude + edge
-            }
-            return position.apparentAltitude + edge - max(ridge, 0)
+            return position.apparentAltitude + edge - max(horizon(position.azimuth) ?? 0, 0)
         }
         let event: (Date) -> SkyEvent = { SkyEvent(date: $0, azimuth: body.horizontal($0, latitude: latitude, longitude: longitude).azimuth) }
+        // 稜線が分からない方角での出入りは、求めない(地平線での時刻だけを出す)
+        let known: (SkyEvent) -> Bool = { horizon($0.azimuth) != nil }
         // 山の陰に何度か出入りすることがあるので、出は最初、入りは最後
-        let rise = crossings(from: start, to: end, step: 120, rising: true, value: value).first.map(event)
-        let set = crossings(from: start, to: end, step: 120, rising: false, value: value).last.map(event)
-        if unknown, rise == nil, set == nil { return (nil, nil) }
+        let rise = crossings(from: start, to: end, step: 120, rising: true, value: value).first.map(event).flatMap { known($0) ? $0 : nil }
+        let set = crossings(from: start, to: end, step: 120, rising: false, value: value).last.map(event).flatMap { known($0) ? $0 : nil }
         return (rise, set)
     }
 
