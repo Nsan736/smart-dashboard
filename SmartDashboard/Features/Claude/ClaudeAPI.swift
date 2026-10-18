@@ -109,7 +109,7 @@ enum ClaudeContent: Equatable, Sendable {
 }
 
 /// Web 検索の出典(答えの中の引用)
-struct ClaudeCitation: Equatable, Sendable, Identifiable {
+struct ClaudeCitation: Codable, Equatable, Sendable, Identifiable {
     var title: String
     var url: String
     /// 引用した部分(150文字まで)

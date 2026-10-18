@@ -40,7 +40,20 @@ struct ObjectListView: View {
     var body: some View {
         @Bindable var settings = env.settings
         let store = env.objects
+        let compose = env.objectCompose
         List {
+            if compose.isRunning || compose.unseenID != nil {
+                // 文章から作っている間と、できたあと(タップで作る画面に戻る)
+                Section {
+                    ClaudeWorkBanner(isRunning: compose.isRunning, hasResult: compose.unseenID != nil,
+                                     runningText: "オブジェクトを作成中…(\(compose.progress.stage))",
+                                     doneText: "オブジェクトができました(確認する)") {
+                        if let id = compose.unseenID { compose.open(id) }
+                        showsCompose = true
+                    }
+                }
+                .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8))
+            }
             Section {
                 NavigationLink {
                     ScopeSightView(mode: .camera, source: .objects)

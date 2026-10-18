@@ -63,6 +63,10 @@ final class AppEnvironment {
     /// スコープの「周辺」と「経路」(どちらも MapKit が通信する)
     let nearby = NearbyStore()
     let route = RouteStore()
+    /// Claude で作る作業(画面を閉じても続け、結果は「最近作ったもの」に残す)
+    let objectCompose = ObjectComposeJob()
+    let toolCompose = ToolComposeJob()
+    let scopeAsk = ScopeAskJob()
     /// 背面カメラ。セッションの設定を使い回すため、アプリ全体で1つ。
     let camera = CameraController()
     let keeper: BackgroundKeeper

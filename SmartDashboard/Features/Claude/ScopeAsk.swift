@@ -49,8 +49,8 @@ struct ScopeAskOptions: Equatable {
 }
 
 /// 1回の質問と答え
-struct ScopeAskExchange: Identifiable, Equatable {
-    let id = UUID()
+struct ScopeAskExchange: Codable, Identifiable, Equatable {
+    var id = UUID()
     var question: String
     var answer: String?
     var error: String?

@@ -24,7 +24,12 @@ struct ScopeSightView: View {
     @State private var trainFeed = ScopeTrainFeed(reason: "scope.sight")
     @State private var trainDetail: ScopeTrainDetailSheet.Target?
     /// 「撮って聞く」(止めた映像で Claude に聞く)
-    @State private var askSession: ScopeAskSession?
+    @State private var showsAsk = false
+    @State private var showsAskRecents = false
+    /// 最近聞いたことの一覧から会話を選んだ(一覧を閉じたあとに、聞く画面を出す)
+    @State private var opensAskAfterRecents = false
+    /// 方角の補正の操作を出す
+    @State private var showsCorrection = false
     @State private var isCapturing = false
     @State private var captureError: String?
     /// タップした山
@@ -55,6 +60,11 @@ struct ScopeSightView: View {
         }
         .safeAreaInset(edge: .bottom) {
             VStack(spacing: 0) {
+                if showsCorrection {
+                    ScopeHeadingCorrectionPanel(azimuth: mode == .camera ? tracker.attitude?.azimuth : nil, landmarks: landmarks) {
+                        showsCorrection = false
+                    }
+                }
                 if source == .route { guidanceBar }
                 statusBar
             }
@@ -85,6 +95,16 @@ struct ScopeSightView: View {
                                 if isVisible { startAll() }
                             }))
                         }
+                    }
+                    Button {
+                        showsCorrection.toggle()
+                    } label: {
+                        Label("方角を補正", systemImage: "location.north.line")
+                    }
+                    Button {
+                        showsAskRecents = true
+                    } label: {
+                        Label("最近聞いたこと(撮って聞く)", systemImage: "clock.arrow.circlepath")
                     }
                 } label: {
                     Label("表示の設定", systemImage: "line.3.horizontal.decrease.circle")
@@ -152,15 +172,23 @@ struct ScopeSightView: View {
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
             }
         }
-        .fullScreenCover(item: $askSession) { session in
-            ScopeAskView(snapshot: session.snapshot)
+        .fullScreenCover(isPresented: $showsAsk) {
+            ScopeAskView()
         }
-        .onChange(of: askSession == nil) { _, closed in
-            // 聞いている間は、カメラ・GPS・モーションを止める(閉じたら再開)
-            if closed {
-                if isVisible { startAll() }
-            } else {
+        .sheet(isPresented: $showsAskRecents, onDismiss: {
+            if opensAskAfterRecents {
+                opensAskAfterRecents = false
+                showsAsk = true
+            }
+        }) {
+            ScopeAskRecentsView { opensAskAfterRecents = true }
+        }
+        .onChange(of: showsAsk) { _, shows in
+            // 聞いている間は、カメラ・GPS・モーションを止める(閉じたら再開。答えは閉じても待ち続ける)
+            if shows {
                 stopAll()
+            } else if isVisible {
+                startAll()
             }
         }
     }
@@ -240,12 +268,31 @@ struct ScopeSightView: View {
             }
         }
         let coordinate = tracker.coordinate
-        askSession = ScopeAskSession(snapshot: ScopeAskSnapshot(
+        env.scopeAsk.begin(ScopeAskSnapshot(
             image: image, heading: attitude?.azimuth, pitch: attitude?.elevation,
             latitude: coordinate?.latitude, longitude: coordinate?.longitude, placeName: nil,
             targets: inView, takenAt: Date(),
             // 答えの場所が写る範囲の中かを確かめるため(端末の中だけで使う)
             halfFieldOfView: atan(tangents.horizontal) * 180 / .pi))
+        showsAsk = true
+    }
+
+    /// 方角の補正で合わせる目印(表示している印、景色の山、置いたオブジェクト)
+    private var landmarks: [HeadingCorrection.Landmark] {
+        var result = currentTargets.map { HeadingCorrection.Landmark(name: $0.mark.name, bearing: $0.bearing) }
+        if showsScenery, let scene = env.scenery.scene {
+            result += scene.mountains.filter { !$0.isHidden }.prefix(30).map {
+                HeadingCorrection.Landmark(name: $0.entry.displayName, bearing: $0.bearing)
+            }
+        }
+        if showsObjects, let user = userPoint {
+            result += env.objects.visiblePlacements.map { placement in
+                HeadingCorrection.Landmark(name: placement.name,
+                                           bearing: WaypointMath.bearing(fromLatitude: user.latitude, longitude: user.longitude,
+                                                                         toLatitude: placement.latitude, longitude: placement.longitude))
+            }
+        }
+        return result
     }
 
     /// 電車の位置を計算する基準の現在地(位置のデバッグの間は、仮想の位置)
@@ -426,6 +473,26 @@ struct ScopeSightView: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .trailing)
                     .padding(12)
+                    if showsCorrection, !env.settings.headingDebugEnabled {
+                        // 方角の補正: 目印を合わせる、画面の中央の十字
+                        Image(systemName: "plus")
+                            .font(.system(size: 44, weight: .thin))
+                            .foregroundStyle(.yellow)
+                            .shadow(color: .black, radius: 1)
+                            .allowsHitTesting(false)
+                    }
+                    VStack(alignment: .trailing, spacing: 6) {
+                        if !showsAsk, env.scopeAsk.isThinking || env.scopeAsk.hasUnseenAnswer {
+                            ClaudeWorkBanner(isRunning: env.scopeAsk.isThinking, hasResult: env.scopeAsk.hasUnseenAnswer,
+                                             runningText: "撮って聞く: 答えを待っています…", doneText: "撮って聞く: 答えが届きました(確認する)") {
+                                showsAsk = true
+                            }
+                        }
+                        HeadingCorrectionBadge(offset: env.settings.headingOffset)
+                        Spacer()
+                    }
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .padding(8)
                     if env.settings.headingDebugEnabled {
                         // 東西南北の印と水平線を、地点と同じ投影でそのまま描く(実際の方角と重なるかを見る)
                         ScopeCompassRoseOverlay(attitude: attitude, tangents: tangents)
@@ -468,6 +535,7 @@ struct ScopeSightView: View {
                     note("この環境ではカメラを使えないため、コンパス表示にしています。")
                 }
                 if let heading = tracker.compassHeading {
+                    HeadingCorrectionBadge(offset: env.settings.headingOffset)
                     if env.settings.waypointShowsHeading {
                         Text("\(WaypointMath.compassPoint(heading)) \(Int(heading.rounded()))°")
                             .font(.title2.weight(.bold))

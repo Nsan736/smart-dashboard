@@ -33,7 +33,7 @@ targets:
         NSMotionUsageDescription: 歩数、気圧、傾きの表示にモーションデータを使います。
         UIBackgroundModes:
           - audio
-        NSCameraUsageDescription: 登録した地点の方向を、カメラの映像に重ねて表示するためにカメラを使います。映像は保存しません。「撮って聞く」を使ったときだけ、その1枚を Claude API に送ります。
+        NSCameraUsageDescription: 登録した地点の方向を、カメラの映像に重ねて表示するためにカメラを使います。映像は保存しません。「撮って聞く」を使ったときだけ、その1枚を Claude API に送り、縮めた画像を「最近聞いたこと」として端末に保存します。
         NSMicrophoneUsageDescription: 周囲の騒音レベルの目安を表示するためにマイクを使います。録音データは保存しません。
     settings:
       base:

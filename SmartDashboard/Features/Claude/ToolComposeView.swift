@@ -1,61 +1,57 @@
 import SwiftUI
 
 /// 小ツールを文章から作る・文章で直す。できた JSON は、保存する前に既存の確認の画面(ToolImportView)で見てもらう。
+/// 作る作業は `ToolComposeJob`(アプリ全体で1つ)が持つので、閉じても作るのは続き、結果は「最近作ったもの」に残る
 struct ToolComposeView: View {
-    enum Mode {
-        case create
-        /// 今のツールを直す(今の JSON と、もとのツールの ID)
-        case revise(json: String, id: String)
-    }
+    typealias Mode = ToolComposeMode
 
     /// 確認の画面に渡す JSON
     private struct Draft: Identifiable {
         let id = UUID()
         var json: String
+        var editingID: String?
+        var recordID: UUID
     }
 
     @Environment(AppEnvironment.self) private var env
     @Environment(\.dismiss) private var dismiss
-    let mode: Mode
-    @State private var instruction = ""
-    @State private var task: Task<Void, Never>?
-    @State private var generation: ToolGeneration?
-    @State private var errorText: String?
+    /// nil なら、今の作業のまま(帯から開いたとき)
+    let mode: Mode?
     @State private var draft: Draft?
+    @State private var recordToDelete: ToolComposeRecord?
 
-    private var isWorking: Bool { task != nil }
-
-    private var isRevising: Bool {
-        if case .revise = mode { return true }
-        return false
+    init(mode: Mode? = nil) {
+        self.mode = mode
     }
 
     var body: some View {
+        let job = env.toolCompose
+        @Bindable var bindable = job
         NavigationStack {
             Form {
                 Section {
-                    TextEditor(text: $instruction)
+                    TextEditor(text: $bindable.instruction)
                         .frame(minHeight: 140)
-                        .disabled(isWorking)
+                        .disabled(job.isRunning)
                 } header: {
-                    Text(isRevising ? "どう直すか" : "作りたいツール")
+                    Text(job.isRevising ? "どう直すか" : "作りたいツール")
                 } footer: {
-                    Text(isRevising
+                    Text(job.isRevising
                          ? "例: 「入力欄に燃料の単価を足して、1kmあたりの費用も出して」。今の JSON と、この文を Claude に送ります。"
                          : "例: 「車の燃費と、1kmあたりのガソリン代を計算するツール」「今日の夕飯を決めるルーレット(和食・中華・洋食・麺類)」「出てくる的をタップするゲーム」。動きや描画が必要なものは、スクリプト型(JavaScript)で作ります。この文を Claude に送ります。")
                 }
                 Section {
-                    if isWorking {
+                    if job.isRunning {
                         HStack(spacing: 8) {
                             ProgressView()
                             Text("考え中…").foregroundStyle(.secondary)
                             Spacer()
-                            Button("取り消し", role: .cancel) { task?.cancel() }
+                            Button("中止", role: .destructive) { job.cancel() }
                                 .buttonStyle(.bordered)
                         }
                     } else {
-                        Button(isRevising ? "直してもらう" : "作ってもらう") { start() }
-                            .disabled(instruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        Button(job.isRevising ? "直してもらう" : "作ってもらう") { start() }
+                            .disabled(job.instruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                     if let reason = env.claude.blockReason {
                         Label(reason.localizedDescription, systemImage: "exclamationmark.triangle")
@@ -63,103 +59,150 @@ struct ToolComposeView: View {
                             .foregroundStyle(.orange)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                    if let errorText {
+                    if let errorText = job.errorText, !job.isRunning {
                         Label(errorText, systemImage: "exclamationmark.triangle")
                             .font(.footnote)
                             .foregroundStyle(.orange)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 } footer: {
-                    Text("Claude(\(env.settings.claude.model)、思考\(env.settings.claude.thinkingForTools ? "あり" : "なし"))が、小ツールの形式に沿った JSON を作ります。返ってきた JSON はアプリで検証し(スクリプト型は、構文と、試しに数秒動かしたときのエラーも)、誤りがあれば誤りを添えて1回だけ作り直してもらいます。スクリプト型は長くなるので、数分かかることがあります。保存する前に、内容を確認する画面が出ます。")
+                    Text("Claude(\(env.settings.claude.model)、思考\(env.settings.claude.thinkingForTools ? "あり" : "なし"))が、小ツールの形式に沿った JSON を作ります。返ってきた JSON はアプリで検証し(スクリプト型は、構文と、試しに数秒動かしたときのエラーも)、誤りがあれば誤りを添えて1回だけ作り直してもらいます。スクリプト型は長くなるので、数分かかることがあります。画面を閉じても作るのは続き、小ツールの一覧の上の帯から戻れます。保存する前に、内容を確認する画面が出ます。")
                 }
-                if let generation { resultSections(generation) }
+                if let record = job.recents.entry(job.viewingID) { resultSections(record) }
+                recentsSection(job)
             }
             .keyboardDismissable()
-            .navigationTitle(isRevising ? "文章で直す" : "文章から作る")
+            .navigationTitle(job.isRevising ? "文章で直す" : "文章から作る")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("閉じる") {
-                        task?.cancel()
-                        dismiss()
-                    }
+                    // 閉じても、作るのはやめない
+                    Button("閉じる") { dismiss() }
                 }
             }
-            .sheet(item: $draft, onDismiss: closeIfSaved) { draft in
-                ToolImportView(json: draft.json, editingID: editingID)
+            .sheet(item: $draft, onDismiss: markIfSaved) { draft in
+                ToolImportView(json: draft.json, editingID: draft.editingID)
             }
-            .onDisappear { task?.cancel() }
+            .confirmationDialog("この結果を捨てますか?", isPresented: Binding(get: { recordToDelete != nil }, set: { if !$0 { recordToDelete = nil } }),
+                                titleVisibility: .visible) {
+                Button("捨てる", role: .destructive) {
+                    if let recordToDelete { job.discard(recordToDelete.id) }
+                    recordToDelete = nil
+                }
+            } message: {
+                Text("最近作ったものの一覧からも消えます。")
+            }
+            .onAppear {
+                if let mode { job.prepare(mode) }
+                job.isShowing = true
+            }
+            .onDisappear { job.isShowing = false }
         }
     }
 
-    private var editingID: String? {
-        if case .revise(_, let id) = mode { return id }
-        return nil
-    }
-
     @ViewBuilder
-    private func resultSections(_ generation: ToolGeneration) -> some View {
+    private func resultSections(_ record: ToolComposeRecord) -> some View {
         Section {
-            switch generation.outcome {
-            case .valid(let json, let tool):
-                Label("「\(tool.name)」ができました(\(tool.kind.label))", systemImage: "checkmark.circle")
+            if record.isValid {
+                Label("「\(record.toolName ?? "ツール")」ができました(\(record.kindLabel ?? ""))", systemImage: "checkmark.circle")
                     .foregroundStyle(.green)
-                Button("内容を確認して保存する") { draft = Draft(json: json) }
-            case .invalid(let json, let issues):
-                Label("2回作ってもらいましたが、形式の誤りが残りました(\(issues.count)件)", systemImage: "xmark.octagon")
+                if let savedAt = record.savedAt {
+                    Text("保存しました(\(ClaudeRecentList.dateText(savedAt)))").font(.footnote).foregroundStyle(.secondary)
+                }
+                Button("内容を確認して保存する") { draft = Draft(json: record.json, editingID: record.reviseID, recordID: record.id) }
+            } else {
+                Label("2回作ってもらいましたが、形式の誤りが残りました(\(record.issues.count)件)", systemImage: "xmark.octagon")
                     .foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)
-                ForEach(issues.prefix(10)) { issue in
+                ForEach(record.issues.prefix(10)) { issue in
                     VStack(alignment: .leading, spacing: 2) {
                         Text(issue.path).font(.caption.monospaced()).foregroundStyle(.secondary)
                         Text(issue.message).font(.footnote).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                Button("JSONを開いて手で直す") { draft = Draft(json: json) }
+                Button("JSONを開いて手で直す") { draft = Draft(json: record.json, editingID: record.reviseID, recordID: record.id) }
+            }
+            Button("同じ文で作り直す") {
+                env.toolCompose.restoreInput(from: record)
+                start()
+            }
+            .disabled(env.toolCompose.isRunning)
+            Button("捨てる", role: .destructive) { recordToDelete = record }
+        } header: {
+            Text("結果(\(ClaudeRecentList.dateText(record.createdAt)))")
+        } footer: {
+            Text("呼び出し\(record.attempts)回: " + record.usage.summary + "・" + ClaudePricing.text(record.cost))
+        }
+    }
+
+    private func recentsSection(_ job: ToolComposeJob) -> some View {
+        Section {
+            if job.recents.entries.isEmpty {
+                Text("まだありません").foregroundStyle(.secondary)
+            }
+            ForEach(job.recents.entries) { record in
+                HStack(alignment: .top, spacing: 8) {
+                    Button {
+                        job.open(record.id)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(record.instruction).font(.subheadline).foregroundStyle(Color.primary).lineLimit(2)
+                            Text(recentCaption(record)).font(.caption).foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .buttonStyle(.plain)
+                    if record.id == job.viewingID {
+                        Image(systemName: "eye").foregroundStyle(Color.accentColor)
+                    }
+                    Button(role: .destructive) {
+                        recordToDelete = record
+                    } label: {
+                        Image(systemName: "trash")
+                    }
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel("一覧から消す")
+                }
             }
         } header: {
-            Text("結果")
+            Text("最近作ったもの(\(ClaudeRecentList.limit)件まで)")
         } footer: {
-            Text("呼び出し\(generation.attempts)回: " + generation.usage.summary + "・" + ClaudePricing.text(generation.cost))
+            Text("作った結果は、捨てるか一覧から消すまで残ります。タップすると開き直して、保存・作り直しができます。")
         }
+    }
+
+    private func recentCaption(_ record: ToolComposeRecord) -> String {
+        var parts = [ClaudeRecentList.dateText(record.createdAt), record.reviseID == nil ? "作成" : "修正", ClaudePricing.text(record.cost)]
+        if let name = record.toolName { parts.insert(name, at: 1) }
+        if !record.isValid { parts.append("誤りあり") }
+        parts.append(record.savedAt == nil ? "未保存" : "保存済み")
+        return parts.joined(separator: "・")
     }
 
     private func start() {
-        guard !isWorking else { return }
-        errorText = nil
-        generation = nil
+        let job = env.toolCompose
         if let reason = env.claude.blockReason {
-            errorText = reason.localizedDescription
+            job.reportBlocked(reason.localizedDescription)
             return
-        }
-        let text = instruction.trimmingCharacters(in: .whitespacesAndNewlines)
-        let messages: [ClaudeMessage]
-        switch mode {
-        case .create: messages = ToolGenerator.createMessages(description: text)
-        case .revise(let json, _): messages = ToolGenerator.reviseMessages(currentJSON: json, instruction: text)
         }
         let settings = env.settings.claude
         let service = env.claude
-        task = Task {
-            do {
-                // スクリプト型は、構文と、試しに数秒動かしたときのエラーも確かめる
-                generation = try await ToolGenerator.run(messages: messages, model: settings.model, thinking: settings.thinkingForTools,
-                                                         format: ToolGenerator.formatDocument,
-                                                         validate: { await ScriptTrial.issues(for: $0) }) { request in
-                    try await service.call(request)
-                }
-            } catch is CancellationError {
-                errorText = "取り消しました(Claude 側で処理が進んでいた分は、料金がかかることがあります)"
-            } catch {
-                errorText = error.localizedDescription
-            }
-            task = nil
+        // スクリプト型は、構文と、試しに数秒動かしたときのエラーも確かめる
+        job.start(model: settings.model, thinking: settings.thinkingForTools,
+                  validate: { await ScriptTrial.issues(for: $0) },
+                  call: { try await service.call($0) })
+    }
+
+    /// 確認の画面で保存したら、保存済みにする
+    private func markIfSaved() {
+        guard let recordID = draft?.recordID ?? lastDraftRecordID, let record = env.toolCompose.recents.entry(recordID),
+              let tool = record.tool else { return }
+        if env.tools.customSources[tool.id] == record.json {
+            env.toolCompose.markSaved(recordID)
+            dismiss()
         }
     }
 
-    /// 確認の画面で保存したら、この画面も閉じる
-    private func closeIfSaved() {
-        guard let generation, case .valid(let json, let tool) = generation.outcome else { return }
-        if env.tools.customSources[tool.id] == json { dismiss() }
-    }
+    /// onDismiss の時点では draft が nil になっているので、開いた結果は viewingID から引く
+    private var lastDraftRecordID: UUID? { env.toolCompose.viewingID }
 }

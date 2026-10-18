@@ -2,46 +2,79 @@ import CoreLocation
 import SafariServices
 import SwiftUI
 
-/// 「撮って聞く」の1回分(全画面で出すための入れ物)
-struct ScopeAskSession: Identifiable {
-    let id = UUID()
-    var snapshot: ScopeAskSnapshot
-}
-
-/// 止めた映像の上で、指で囲んで Claude に聞く。画像は端末に保存せず、画面を閉じたら捨てる。
+/// 止めた映像の上で、指で囲んで Claude に聞く。会話は `ScopeAskJob`(アプリ全体で1つ)が持つので、
+/// 閉じても答えを待ち続け、会話は「最近聞いたこと」に残る(画像は縮めたものだけを保存する)。
 struct ScopeAskView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.dismiss) private var dismiss
-    @State private var snapshot: ScopeAskSnapshot
-    /// 確定した囲み(画像のピクセル)。なければ画像全体を送る。
-    @State private var shape: [CGPoint]?
     /// 取り消しのための、前の囲み
     @State private var undoStack: [[CGPoint]?] = []
     /// 描いている途中の線
     @State private var stroke: [CGPoint] = []
     @State private var questionText = ""
-    @State private var exchanges: [ScopeAskExchange] = []
-    /// 送った画像(続けて質問するときも同じものを送る)。囲みを変えたら作り直す。
-    @State private var jpeg: Data?
-    @State private var task: Task<Void, Never>?
     @State private var notice: String?
+    @State private var confirmDiscard = false
     /// 出典を開く(SFSafariViewController)
     @State private var openedURL: ScopeAskURL?
     /// 地点に登録する場所
     @State private var registering: ScopeAskPlaceTarget?
     @FocusState private var isQuestionFocused: Bool
 
-    init(snapshot: ScopeAskSnapshot) {
-        _snapshot = State(initialValue: snapshot)
-    }
-
-    private var isThinking: Bool { task != nil }
+    private var isThinking: Bool { env.scopeAsk.isThinking }
+    private var shape: [CGPoint]? { env.scopeAsk.live?.shape }
+    private var exchanges: [ScopeAskExchange] { env.scopeAsk.live?.exchanges ?? [] }
 
     var body: some View {
         NavigationStack {
-            GeometryReader { geometry in
+            Group {
+                if let live = env.scopeAsk.live {
+                    content(live.snapshot)
+                } else {
+                    Text("会話がありません").foregroundStyle(.secondary)
+                }
+            }
+            .navigationTitle("撮って聞く")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    // 閉じても、答えを待ち続ける
+                    Button("閉じる") { dismiss() }
+                }
+                ToolbarItem(placement: .destructiveAction) {
+                    Button("捨てる", role: .destructive) { confirmDiscard = true }
+                        .disabled(env.scopeAsk.live == nil)
+                }
+            }
+            .confirmationDialog("この会話を捨てますか?", isPresented: $confirmDiscard, titleVisibility: .visible) {
+                Button("捨てる", role: .destructive) {
+                    env.scopeAsk.discardCurrent()
+                    dismiss()
+                }
+            } message: {
+                Text("最近聞いたことの一覧からも消えます。")
+            }
+            .keyboardDismissable()
+            .task {
+                // 地名は、送る設定のときだけ求める(500m以内で求めた地名があれば通信しない)
+                guard env.settings.claude.sendsPlace, let snapshot = env.scopeAsk.live?.snapshot, snapshot.placeName == nil,
+                      let latitude = snapshot.latitude, let longitude = snapshot.longitude else { return }
+                env.scopeAsk.setPlaceName(await env.placeNames.name(latitude: latitude, longitude: longitude))
+            }
+            .onAppear { env.scopeAsk.isShowing = true }
+            .onDisappear { env.scopeAsk.isShowing = false }
+            .sheet(item: $openedURL) { item in
+                ScopeAskSafariView(url: item.url).ignoresSafeArea()
+            }
+            .sheet(item: $registering) { target in
+                ScopeAskPlaceSheet(target: target)
+            }
+        }
+    }
+
+    private func content(_ snapshot: ScopeAskSnapshot) -> some View {
+        GeometryReader { geometry in
                 VStack(spacing: 0) {
-                    imageArea
+                    imageArea(snapshot)
                         .frame(height: geometry.size.height * 0.45)
                     drawingControls
                     Divider()
@@ -60,36 +93,11 @@ struct ScopeAskView: View {
                     }
                 }
             }
-            .navigationTitle("撮って聞く")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("閉じる") {
-                        task?.cancel()
-                        dismiss()
-                    }
-                }
-            }
-            .keyboardDismissable()
-            .task {
-                // 地名は、送る設定のときだけ求める(500m以内で求めた地名があれば通信しない)
-                guard env.settings.claude.sendsPlace, snapshot.placeName == nil,
-                      let latitude = snapshot.latitude, let longitude = snapshot.longitude else { return }
-                snapshot.placeName = await env.placeNames.name(latitude: latitude, longitude: longitude)
-            }
-            .onDisappear { task?.cancel() }
-            .sheet(item: $openedURL) { item in
-                ScopeAskSafariView(url: item.url).ignoresSafeArea()
-            }
-            .sheet(item: $registering) { target in
-                ScopeAskPlaceSheet(target: target)
-            }
-        }
     }
 
     // MARK: - 画像と囲み
 
-    private var imageArea: some View {
+    private func imageArea(_ snapshot: ScopeAskSnapshot) -> some View {
         GeometryReader { geometry in
             let imageSize = CGSize(width: snapshot.image.width, height: snapshot.image.height)
             let frame = Self.fittedFrame(imageSize: imageSize, in: geometry.size)
@@ -142,7 +150,7 @@ struct ScopeAskView: View {
 
     private var drawingControls: some View {
         HStack(spacing: 12) {
-            Text(shape == nil ? "指で丸く囲むと、その部分だけを送ります(囲まなければ全体)" : "囲んだ部分だけを送ります")
+            Text(drawingText)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -166,21 +174,21 @@ struct ScopeAskView: View {
         .padding(.vertical, 6)
     }
 
+    private var drawingText: String {
+        if env.scopeAsk.live?.isRestored == true {
+            return "保存してあるのは縮めた画像(長い辺\(ScopeAskRecord.thumbnailEdge)px)です。続けて質問すると、この画像を送ります"
+        }
+        return shape == nil ? "指で丸く囲むと、その部分だけを送ります(囲まなければ全体)" : "囲んだ部分だけを送ります"
+    }
+
     private func setShape(_ new: [CGPoint]?) {
         undoStack.append(shape)
         applyShape(new)
     }
 
     private func applyShape(_ new: [CGPoint]?) {
-        shape = new
-        // 画像が変わるので、前のやり取りは続けない
-        if jpeg != nil {
-            jpeg = nil
-            if !exchanges.isEmpty {
-                exchanges = []
-                notice = "囲みを変えたので、新しい画像として聞きます"
-            }
-        }
+        // 画像が変わるので、前のやり取りは続けない(前の会話は「最近聞いたこと」に残る)
+        if let text = env.scopeAsk.setShape(new) { notice = text }
     }
 
     /// 画像を、領域の中に縦横比を保って収めた位置
@@ -216,7 +224,7 @@ struct ScopeAskView: View {
                     ProgressView()
                     Text("考え中…").foregroundStyle(.secondary)
                     Spacer()
-                    Button("取り消し", role: .cancel) { task?.cancel() }
+                    Button("中止", role: .destructive) { env.scopeAsk.cancel() }
                         .buttonStyle(.bordered)
                 }
             }
@@ -258,8 +266,9 @@ struct ScopeAskView: View {
     /// 答えで特定した場所と、撮った方向との照合
     @ViewBuilder
     private func placeView(_ place: ScopeAskPlace, exchange: ScopeAskExchange) -> some View {
-        let check = ScopeAskPlaceCheck.evaluate(place: place, observerLatitude: snapshot.latitude, observerLongitude: snapshot.longitude,
-                                                heading: snapshot.heading, halfFieldOfView: snapshot.halfFieldOfView)
+        let snapshot = env.scopeAsk.live?.snapshot
+        let check = ScopeAskPlaceCheck.evaluate(place: place, observerLatitude: snapshot?.latitude, observerLongitude: snapshot?.longitude,
+                                                heading: snapshot?.heading, halfFieldOfView: snapshot?.halfFieldOfView)
         VStack(alignment: .leading, spacing: 4) {
             if place.hasCoordinate {
                 Label("\(place.name)(確からしさ: \(place.confidence?.label ?? "低"))", systemImage: "mappin.and.ellipse")
@@ -354,54 +363,10 @@ struct ScopeAskView: View {
         isQuestionFocused = false
         notice = nil
         let question = ScopeAsk.question(questionText)
-        if let reason = env.claude.blockReason {
-            exchanges.append(ScopeAskExchange(question: question, error: reason.localizedDescription))
-            return
-        }
         let settings = env.settings.claude
-        if jpeg == nil {
-            jpeg = ScopeAskImage.prepare(snapshot.image, shape: shape, maxEdge: settings.imageEdge(isExpensive: env.network.status.isExpensive))
-        }
-        guard let jpeg else {
-            exchanges.append(ScopeAskExchange(question: question, error: "画像を用意できませんでした"))
-            return
-        }
-        let options = ScopeAskOptions(settings)
-        let context = ScopeAsk.contextText(snapshot, options: options)
-        let messages = ScopeAsk.messages(jpeg: jpeg, context: context, history: exchanges, question: question)
-        let request = ScopeAsk.request(messages: messages, settings: settings)
-        var pending = ScopeAskExchange(question: question)
-        pending.sentSummary = ScopeAsk.sentSummary(ScopeAsk.sentItems(snapshot, options: options))
-        let exchange = pending
-        exchanges.append(exchange)
-        questionText = ""
         let service = env.claude
-        task = Task {
-            var updated = exchange
-            do {
-                let result = try await ScopeAsk.ask(request) { try await service.call($0) }
-                updated.usage = result.response.usage
-                updated.cost = result.cost
-                updated.citations = result.response.citations
-                var notes: [String] = []
-                if result.searchFallback { notes.append("Web 検索を使う依頼が受け付けられなかったため、検索なしで答えています") }
-                if result.response.searchErrors.contains("max_uses_exceeded") { notes.append("Web 検索の上限(\(settings.webSearchMaxUses)回)に達しました") }
-                if result.response.stopReason == "pause_turn" { notes.append("検索に時間がかかったため、途中までの答えです") }
-                updated.note = notes.isEmpty ? nil : notes.joined(separator: "。")
-                let extracted = ScopeAskPlace.extract(from: result.response.text)
-                updated.place = extracted.place
-                if extracted.answer.isEmpty {
-                    updated.error = ClaudeError.emptyAnswer(stopReason: result.response.stopReason).localizedDescription
-                } else {
-                    updated.answer = extracted.answer
-                }
-            } catch is CancellationError {
-                updated.error = "取り消しました"
-            } catch {
-                updated.error = error.localizedDescription
-            }
-            if let index = exchanges.firstIndex(where: { $0.id == exchange.id }) { exchanges[index] = updated }
-            task = nil
-        }
+        env.scopeAsk.send(question: question, settings: settings, imageEdge: settings.imageEdge(isExpensive: env.network.status.isExpensive),
+                          blockReason: env.claude.blockReason?.localizedDescription) { try await service.call($0) }
+        questionText = ""
     }
 }

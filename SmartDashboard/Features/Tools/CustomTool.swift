@@ -78,7 +78,7 @@ struct CustomTool: Equatable, Identifiable {
 }
 
 /// 形式の誤り。どこが違うかが分かるように、場所(path)を付ける。
-struct ToolIssue: Equatable, Identifiable {
+struct ToolIssue: Codable, Equatable, Identifiable {
     var path: String
     var message: String
     var id: String { path + message }

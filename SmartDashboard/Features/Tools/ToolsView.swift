@@ -125,13 +125,28 @@ struct ToolsView: View {
     @State private var query = ""
     @State private var isImporting = false
     @State private var isComposing = false
+    /// 帯から、作っている途中・できた結果の画面に戻る
+    @State private var isResuming = false
     @State private var showsSamples = false
 
     var body: some View {
         let library = env.tools
         let all = library.all
+        let compose = env.toolCompose
         NavigationStack {
             List {
+                if compose.isRunning || compose.unseenID != nil {
+                    // 文章から作っている間と、できたあと(タップで作る画面に戻る)
+                    Section {
+                        ClaudeWorkBanner(isRunning: compose.isRunning, hasResult: compose.unseenID != nil,
+                                         runningText: compose.isRevising ? "ツールを直しています…" : "ツールを作成中…",
+                                         doneText: "ツールができました(確認する)") {
+                            if let id = compose.unseenID { compose.open(id) }
+                            isResuming = true
+                        }
+                    }
+                    .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8))
+                }
                 if query.trimmingCharacters(in: .whitespaces).isEmpty {
                     let favorites = library.favorites.compactMap { id in all.first { $0.id == id } }
                     if !favorites.isEmpty {
@@ -179,6 +194,7 @@ struct ToolsView: View {
             .navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented: $isImporting) { ToolImportView() }
             .sheet(isPresented: $isComposing) { ToolComposeView(mode: .create) }
+            .sheet(isPresented: $isResuming) { ToolComposeView() }
             .sheet(isPresented: $showsSamples) { ToolSamplesView() }
         }
     }

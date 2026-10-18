@@ -1,8 +1,8 @@
 import Foundation
 
 /// Claude の答えの最後の、決まった形の場所(<place>{...}</place>)。特定できないときは座標を持たない。
-struct ScopeAskPlace: Equatable {
-    enum Confidence: String, CaseIterable {
+struct ScopeAskPlace: Codable, Equatable {
+    enum Confidence: String, Codable, CaseIterable {
         case high
         case medium
         case low
