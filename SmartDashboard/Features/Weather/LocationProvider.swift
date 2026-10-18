@@ -26,6 +26,14 @@ final class LocationProvider: NSObject, CLLocationManagerDelegate {
         manager.desiredAccuracy = kCLLocationAccuracyHundredMeters
     }
 
+    /// 最後に分かった位置(iOS が覚えている値を読むだけで、測位も許可の確認もしない)。許可がなければ nil。
+    var lastKnown: CLLocation? {
+        switch manager.authorizationStatus {
+        case .authorizedWhenInUse, .authorizedAlways: return manager.location
+        default: return nil
+        }
+    }
+
     func currentLocation() async throws -> CLLocation {
         if manager.authorizationStatus == .notDetermined {
             manager.requestWhenInUseAuthorization()

@@ -57,6 +57,11 @@ final class PlaceNameResolver {
         return place
     }
 
+    /// 保存してある地名だけを引く(問い合わせはしない)。500m以内になければ nil。
+    func cachedPlace(latitude: Double, longitude: Double) -> GeocodedPlace? {
+        Self.nearest(in: entries, latitude: latitude, longitude: longitude, within: Self.reuseDistance)
+    }
+
     func clear() {
         entries = []
         defaults.removeObject(forKey: Self.key)

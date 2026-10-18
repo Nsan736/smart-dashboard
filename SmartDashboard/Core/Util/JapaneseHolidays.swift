@@ -54,15 +54,20 @@ enum JapaneseHolidays {
     }
 
     static func isHoliday(year: Int, month: Int, day: Int) -> Bool {
-        if isBaseHoliday(year: year, month: month, day: day) { return true }
-        guard let date = makeDate(year, month, day) else { return false }
+        holidayName(year: year, month: month, day: day) != nil
+    }
+
+    /// 祝日の名前(振替休日・国民の休日を含む)。祝日でなければ nil。
+    static func holidayName(year: Int, month: Int, day: Int) -> String? {
+        if let name = baseHolidayName(year: year, month: month, day: day) { return name }
+        guard let date = makeDate(year, month, day) else { return nil }
         let weekday = calendar.component(.weekday, from: date)
 
         // 振替休日: 直前に連続する祝日をさかのぼり、その中に日曜があれば休み
         if weekday != 1 {
             var cursor = date
             while let prev = calendar.date(byAdding: .day, value: -1, to: cursor), isBase(prev) {
-                if calendar.component(.weekday, from: prev) == 1 { return true }
+                if calendar.component(.weekday, from: prev) == 1 { return "振替休日" }
                 cursor = prev
             }
         }
@@ -71,30 +76,37 @@ enum JapaneseHolidays {
            let prev = calendar.date(byAdding: .day, value: -1, to: date),
            let next = calendar.date(byAdding: .day, value: 1, to: date),
            isBase(prev), isBase(next) {
-            return true
+            return "国民の休日"
         }
-        return false
+        return nil
     }
 
     private static func isBase(_ date: Date) -> Bool {
         let c = calendar.dateComponents([.year, .month, .day], from: date)
-        return isBaseHoliday(year: c.year ?? 0, month: c.month ?? 0, day: c.day ?? 0)
+        return baseHolidayName(year: c.year ?? 0, month: c.month ?? 0, day: c.day ?? 0) != nil
     }
 
-    private static func isBaseHoliday(year y: Int, month m: Int, day d: Int) -> Bool {
+    private static func baseHolidayName(year y: Int, month m: Int, day d: Int) -> String? {
         switch (m, d) {
-        case (1, 1), (2, 11), (2, 23), (4, 29), (5, 3), (5, 4), (5, 5), (8, 11), (11, 3), (11, 23):
-            return true
-        default:
-            break
+        case (1, 1): return "元日"
+        case (2, 11): return "建国記念の日"
+        case (2, 23): return "天皇誕生日"
+        case (4, 29): return "昭和の日"
+        case (5, 3): return "憲法記念日"
+        case (5, 4): return "みどりの日"
+        case (5, 5): return "こどもの日"
+        case (8, 11): return "山の日"
+        case (11, 3): return "文化の日"
+        case (11, 23): return "勤労感謝の日"
+        default: break
         }
-        if m == 1, d == nthMonday(2, year: y, month: 1) { return true }
-        if m == 7, d == nthMonday(3, year: y, month: 7) { return true }
-        if m == 9, d == nthMonday(3, year: y, month: 9) { return true }
-        if m == 10, d == nthMonday(2, year: y, month: 10) { return true }
-        if m == 3, d == springEquinoxDay(y) { return true }
-        if m == 9, d == autumnEquinoxDay(y) { return true }
-        return false
+        if m == 1, d == nthMonday(2, year: y, month: 1) { return "成人の日" }
+        if m == 7, d == nthMonday(3, year: y, month: 7) { return "海の日" }
+        if m == 9, d == nthMonday(3, year: y, month: 9) { return "敬老の日" }
+        if m == 10, d == nthMonday(2, year: y, month: 10) { return "スポーツの日" }
+        if m == 3, d == springEquinoxDay(y) { return "春分の日" }
+        if m == 9, d == autumnEquinoxDay(y) { return "秋分の日" }
+        return nil
     }
 
     static func springEquinoxDay(_ year: Int) -> Int {
