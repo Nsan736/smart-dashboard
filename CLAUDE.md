@@ -10,7 +10,7 @@ iOS向けの個人用「手元ダッシュボード」アプリ。SwiftUI製。A
 
 ## 現在の状況と引き継ぎ
 
-- 最新のリリースは **v0.9.17**(2026-10-18)。**v1.0.0 は、利用者が判断したときに付ける。それまでは 0.9.x で進める**(次は v0.9.18)。勝手に 1.0.0 にしない
+- 最新のリリースは **v0.9.18**(2026-10-18)。**v1.0.0 は、利用者が判断したときに付ける。それまでは 0.9.x で進める**(次は v0.9.19)。勝手に 1.0.0 にしない
 - 新しい会話で作業を続けるときは、まず [docs/handoff.md](docs/handoff.md) を読む。次の内容をまとめてある
   - 実装済みの機能の一覧
   - 実機(iPhone SE 第2世代、LiveContainer)で確認済みの点と、まだ未確認の点。開発機は Windows で実機がないので、画面・センサー・MapKit・カメラの動作は、利用者の報告に頼っている。未確認のものを「動く」と書かない
@@ -278,7 +278,7 @@ iOS向けの個人用「手元ダッシュボード」アプリ。SwiftUI製。A
     - 対象の路線(`AppSettings.scopeTrainTarget`): 登録した路線(初期値)か、現在地から一定の距離(初期値3km、`scopeTrainRadiusKm`)以内を通る路線(路線の線までの距離。時刻表を保存している路線だけ)。列車は近い順に上限まで(初期値20本、`scopeTrainMaxCount`)。選び方は `ScopeTrainSelection`
     - 1秒ごとに計算し(`ScopeTrainFeed`)、前の計算との差から線に沿った速さを出して、描く時刻の分だけ先へ進める(`ScopeTrain.headAlong(at:)`、1.5秒まで)。描画は今の仕組み(端末の向きの更新)のまま
     - 接近中: 走っていて、進行方向と、列車から現在地への方向の差が90度より小さい(`ScopeTrainSelection.isApproaching`)
-    - カメラ表示: 近い列車(8本まで、600m以内)は電車の形。先頭から線路の形に沿って後ろへ、20m×両数の車両の箱(幅2.8m・高さ3.5m)を並べ、車両ごとに線路の向きにする(`ScopeTrainGeometry`)。8つの角を投影し(`ScopeTrainRenderer.project`)、見えている面(側面・前後・屋根)を塗って輪郭線。色は路線の色、遅れがあれば輪郭を遅れの色、先頭の車両の側面を明るく。車両ごとに、その位置の線路の高さ − 自分の目の高さに箱の下を置く(v0.9.17、`ScopeTrainRenderer.Heights`)。線路の高さか自分の高さが分からなければ、地面(目の高さから手の高さだけ下)。遠い車両は地球の丸みの分だけ下げる。地下の区間の車両は、塗らずに半透明の破線の輪郭だけ(`drawsAsOutline`。リングの印も半透明)。どれかの角がカメラの後ろ(奥行き1m未満)に回る車両は描かない。画面の外の部分は Canvas が切り取る
+    - カメラ表示: 近い列車(8本まで、600m以内)は電車の形。先頭から線路の形に沿って後ろへ、20m×両数の車両の箱(幅2.8m・高さ3.5m)を並べ、車両ごとに線路の向きにする(`ScopeTrainGeometry`)。8つの角を投影し(`ScopeTrainRenderer.project`)、見えている面(側面・前後・屋根)を塗って輪郭線。色は路線の色、遅れがあれば輪郭を遅れの色、先頭の車両の側面を明るく。車両ごとに、その位置の線路の高さ − 自分の目の高さに箱の下を置く(v0.9.17、`ScopeTrainRenderer.Heights`)。線路の高さか自分の高さが分からなければ、地面(目の高さから手の高さだけ下)。遠い車両は地球の丸みの分だけ下げる。地下の区間の車両は、赤の半透明の塗り(不透明度0.3、カメラの映像が透けて見える濃さ)と赤の破線の輪郭(v0.9.18。`drawsAsOutline`、`ScopeUndergroundStyle`。リングの印も薄くして内側を赤)。どれかの角がカメラの後ろ(奥行き1m未満)に回る車両は描かない。画面の外の部分は Canvas が切り取る
     - 遠い列車(600mより遠い、先頭の車両が画面で5pt未満、9本目以降)は、進行方向の矢印が入ったリングの印(地点の印と同じ大きさの規則)。1枚の Canvas に、遠い列車(車両)から描く。印の近くに「種別・行先・距離・高低差」と「高さは目安」「接近中」「地下鉄」(`ScopeTrain.caption`。例「急 西馬込行 350m ↑8m 接近中」「各停 渋谷行 1.2km 地下 ↓15m」。高低差は線路の高さ − 自分の目の高さ。区間の種類か地面の標高か自分の高さが分からなければ「高さは目安」。「地下鉄」は、地下かどうかが分からない地下鉄の路線の列車だけ)
     - タップは、描くときと同じ配置で位置を計算して判定し(`ScopeTrainRenderer.hit`)、移動タブと同じ列車の詳細(`TrainSelectionCard`)をシートで出す
     - 両数(v0.9.17、`TrainCarResolver` / `TrainCarCatalog`、`Resources/railway_cars.json`): 時刻表の odpt:carComposition(`LineSchedule.Train.cars`。2026-10-18の時点では、どの事業者のデータにもない)→ 設定の路線ごとの上書き(`scopeCarOverrides`、設定の「路線ごとの両数」`TrainCarSettingsView`。初期値は表の値)→ 表の規則(停車駅・列車番号の末尾・種別・行先)→ 表の両数 → 路線の種類ごとの目安(`scopeCarCounts`。表にない路線)
@@ -289,6 +289,20 @@ iOS向けの個人用「手元ダッシュボード」アプリ。SwiftUI製。A
     - 地図: 移動タブの地図(`TrainLiveMapView`)をそのまま使い、スコープの列車だけを出す(`TrainLiveBoard.restricted(to:)`。表示範囲は別に覚える `memoryKey: "scope.trains"`)
     - 自分の高さ: 地点と同じ決め方(`ElevationStore.observerHeight`。「地点の高さを反映する」がオフなら使わず、電車も地面に置く)。一覧の画面は1回だけの測位の値。仮想の移動の間は、近くの線路(300m以内)の地面の標高 + 手の高さ(`ScopeTrainFeed.trackGroundAltitude`。通信しない)
     - 位置のデバッグ: 仮想の移動の間は、仮想の位置と時刻で計算する。移動タブを離れても仮想の移動が進むように、スコープの電車の画面の表示中は `MovementStore.setVisible(true)` にする(仮想の移動の間だけ)
+- Claude API(v0.9.18、`Features/Claude`)。小ツールを文章から作る・直す機能と、スコープのカメラの「撮って聞く」に使う。使う操作をしたときだけ通信する(自動では呼ばない)
+  - 仕様の確認(2026-10-18、platform.claude.com のドキュメント): Claude Haiku 5.5 の ID は `claude-haiku-5-5`(別名も同じ)。画像の入力に対応。料金は100万トークンあたり 入力0.10ドル・出力0.50ドル・キャッシュの書き込み(5分)0.125ドル・(1時間)0.20ドル・読み込み0.01ドル(プロンプトが10万トークン以下のとき。超えると5倍の料金)。コンテキスト100万、最大出力12.8万。思考は適応的思考で、何も指定しなければオン。`thinking: {"type": "disabled"}` で切れる(effort が high 以下のとき)。`"enabled"`(budget_tokens)は 400 エラー。思考のトークンは出力として課金され、`usage.output_tokens` に含まれ、内訳が `usage.output_tokens_details.thinking_tokens`。思考の文章は初期値で返らない(display: omitted)
+  - 呼び出し(`HTTPClaudeClient`): POST https://api.anthropic.com/v1/messages、ヘッダー x-api-key・anthropic-version: 2023-06-01・content-type: application/json。待つ時間は180秒(思考で時間がかかるため)。`HTTPClient.send(_:)`(v0.9.18 で追加した POST)を通すので、通信量の記録に入る(機能別の「Claude(送信を含む)」。Claude だけは送信量も数える `UsageCategory.countsSentBytes`)。呼び出しは `ClaudeClient` プロトコルで、テストでは決まった応答に差し替える
+  - 依頼(`ClaudeRequest`): 思考は機能ごとの設定で `adaptive` か `disabled`(display は指定しない)。画像は base64 の JPEG。プロンプトキャッシュは cache_control(ephemeral、5分)で、小ツールは system prompt(形式の説明。約3,000トークン、最小の512トークンを超える)、カメラは最初のメッセージの「撮影の状況」の文まで(画像を含む)。思考のブロックは送り返さない(ツールを使わない会話では不要。送り返すと、会話の途中を変えたときに 400 になることがある)
+  - 応答(`ClaudeResponse`): text のブロックをつなげる。usage の input・output・cache_creation_input_tokens・cache_read_input_tokens・output_tokens_details.thinking_tokens を `ClaudeUsage` に入れる。stop_reason が refusal なら拒否として扱う。エラーは本文の error.message を添えて、状態コードで分ける(401 無効なキー、402 支払い、403 権限、429 上限、529 混雑など。`ClaudeError`)
+  - 共通の仕組み(`ClaudeService`、`AppEnvironment.claude`): APIキーは Keychain(`KeychainAccount.claudeAPIKey`)だけに保存し、画面・ログ・リポジトリに出さない。呼ぶ前に、キー・今月の使用額と上限・回線を確かめる(`ClaudeGate`。上限に達したら止めて理由を出す)。使用量は日本時間の月ごとに、呼び出したときの料金で計算した金額と一緒に記録する(`ClaudeLedger`、UserDefaults の claude.ledger、12か月)。金額 = 入力×入力の料金 + 出力(思考を含む)×出力の料金 + キャッシュの書き込み×書き込みの料金 + 読み込み×読み込みの料金(`ClaudePricing.cost`)。10万トークンを超えるプロンプトの高い料金は計算に入れていない(この2機能では超えない)
+  - 設定(`AppSettings.claude` = `ClaudeSettings`、JSON で保存。設定の「AI」→「Claude API」、`ClaudeSettingsView`): APIキー、モデル(初期値 claude-haiku-5-5)、料金(初期値 0.10 / 0.50 / 0.125 / 0.01)、今月の使用量(トークン数と金額)、月の上限額(初期値5ドル)、機能ごとの思考(初期値はどちらもオン)、カメラの質問で送る情報(方角と上下の向き、地名、緯度経度、撮った方向にあるもの。初期値はすべてオン)、画像の長い辺(初期値1024px、モバイル通信のときは768px)
+  - 小ツールを文章から作る・直す(`ToolGenerator`、`ToolComposeView`): 一覧の「文章から作る(Claude)」と、JSONのツールの画面のメニューの「文章で直す(Claude)」(今の JSON と依頼文を送る)。形式の説明は docs/tools-format.md と同じものを `Resources/tools-format.md` に同梱し(check_local.py で一致を確かめる)、system prompt に入れる。応答から JSON を取り出し(コードブロックの記号や前後の文章を除く `extractJSON`)、`CustomToolParser` で検証する。誤りがあれば、1回目の答えと誤りの一覧を添えて、もう1回だけ頼む。それでも誤りがあれば誤りを表示し、手で直せるように JSON を開ける。検証を通ったら、既存の確認の画面(`ToolImportView`)を出し、保存は利用者が押す。1回の作成の呼び出し回数・トークン数・金額を出す
+  - カメラで見えているものを聞く(`ScopeAsk`、`ScopeAskImage`、`ScopeAskView`): カメラ表示の右下の「撮って聞く」。映像の1コマを `AVCaptureVideoDataOutput` から取る(`FrameGrabber`。写真の撮影ではないのでシャッター音は鳴らない。頼んだときだけ画像にし、ふだんのコマはすぐ捨てる。縦向き videoRotationAngle 90)。画面に見えていた範囲(aspectFill)で切り出し、印などの重ね描きは含めない。全画面の質問の画面を出し、その間はカメラ・GPS・モーションを止める
+    - 指で描いた形(1つ)を囲む四角で切り出し、形の外側を黒の80%で暗くし、長い辺を設定の大きさに縮めて JPEG(品質0.8)にする(`ScopeAskImage.render` / `prepare`)。描かなければ画像全体。取り消し(1つ前の囲みに戻す)と描き直し(囲みを消す)。囲みを変えたら、前のやり取りは捨てて新しい画像として聞く
+    - 質問は入力か、よく使う質問のボタン(これは何？、何の建物？、何という山？、文字を読んで)。空なら「これは何ですか？」。一緒に送る情報は `ScopeAsk.contextText`(設定で選んだものだけ。撮った方向にあるものは、スコープで計算している印のうち画面に写る範囲のもの、近い順に15件まで)。地名は `PlaceNameResolver`(天気と共有、500m以内はキャッシュ)
+    - system prompt で、「画像から分かること」と「推測」を分けて答え、分からないときは「分からない」と答えるよう指示する。人物がだれかは答えない
+    - 続けて質問するときは、同じ画像と直近3回のやり取りだけを送る(`ScopeAsk.messages`。失敗したやり取りは送らない)。待っている間は「考え中…」と取り消しのボタン(Task の取り消し → URLSession の取り消し)。1回ごとにトークン数と金額を出す
+    - 撮った画像は端末に保存しない(画面の状態にだけ持ち、閉じたら捨てる)。カメラの許可の説明文(project.yml の NSCameraUsageDescription)に、「撮って聞く」のときだけ送ることを書いた
 - 開発者向け: 運行情報の直近の応答(生のJSON)を1件だけ保存し、設定画面で表示・コピーできる(遅延時のサンプル収集用。追加の通信はしない)
 - 設定: APIトークン、登録した地点・路線・駅・通貨ペア、地図(表示の切り替え、保存エリア、最大ズーム、容量の上限、進捗、削除、再ダウンロード)、自動更新ポリシー、受信バイト数、キャッシュ削除、各データの最終更新時刻
 
@@ -301,7 +315,7 @@ iOS向けの個人用「手元ダッシュボード」アプリ。SwiftUI製。A
 
 ## データ使用量の記録
 
-- `MeteredHTTPClient` が URLSessionTaskMetrics の transactionMetrics(isCellular / isExpensive)で通信1回ごとに回線を判定し、通信先のホストとパスから機能(天気、為替、電車、レーダー、地図タイル、警報・地震)を判定して `DataUsageStore` に記録する。従量制の回線はモバイル通信に含める
+- `MeteredHTTPClient` が URLSessionTaskMetrics の transactionMetrics(isCellular / isExpensive)で通信1回ごとに回線を判定し、通信先のホストとパスから機能(天気、為替、電車、レーダー、地図タイル、警報・地震、スコープ、Claude)を判定して `DataUsageStore` に記録する。従量制の回線はモバイル通信に含める。Claude API だけは、送る画像のほうが大きいので送信量も数える
 - 回線別に分ける前の記録は「回線不明」として残す
 - 地名(CLGeocoder)と Apple Maps の通信はiOSが行うため計測できない。地名は取得回数だけを記録する
 - 任意の設定で、今月のモバイル通信量が上限を超えたら自動更新を止める(初期値オフ)
@@ -314,7 +328,7 @@ iOS向けの個人用「手元ダッシュボード」アプリ。SwiftUI製。A
 
 ## 秘密情報
 
-トークンなどの秘密情報は絶対にコミットしない。フィクスチャにも含めない。`.gitignore` を維持する。
+トークンなどの秘密情報は絶対にコミットしない。フィクスチャにも含めない。`.gitignore` を維持する。Claude の APIキーは利用者が持っていて、開発側には渡さない(動作の確認は、API を呼ばない仮の応答で行う)。check_local.py が sk-ant- で始まる文字列を探す。
 
 ## テスト
 
@@ -347,7 +361,7 @@ iOS向けの個人用「手元ダッシュボード」アプリ。SwiftUI製。A
 - 実行は手動: `gh workflow run ci.yml --ref main`
 - 実行する前に、Swiftの文法や型の誤り、Info.plist・project.yml の整合性を、コードを読んで自分で確認する
 - 同梱データの更新(警報の地域の表 `scripts/update_jma_areas.py`、震度観測点の一覧 `scripts/update_jma_stations.py`、線路の形 `scripts/update_railway_shapes.py`)は手元のスクリプトで行う。Actions では実行しない
-- 実行する前に `python scripts/check_local.py` を通す(フィクスチャのJSON、YAML、ワークフローのトリガー、apps.json生成、括弧の対応、@MainActor の静的メンバーをテストから呼ぶ誤り)。macOSが不要な確認をActionsで回さない
+- 実行する前に `python scripts/check_local.py` を通す(フィクスチャのJSON、YAML、ワークフローのトリガー、apps.json生成、括弧の対応、@MainActor の静的メンバーをテストから呼ぶ誤り、文字列が行の途中で切れていないか、同梱した形式の説明が docs と同じか、Claude の APIキーらしき文字列)。macOSが不要な確認をActionsで回さない
 - 失敗したときは `gh run view --log-failed` でログから原因をまとめて特定し、関連する修正を1回で直してから再実行する。1行ずつ直して何度も回さない
 - 段階の報告には、その段階で Actions を何回実行したかを書く
 
