@@ -9,6 +9,8 @@ struct ScopeHeadingDebugView: View {
     /// 表示に使っている姿勢(平滑化のあと)
     let attitude: CameraAttitude
     let viewSize: CGSize
+    /// 表示している印(遠い順)。近いものの方向と、位置の誤差による方向のずれの目安を出す
+    var targets: [ScopeTarget] = []
 
     /// 表示する1行
     struct Line: Identifiable {
@@ -18,7 +20,7 @@ struct ScopeHeadingDebugView: View {
     }
 
     var body: some View {
-        let report = Self.report(tracker: tracker, attitude: attitude, viewSize: viewSize)
+        let report = Self.report(tracker: tracker, attitude: attitude, viewSize: viewSize, targets: targets)
         VStack(alignment: .leading, spacing: 2) {
             ForEach(report.lines) { line in
                 Text(line.text)
@@ -37,7 +39,8 @@ struct ScopeHeadingDebugView: View {
     }
 
     /// 表示する行と、コンパスと30°以上違うか
-    static func report(tracker: WaypointTracker, attitude: CameraAttitude, viewSize: CGSize) -> (lines: [Line], warns: Bool) {
+    static func report(tracker: WaypointTracker, attitude: CameraAttitude, viewSize: CGSize,
+                       targets: [ScopeTarget] = []) -> (lines: [Line], warns: Bool) {
         var texts: [(String, Bool)] = []
         let diagnostics = tracker.diagnostics
 
@@ -89,8 +92,36 @@ struct ScopeHeadingDebugView: View {
         let orientation = "画面 " + screen + "(\(Int(viewSize.width))×\(Int(viewSize.height)))  シーン " + sceneOrientationText + "  持ち方 " + posture
         texts.append((orientation, false))
 
+        texts += locationLines(tracker: tracker, attitude: attitude, targets: targets)
+
         let lines = texts.enumerated().map { Line(id: $0.offset, text: $0.element.0, emphasized: $0.element.1) }
         return (lines, warns)
+    }
+
+    /// 現在地(精度・何秒前か・おおよそか)と、近い印の方向・距離・位置の誤差による方向のずれの目安(3つまで)
+    static func locationLines(tracker: WaypointTracker, attitude: CameraAttitude, targets: [ScopeTarget]) -> [(String, Bool)] {
+        var texts: [(String, Bool)] = []
+        let accuracy = tracker.horizontalAccuracy
+        var location = "現在地 " + (accuracy.map { "±\(Int($0.rounded()))m" } ?? "なし")
+        if let time = tracker.locationTimestamp {
+            location += "(\(Int(Date().timeIntervalSince(time).rounded()))秒前)"
+        }
+        location += tracker.isReducedAccuracy ? "  おおよその位置" : "  正確な位置"
+        texts.append((location, tracker.isReducedAccuracy))
+        for target in targets.suffix(3).reversed() {
+            let offset = WaypointMath.difference(from: attitude.azimuth, to: target.bearing)
+            let direction = " \(number(target.bearing))°(中央から\(signed(offset))°) "
+            var line = target.mark.name + direction
+            line += WaypointMath.distanceText(target.distance)
+            var emphasized = false
+            if let accuracy {
+                let uncertainty = ScopeLocationCheck.bearingUncertainty(accuracy: accuracy, distance: target.distance)
+                line += "  位置の誤差でのずれ ±\(Int(uncertainty.rounded()))°"
+                emphasized = uncertainty >= ScopeLocationCheck.warningDegrees
+            }
+            texts.append((line, emphasized))
+        }
+        return texts
     }
 
     static func number(_ value: Double) -> String {

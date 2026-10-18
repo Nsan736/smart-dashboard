@@ -12,6 +12,29 @@ struct MotionSample: Equatable {
     var timestamp: TimeInterval
 }
 
+/// 現在地の誤差で、近くのものの方向がどれだけずれうるか。端末の方角が正しくても、現在地がずれていると、
+/// 近い地点・オブジェクトの方向は大きくずれる(遠い山はほとんどずれない)
+enum ScopeLocationCheck {
+    /// 方向のずれの目安(度)。位置の誤差 accuracy(m)、ものまでの距離 distance(m)
+    static func bearingUncertainty(accuracy: Double, distance: Double) -> Double {
+        guard accuracy > 0 else { return 0 }
+        guard distance > accuracy else { return 180 }
+        return asin(accuracy / distance) * 180 / .pi
+    }
+
+    /// これより方向がずれうる、近いものがあるときに知らせる(度)
+    static let warningDegrees = 20.0
+
+    /// 画面に出す注意(なければ nil)。nearest は一番近いものまでの距離
+    static func warning(accuracy: Double?, isReduced: Bool, nearest: Double?) -> String? {
+        if isReduced {
+            return "位置情報が「おおよそ」のため、近くのものの方向が大きくずれます。設定アプリで、このアプリ(LiveContainer)の「正確な位置情報」をオンにしてください"
+        }
+        guard let accuracy, let nearest, bearingUncertainty(accuracy: accuracy, distance: nearest) >= warningDegrees else { return nil }
+        return "位置の精度が±\(Int(accuracy.rounded()))mのため、近くのもの(\(WaypointMath.distanceText(nearest)))の方向がずれることがあります"
+    }
+}
+
 /// 端末の持ち方(重力の向きから決める。画面の向きの判定とは別)
 enum DevicePosture: String, Equatable {
     case portrait = "縦"

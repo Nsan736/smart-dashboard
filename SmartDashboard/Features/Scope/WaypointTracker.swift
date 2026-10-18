@@ -52,6 +52,10 @@ final class WaypointTracker: NSObject, CLLocationManagerDelegate {
     /// GPSの高度(m、CLLocation.altitude。平均海面から)。高さの精度が無効なら nil。
     private(set) var gpsAltitude: Double?
     private(set) var verticalAccuracy: Double?
+    /// 位置を測った時刻(古い位置のままかを、方角のデバッグ表示で見る)
+    private(set) var locationTimestamp: Date?
+    /// 位置の精度が「おおよそ」(正確な位置情報がオフ)。近くのものの方向がずれる
+    private(set) var isReducedAccuracy = false
     /// 端末の上端が向いている方位(真北基準)。コンパス表示に使う。端末を水平に持っていても使える。
     private(set) var compassHeading: Double?
     private(set) var headingAccuracy: Double?
@@ -223,6 +227,7 @@ final class WaypointTracker: NSObject, CLLocationManagerDelegate {
             case .authorizedAlways, .authorizedWhenInUse: if locationAvailability == .denied { locationAvailability = .unknown }
             default: break
             }
+            isReducedAccuracy = manager.accuracyAuthorization == .reducedAccuracy
         }
     }
 
@@ -232,6 +237,8 @@ final class WaypointTracker: NSObject, CLLocationManagerDelegate {
             locationAvailability = .available
             coordinate = location.coordinate
             horizontalAccuracy = location.horizontalAccuracy
+            locationTimestamp = location.timestamp
+            isReducedAccuracy = manager.accuracyAuthorization == .reducedAccuracy
             if location.verticalAccuracy > 0 {
                 gpsAltitude = location.altitude
                 verticalAccuracy = location.verticalAccuracy

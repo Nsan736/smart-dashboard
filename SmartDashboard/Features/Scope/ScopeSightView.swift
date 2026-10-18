@@ -427,9 +427,11 @@ struct ScopeSightView: View {
                     .frame(maxWidth: .infinity, alignment: .trailing)
                     .padding(12)
                     if env.settings.headingDebugEnabled {
+                        // 東西南北の印と水平線を、地点と同じ投影でそのまま描く(実際の方角と重なるかを見る)
+                        ScopeCompassRoseOverlay(attitude: attitude, tangents: tangents)
                         VStack {
                             HStack {
-                                ScopeHeadingDebugView(tracker: tracker, attitude: attitude, viewSize: size)
+                                ScopeHeadingDebugView(tracker: tracker, attitude: attitude, viewSize: size, targets: targets)
                                 Spacer(minLength: 0)
                             }
                             Spacer()
@@ -637,6 +639,10 @@ struct ScopeSightView: View {
             }
             if tracker.usesMagneticNorth, mode == .camera {
                 Text("真北が使えないため、磁北を基準にしています(数度ずれます)")
+            }
+            if let warning = ScopeLocationCheck.warning(accuracy: tracker.horizontalAccuracy, isReduced: tracker.isReducedAccuracy,
+                                                         nearest: currentTargets.last?.distance) {
+                Text(warning).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
             }
         }
         .font(.caption)
