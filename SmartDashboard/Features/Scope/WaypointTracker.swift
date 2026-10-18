@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreImage
 import CoreLocation
 import CoreMotion
 import Foundation
@@ -217,6 +218,8 @@ final class CameraWorker: @unchecked Sendable {
 
     let session = AVCaptureSession()
     private let queue = DispatchQueue(label: "waypoint.camera", qos: .userInitiated)
+    /// 「撮って聞く」のための、映像の1コマの取り出し(写真の撮影ではないので、シャッター音は鳴らない)
+    private let grabber = FrameGrabber()
     /// queue の中でだけ読み書きする
     private var configuration: Configuration?
 
@@ -237,6 +240,11 @@ final class CameraWorker: @unchecked Sendable {
         }
     }
 
+    /// 今の映像の1コマ(縦向き)。映像が動いていなければ nil。
+    func captureFrame() async -> CGImage? {
+        await grabber.next(timeout: 1.5)
+    }
+
     /// 閉じる操作を待たせないよう、結果は待たない
     func stop() {
         queue.async {
@@ -255,6 +263,7 @@ final class CameraWorker: @unchecked Sendable {
         // 重ねて見るだけなので、軽い解像度にする
         if session.canSetSessionPreset(.hd1280x720) { session.sessionPreset = .hd1280x720 }
         session.addInput(input)
+        grabber.attach(to: session)
         session.commitConfiguration()
         let format = device.activeFormat
         let dimensions = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
@@ -333,6 +342,65 @@ final class CameraController {
         generation += 1
         worker.stop()
         if state == .running || state == .starting { state = .idle }
+    }
+
+    /// 今の映像の1コマ(縦向き、印などの重ね描きを含まない元の映像)。動いていなければ nil。
+    func captureFrame() async -> CGImage? {
+        guard state == .running else { return nil }
+        return await worker.captureFrame()
+    }
+}
+
+/// 映像のコマを受け取り、頼まれたときだけ1コマを画像にする。ふだんは何もしない(受け取ったコマはすぐ捨てる)。
+final class FrameGrabber: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, @unchecked Sendable {
+    private let output = AVCaptureVideoDataOutput()
+    private let queue = DispatchQueue(label: "waypoint.camera.frames", qos: .userInitiated)
+    private let lock = NSLock()
+    /// lock の中でだけ読み書きする。頼んだ順の番号 → 待っている呼び出し。
+    private var waiting: [Int: CheckedContinuation<CGImage?, Never>] = [:]
+    private var nextID = 0
+    private lazy var context = CIContext(options: [.cacheIntermediates: false])
+
+    /// セッションの設定の中(beginConfiguration と commitConfiguration の間)で呼ぶ
+    func attach(to session: AVCaptureSession) {
+        output.alwaysDiscardsLateVideoFrames = true
+        output.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
+        output.setSampleBufferDelegate(self, queue: queue)
+        guard session.canAddOutput(output) else { return }
+        session.addOutput(output)
+        // 画面と同じ縦向きのコマにする
+        if let connection = output.connection(with: .video), connection.isVideoRotationAngleSupported(90) {
+            connection.videoRotationAngle = 90
+        }
+    }
+
+    func next(timeout: TimeInterval) async -> CGImage? {
+        await withCheckedContinuation { continuation in
+            let id = lock.withLock { () -> Int in
+                nextID += 1
+                waiting[nextID] = continuation
+                return nextID
+            }
+            queue.asyncAfter(deadline: .now() + timeout) { [weak self] in
+                // 時間内にコマが来なければ、nil で返す(ほかの呼び出しには触らない)
+                guard let self else { return }
+                let expired = self.lock.withLock { self.waiting.removeValue(forKey: id) }
+                expired?.resume(returning: nil)
+            }
+        }
+    }
+
+    func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+        let hasWaiting = lock.withLock { !waiting.isEmpty }
+        guard hasWaiting, let pixels = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        let image = CIImage(cvPixelBuffer: pixels)
+        let frame = context.createCGImage(image, from: image.extent)
+        let pending = lock.withLock { () -> [CheckedContinuation<CGImage?, Never>] in
+            let list = Array(waiting.values)
+            waiting = [:]
+            return list
+        }
+        for continuation in pending { continuation.resume(returning: frame) }
     }
 }
 

@@ -22,6 +22,10 @@ struct ScopeSightView: View {
     /// 電車(source が .trains のときだけ動かす)
     @State private var trainFeed = ScopeTrainFeed(reason: "scope.sight")
     @State private var trainDetail: ScopeTrainDetailSheet.Target?
+    /// 「撮って聞く」(止めた映像で Claude に聞く)
+    @State private var askSession: ScopeAskSession?
+    @State private var isCapturing = false
+    @State private var captureError: String?
 
     init(mode: ScopeSightMode, source: ScopeSightSource) {
         _mode = State(initialValue: mode)
@@ -100,6 +104,58 @@ struct ScopeSightView: View {
         .sheet(item: $trainDetail) { target in
             ScopeTrainDetailSheet(target: target)
         }
+        .fullScreenCover(item: $askSession) { session in
+            ScopeAskView(snapshot: session.snapshot)
+        }
+        .onChange(of: askSession == nil) { _, closed in
+            // 聞いている間は、カメラ・GPS・モーションを止める(閉じたら再開)
+            if closed {
+                if isVisible { startAll() }
+            } else {
+                stopAll()
+            }
+        }
+    }
+
+    /// 撮った方向の分類の名前(Claude に送る)
+    private var sourceKindName: String {
+        switch source {
+        case .places: return "登録した地点"
+        case .nearby: return "周辺の施設"
+        case .route: return "経路の目的地・曲がり角"
+        case .trains: return "電車"
+        }
+    }
+
+    /// 「撮って聞く」: 今の映像の1コマ(画面に見えていた範囲)と、そのときの向き・位置・画面に写る範囲の印を取って、質問の画面を出す
+    private func captureForAsk(viewSize: CGSize, attitude: CameraAttitude?, tangents: (horizontal: Double, vertical: Double),
+                               targets: [ScopeTarget]) async {
+        guard !isCapturing else { return }
+        isCapturing = true
+        defer { isCapturing = false }
+        captureError = nil
+        guard let frame = await env.camera.captureFrame() else {
+            captureError = "映像を取得できませんでした"
+            return
+        }
+        let visible = ScopeAskImage.visibleRect(imageSize: CGSize(width: frame.width, height: frame.height), viewSize: viewSize)
+        let image = frame.cropping(to: visible) ?? frame
+        var inView: [ScopeAskTarget] = []
+        if let attitude {
+            let screen = CGRect(origin: .zero, size: viewSize)
+            for target in targets {
+                guard let point = WaypointProjection.point(bearing: target.bearing, elevation: target.elevationAngle, attitude: attitude,
+                                                           tangents: tangents, viewSize: viewSize),
+                      screen.contains(point) else { continue }
+                inView.append(ScopeAskTarget(name: target.mark.name, kind: sourceKindName, bearing: target.bearing,
+                                             distance: target.distance, heightDifference: target.heightDifference))
+            }
+        }
+        let coordinate = tracker.coordinate
+        askSession = ScopeAskSession(snapshot: ScopeAskSnapshot(
+            image: image, heading: attitude?.azimuth, pitch: attitude?.elevation,
+            latitude: coordinate?.latitude, longitude: coordinate?.longitude, placeName: nil,
+            targets: inView, takenAt: Date()))
     }
 
     /// 電車の位置を計算する基準の現在地(位置のデバッグの間は、仮想の位置)
@@ -228,6 +284,28 @@ struct ScopeSightView: View {
                     } else {
                         ScopeOverlay(targets: targets, attitude: attitude, tangents: tangents)
                     }
+                    VStack(alignment: .trailing, spacing: 6) {
+                        Spacer()
+                        if let captureError {
+                            Text(captureError)
+                                .font(.caption)
+                                .padding(6)
+                                .background(.thinMaterial, in: Capsule())
+                        }
+                        Button {
+                            Task { await captureForAsk(viewSize: size, attitude: attitude, tangents: tangents, targets: targets) }
+                        } label: {
+                            Label(isCapturing ? "取得中…" : "撮って聞く", systemImage: "questionmark.bubble")
+                                .font(.subheadline.weight(.semibold))
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .background(.thinMaterial, in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isCapturing || env.camera.state != .running)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .padding(12)
                     if env.settings.waypointShowsHeading {
                         VStack {
                             Text("\(WaypointMath.compassPoint(attitude.azimuth)) \(Int(attitude.azimuth.rounded()))°")
