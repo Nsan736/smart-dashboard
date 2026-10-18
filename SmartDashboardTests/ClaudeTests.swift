@@ -65,7 +65,9 @@ final class ClaudeAPITests: XCTestCase {
         XCTAssertEqual(defaults.monthlyLimit, 5)
         XCTAssertTrue(defaults.thinkingForTools)
         XCTAssertTrue(defaults.thinkingForCamera)
-        XCTAssertTrue(defaults.sendsHeading && defaults.sendsPlace && defaults.sendsCoordinates && defaults.sendsTargets)
+        // v0.9.20 から、居場所が推測できるものは初期値で送らない
+        XCTAssertTrue(defaults.sendsHeading)
+        XCTAssertFalse(defaults.sendsPlace || defaults.sendsCoordinates || defaults.sendsTargets)
         XCTAssertEqual(defaults.imageEdge(isExpensive: false), 1024)
         XCTAssertEqual(defaults.imageEdge(isExpensive: true), 768)
         // 足りない項目は初期値で読む
@@ -384,7 +386,8 @@ final class ScopeAskTests: XCTestCase {
 
     func testContextOptions() throws {
         let snapshot = try snapshot()
-        let all = ScopeAsk.contextText(snapshot, options: ScopeAskOptions())
+        let everything = ScopeAskOptions(heading: true, place: true, coordinates: true, targets: true)
+        let all = ScopeAsk.contextText(snapshot, options: everything)
         XCTAssertTrue(all.contains("北東(45°)"))
         XCTAssertTrue(all.contains("水平より10°上向き"))
         XCTAssertTrue(all.contains("東京都千代田区"))
@@ -395,23 +398,24 @@ final class ScopeAskTests: XCTestCase {
         let far = try XCTUnwrap(all.range(of: "東京タワー"))
         XCTAssertTrue(near.lowerBound < far.lowerBound)
 
-        let noCoordinates = ScopeAsk.contextText(snapshot, options: ScopeAskOptions(coordinates: false))
+        let noCoordinates = ScopeAsk.contextText(snapshot, options: ScopeAskOptions(heading: true, place: true, coordinates: false, targets: true))
         XCTAssertTrue(noCoordinates.contains("東京都千代田区"))
         XCTAssertFalse(noCoordinates.contains("緯度"))
         let noPlace = ScopeAsk.contextText(snapshot, options: ScopeAskOptions(place: false))
         XCTAssertFalse(noPlace.contains("千代田区"))
         XCTAssertFalse(noPlace.contains("緯度"))
-        let noHeading = ScopeAsk.contextText(snapshot, options: ScopeAskOptions(heading: false))
+        let noHeading = ScopeAsk.contextText(snapshot, options: ScopeAskOptions(heading: false, place: true, coordinates: true, targets: true))
         XCTAssertFalse(noHeading.contains("北東"))
         let noTargets = ScopeAsk.contextText(snapshot, options: ScopeAskOptions(targets: false))
         XCTAssertFalse(noTargets.contains("東京タワー"))
         let none = ScopeAsk.contextText(snapshot, options: ScopeAskOptions(heading: false, place: false, coordinates: false, targets: false))
         XCTAssertTrue(none.contains("送っていません"))
         XCTAssertFalse(none.contains("東京"))
-        // 設定から作る
+        // 設定から作る(初期値は方角と向きだけ)
+        XCTAssertEqual(ScopeAskOptions(ClaudeSettings()), ScopeAskOptions(heading: true, place: false, coordinates: false, targets: false))
         var settings = ClaudeSettings()
-        settings.sendsTargets = false
-        XCTAssertEqual(ScopeAskOptions(settings), ScopeAskOptions(targets: false))
+        settings.sendsTargets = true
+        XCTAssertEqual(ScopeAskOptions(settings), ScopeAskOptions(targets: true))
     }
 
     func testMessagesKeepRecentExchanges() {
