@@ -5,7 +5,8 @@ import simd
 /// オブジェクトのプレビュー(SceneKit)。指で回す・拡大する(allowsCameraControl)。編集の画面と確認の画面で使う。
 /// 形が多いとき(heavyShapes 個より多いとき)は軽くする: 形の種類ごとの立体の部品と、色ごとの材質を使い回し、丸い形の分割を減らし、
 /// 透明の描き方を1回にして、アンチエイリアスを切る。描くのは指で動かしたときと、形を変えたときだけ(1秒30コマまで)。
-/// 座標は、オブジェクトの中の x=右、y=前、z=上 を、SceneKit の x=右、y=上、z=手前(前の逆)に直す。
+/// 座標は、オブジェクトの中の x=右、y=前、z=上 を、SceneKit の x=右、y=上、z=後ろ(前の逆)に直す(`scenePoint`)。
+/// カメラは、はじめは正面の右斜め前に置き、正面(前)の先に青い印を出す。
 struct ObjectPreviewView: UIViewRepresentable {
     let object: ScopeObject
     var selectedID: UUID?
@@ -32,16 +33,20 @@ struct ObjectPreviewView: UIViewRepresentable {
         view.scene = scene
         scene.rootNode.addChildNode(context.coordinator.content)
 
-        // 地面(格子の代わりに薄い板)と、正面の向きの印
-        let floor = SCNNode(geometry: SCNPlane(width: 60, height: 60))
+        let extent = ObjectGeometry.extent(of: object)
+        let size = max(extent.width, extent.depth, extent.height, 4)
+        // 地面(格子の代わりに薄い板)と、正面の向きの印(正面の一番前の少し先。大きさはオブジェクトに合わせる)
+        let floor = SCNNode(geometry: SCNPlane(width: max(60, size * 2), height: max(60, size * 2)))
         floor.geometry?.firstMaterial?.diffuse.contents = UIColor.systemGray.withAlphaComponent(0.25)
         floor.geometry?.firstMaterial?.isDoubleSided = true
         floor.eulerAngles.x = -.pi / 2
         scene.rootNode.addChildNode(floor)
-        let arrow = SCNNode(geometry: SCNCone(topRadius: 0, bottomRadius: 0.6, height: 1.6))
+        let arrowLength = max(size * 0.08, 1.6)
+        let arrow = SCNNode(geometry: SCNCone(topRadius: 0, bottomRadius: arrowLength * 0.4, height: arrowLength))
         arrow.geometry?.firstMaterial?.diffuse.contents = UIColor.systemBlue
+        // 円錐の頂点(+y)を前(SceneKit の −z)に向ける
         arrow.eulerAngles.x = -.pi / 2
-        arrow.position = SCNVector3(0, 0.05, -8)
+        arrow.simdPosition = Self.scenePoint(ObjectPoint(0, Self.frontY(of: object) + arrowLength, 0.05))
         scene.rootNode.addChildNode(arrow)
 
         let light = SCNNode()
@@ -56,13 +61,11 @@ struct ObjectPreviewView: UIViewRepresentable {
         ambient.light?.intensity = 450
         scene.rootNode.addChildNode(ambient)
 
-        // カメラは、オブジェクト全体が入る位置に1回だけ置く(あとは指で動かす)
-        let extent = ObjectGeometry.extent(of: object)
-        let size = max(extent.width, extent.depth, extent.height, 4)
+        // カメラは、オブジェクト全体が入る位置(正面の右斜め前)に1回だけ置く(あとは指で動かす)
         let camera = SCNNode()
         camera.camera = SCNCamera()
         camera.camera?.zFar = Double(size) * 40
-        camera.position = SCNVector3(Float(size) * 1.1, Float(size) * 0.9, Float(size) * 1.6)
+        camera.simdPosition = Self.scenePoint(ObjectPoint(size * 1.1, size * 1.6, size * 0.9))
         camera.look(at: SCNVector3(0, Float(extent.height) / 2, 0))
         scene.rootNode.addChildNode(camera)
         view.pointOfView = camera
@@ -83,6 +86,16 @@ struct ObjectPreviewView: UIViewRepresentable {
         for shape in object.shapes {
             coordinator.content.addChildNode(Self.node(shape, selected: shape.id == selectedID, heavy: heavy, coordinator: coordinator))
         }
+    }
+
+    /// オブジェクトの中の点(x=右、y=前、z=上)を、SceneKit の点(x=右、y=上、z=後ろ)にする
+    static func scenePoint(_ p: ObjectPoint) -> SIMD3<Float> {
+        SIMD3<Float>(Float(p.x), Float(p.z), Float(-p.y))
+    }
+
+    /// 正面の一番前(y の最大、m)
+    static func frontY(of object: ScopeObject) -> Double {
+        ObjectGeometry.faces(of: object).flatMap(\.vertices).map(\.y).max() ?? 0
     }
 
     /// 形の種類ごとの立体の部品(大きさ1。使い回す。材質は形ごとに付けるので、部品は材質ごとに複製する)
@@ -135,7 +148,7 @@ struct ObjectPreviewView: UIViewRepresentable {
         // 角錐は底面が原点なので、中心に合わせる
         if shape.kind == .pyramid { node.pivot = SCNMatrix4MakeTranslation(0, 0.5, 0) }
         node.scale = SCNVector3(Float(shape.width), Float(shape.height), Float(shape.kind == .plane ? 1 : shape.depth))
-        node.simdPosition = SIMD3<Float>(Float(shape.x), Float(shape.z + shape.height / 2), Float(-shape.y))
+        node.simdPosition = scenePoint(ObjectGeometry.center(of: shape))
         node.simdOrientation = orientation(yaw: shape.yaw, pitch: shape.pitch, roll: shape.roll)
         return node
     }

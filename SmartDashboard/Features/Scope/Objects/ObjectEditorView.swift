@@ -67,6 +67,20 @@ enum ObjectShapeEditing {
         object.shapes.swapAt(index, target)
     }
 
+    /// 全体を、上から見て時計回りに degrees 度回す(原点のまわり)。正面(+y)の向きを直すのに使う。
+    /// 位置を回し、形の向き(yaw)に同じ角度を足す。ヨーは一番外側の回転なので、形の傾きはそのまま保たれる
+    static func rotateAll(by degrees: Double, in object: inout ScopeObject) {
+        func clean(_ value: Double) -> Double { (value * 1_000_000).rounded() / 1_000_000 }
+        for index in object.shapes.indices {
+            var shape = object.shapes[index]
+            let p = ObjectGeometry.rotate(ObjectPoint(shape.x, shape.y, 0), yaw: degrees, pitch: 0, roll: 0)
+            shape.x = clean(p.x)
+            shape.y = clean(p.y)
+            shape.yaw = clean(remainder(shape.yaw + degrees, 360))
+            object.shapes[index] = shape
+        }
+    }
+
     /// 全部の形の色と不透明度をそろえる
     static func applyToAll(color: String?, opacity: Double?, in object: inout ScopeObject) {
         for index in object.shapes.indices {
@@ -305,10 +319,26 @@ struct ObjectEditorView: View {
                                       set: { new in ObjectShapeEditing.applyToAll(color: nil, opacity: (new * 20).rounded() / 20, in: &draft) }),
                        in: 0.05...1, onEditingChanged: { editing in if editing { history.record(draft) } })
             }
+            ViewThatFits {
+                HStack { rotateButtons }
+                VStack(alignment: .leading, spacing: 8) { rotateButtons }
+            }
+            .buttonStyle(.bordered)
         } header: {
             Text("全体")
         } footer: {
-            Text("はじめは赤、不透明度0.4(半透明)です。カメラ表示では、半透明の面は奥が透けて見えます。")
+            Text("はじめは赤、不透明度0.4(半透明)です。カメラ表示では、半透明の面は奥が透けて見えます。"
+                 + "プレビューの青い印の側が正面(前、+y)で、地図に置いたときの「向き」の方角を向きます。正面がずれているときは、全体を回してください。")
+        }
+    }
+
+    @ViewBuilder
+    private var rotateButtons: some View {
+        Button { change { ObjectShapeEditing.rotateAll(by: -90, in: &$0) } } label: {
+            Label("全体を左に90°", systemImage: "rotate.left")
+        }
+        Button { change { ObjectShapeEditing.rotateAll(by: 90, in: &$0) } } label: {
+            Label("全体を右に90°", systemImage: "rotate.right")
         }
     }
 }
