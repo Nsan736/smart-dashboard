@@ -10,7 +10,7 @@ iOS向けの個人用「手元ダッシュボード」アプリ。SwiftUI製。A
 
 ## 現在の状況と引き継ぎ
 
-- 最新のリリースは **v0.9.22**(2026-10-18)。**v1.0.0 は、利用者が判断したときに付ける。それまでは 0.9.x で進める**(次は v0.9.23)。勝手に 1.0.0 にしない
+- 最新のリリースは **v0.9.23**(2026-10-18)。**v1.0.0 は、利用者が判断したときに付ける。それまでは 0.9.x で進める**(次は v0.9.24)。勝手に 1.0.0 にしない
 - 新しい会話で作業を続けるときは、まず [docs/handoff.md](docs/handoff.md) を読む。次の内容をまとめてある
   - 実装済みの機能の一覧
   - 実機(iPhone SE 第2世代、LiveContainer)で確認済みの点と、まだ未確認の点。開発機は Windows で実機がないので、画面・センサー・MapKit・カメラの動作は、利用者の報告に頼っている。未確認のものを「動く」と書かない
@@ -18,7 +18,7 @@ iOS向けの個人用「手元ダッシュボード」アプリ。SwiftUI製。A
   - コードを読んだだけでは分からない設計判断と、その理由
   - 外部データの注意点(気象庁の非公式データ、ODPTの上限、同梱データの更新など)
 - それ以外のアイデアと、見送った案の調査結果は、private/ideas.md を参照(Git の管理外で、このPCの中だけにある。中身をこのファイルや docs に書き写さない)
-- 小ツールのJSONの形式は [docs/tools-format.md](docs/tools-format.md)
+- 小ツールのJSONの形式は [docs/tools-format.md](docs/tools-format.md)。スコープのオブジェクトの JSON の形式は [docs/objects-format.md](docs/objects-format.md)
 - 路線ごとの両数の表(出典つき)は [docs/railway-cars.md](docs/railway-cars.md)。同梱の `Resources/railway_cars.json` と同じ内容にしておく
 - 機能を足したり、実機の報告を受けたりしたら、docs/handoff.md も更新する
 
@@ -49,7 +49,7 @@ iOS向けの個人用「手元ダッシュボード」アプリ。SwiftUI製。A
 
 ## 画面構成(TabView)
 
-ホーム(まとめ) / 天気(Open-Meteo) / スコープ(地点・周辺・経路・電車・景色) / 移動(以前の電車。ODPT API v4、乗車中の判定) / 為替(open.er-api.com、JPY基準、1日1回) / センサー(すべて通信なし、表示中のみ動作) / 小ツール(タイマーとストップウォッチを含む) / 設定
+ホーム(まとめ) / 天気(Open-Meteo) / スコープ(地点・周辺・経路・電車・景色・オブジェクト) / 移動(以前の電車。ODPT API v4、乗車中の判定) / 為替(open.er-api.com、JPY基準、1日1回) / センサー(すべて通信なし、表示中のみ動作) / 小ツール(タイマーとストップウォッチを含む) / 設定
 
 - タブの種類と初期の並びは `AppTab`。先頭の4つがタブバーに並び、残りはiOSの「その他」に入る(`TabOrder.barTabs` / `moreTabs`)。並びは設定の「タブの並び順」で変えられ、`AppSettings.tabOrder` に保存する。保存がなければ初期の並び。タブを増やすときは `AppTab` に足す(保存済みの並びには末尾に追加される)
 
@@ -311,14 +311,25 @@ iOS向けの個人用「手元ダッシュボード」アプリ。SwiftUI製。A
     - 地図: 移動タブの地図(`TrainLiveMapView`)をそのまま使い、スコープの列車だけを出す(`TrainLiveBoard.restricted(to:)`。表示範囲は別に覚える `memoryKey: "scope.trains"`)
     - 自分の高さ: 地点と同じ決め方(`ElevationStore.observerHeight`。「地点の高さを反映する」がオフなら使わず、電車も地面に置く)。一覧の画面は1回だけの測位の値。仮想の移動の間は、近くの線路(300m以内)の地面の標高 + 手の高さ(`ScopeTrainFeed.trackGroundAltitude`。通信しない)
     - 位置のデバッグ: 仮想の移動の間は、仮想の位置と時刻で計算する。移動タブを離れても仮想の移動が進むように、スコープの電車の画面の表示中は `MovementStore.setVisible(true)` にする(仮想の移動の間だけ)
-  - 景色(v0.9.22、`Features/Scope/Scenery`。上部の切り替えの5つめ `ScopeSection.scenery`、`ScopeSightSource.scenery`)。山・稜線・海と湖と川・地名の層(`SceneryLayer`、`AppSettings.sceneryLayers`。初期値は地名以外オン)。選んだ層は、景色のカメラ表示のほか、地点・周辺・経路・電車のカメラ表示にも重ねる(`sceneryOverlaysOthers`、初期値オン)。範囲は 30/50/100km(`sceneryRadiusKm`、初期値100km。利用者の判断: 50kmだと東京の中心から富士山などが入らないため)
+  - 上部の切り替え(v0.9.23): 6つになったので、セグメントではなく横にスクロールできるカプセルのボタン(最小の画面幅でも文字が切れない)
+  - オブジェクト(v0.9.23、`Features/Scope/Objects`。6つめ `ScopeSection.objects`、`ScopeSightSource.objects`)
+    - 形(`ObjectShape`): 箱・円柱・円錐・球・角錐・板(縦の板)。大きさ(幅・奥行き・高さ m)、位置(形の底面の中心。x=右、y=前、z=上)、回転(形の中心のまわりに、ロール(右が下がる)→ ピッチ(前が上がる)→ ヨー(上から見て時計回り))、色(#RRGGBB)、不透明度。新しい形の初期値は赤・不透明度0.4(最後の形の色を引き継ぐ)。オブジェクト(`ScopeObject`)は形64個まで
+    - 保存(`ObjectStore`): Application Support/SmartDashboard/objects.json に、作ったものと置いたもの(`ObjectPlacement`: 位置、向き=正面の方角、地面からの高さ、倍率、地面の標高、表示・非表示)を .atomic で。キャッシュの削除では消さない。オブジェクトを消すと置いたものも消す。名前を変えると、名前を変えていない置いたものも合わせる
+    - JSON(`ObjectCodec`、docs/objects-format.md): 書き出し(共有)・読み込み(貼り付け、「ファイル」)。項目ごとに確かめて、誤りを場所つきで返す(`ToolIssue`)。省略した項目は初期値
+    - 編集の画面(`ObjectEditorView`): 上に SceneKit のプレビュー(`ObjectPreviewView`、allowsCameraControl で指で回す・拡大、地面の板と正面の向きの青い印、選んだ形を明るく)。形の一覧(追加・複製・削除・上へ・下へ。`ObjectShapeEditing`)、選んだ形の設定(数値の入力と、名前を左右にドラッグして変える `NumberScrubField`)、全体の色と不透明度。元に戻す・やり直し(`ObjectEditHistory`、50回まで。ドラッグは始めたときに1回記録)。SceneKit の向きは、カメラ表示の計算(`ObjectGeometry.rotate`)と同じ回転を四元数で作る(`ObjectPreviewView.orientation`)
+    - 地図に置く(`ObjectListView`): 地図の長押しで置くオブジェクトを選び、置いたものの編集(`ObjectPlacementEditor`: 地図のタップで移す、向き、地面からの高さ、倍率、表示)。地面の標高は、地点と同じ国土地理院の標高API(`ElevationStore.lookup`)で、置いたとき・移したときに取る(取れなければ未取得のまま、一覧を開いたときにまた試す)。地図には足元の輪郭(全部の頂点の凸包 `ObjectGeometry.footprint` を閉じた線 `MapLine` で)
+    - カメラ表示(`ObjectRenderer`): 今の Canvas で面を塗る方法を選んだ(SceneKit を重ねる方法と比べた。理由は docs/handoff.md)。形を面に分け(丸い形は円柱・円錐が12角形、球が経度10×緯度6)、置いた向き・倍率・高さを反映し(`ObjectGeometry.placed`)、電車の車両の箱と同じ投影(`ScopeTrainRenderer.project`、奥行き1m未満の面は描かない)と、地面との高低差・地球の丸み(`WaypointElevation.curvatureDrop`)で画面に置く。全部の面を遠い順に塗る(画家のアルゴリズム。半透明の面は裏側も描くので、奥が透けて見える)。面の明るさは向きで変える(0.62〜1)。1コマ2,000面まで。画面での半径が10pt未満なら、地点と同じリングの印(`ScopeOverlay.drawMark`)。形の面はオブジェクトを変えたときだけ作る(`ObjectStore.drawItems`)。タップで名前・距離・方角・大きさ(`ObjectPlacementInfoSheet`)
+    - 重ねる: 景色と同じく `ScopeExtras`(景色 → オブジェクト → 地点・電車の印の順に、同じ Canvas で描く。タップはオブジェクト → 山)。設定 `objectsOverlayOthers`(初期値オン)で、ほかの表示にも重ねる。コンパス表示では印
+    - 文章から作る(`ObjectGenerator`、`ObjectComposeView`。Claude API を設定しているときだけ): system prompt に形式を書き(プロンプトキャッシュ)、`ObjectCodec` で検証し、誤りがあれば1回だけ作り直し。保存する前にプレビュー(`ObjectConfirmSection`)
+    - 位置のデバッグ: 仮想の移動の間は、仮想の位置から見る(自分の高さは、オブジェクトの地面 + 手の高さ)
+  - 景色(v0.9.22、`Features/Scope/Scenery`。上部の切り替えの5つめ `ScopeSection.scenery`、`ScopeSightSource.scenery`)。山・稜線・海と湖と川・地名の層(`SceneryLayer`、`AppSettings.sceneryLayers`。初期値は地名以外オン)。選んだ層は、景色のカメラ表示のほか、地点・周辺・経路・電車のカメラ表示にも重ねる(`sceneryOverlaysOthers`、初期値オン)。範囲は 30/50/100/150/200/300/350km(`sceneryRadiusKm`、初期値100km。利用者の判断: 50kmだと東京の中心から富士山などが入らないため。v0.9.23 で150km以上を足した。150km以上に広げるときは、今いる場所で保存するデータ量の目安 `SceneryTileStore.estimatedBytes` を出して確かめる。範囲の選択肢にも目安と、いま保存してある量を出す)
     - 山(`MountainCatalog`、`Resources/mountains.json`): 国土地理院「日本の主な山岳標高」(1003山、山頂ごとに1,059件、2026-03-31版)の CSV から、山名・山頂名・標高・緯度経度・都道府県だけを同梱(約64KB、圧縮後約22KB)。作り直すときは `python scripts/update_mountains.py`(www.gsi.go.jp は古い TLS の再ネゴシエーションを使うので、そのサーバーへの接続だけ OP_LEGACY_SERVER_CONNECT を付ける)。ベクトルタイルの山名の注記(annoCtg 312〜316)は、位置が文字の置き場所で山頂から0.7〜4kmずれ、標高もないので使わない(利用者の判断)
     - 山の選び方(`MountainSelection`): 範囲の中の山の方角・距離・仰角(`WaypointElevation.angle`、地点と同じ)と、稜線から見えるか(`Skyline.visibility`)。優先 = (標高+300) ÷ √(距離km)、見えない山は0.1倍。カメラ表示では山の形の印(三角、頂点が山頂。見えない山は点線で薄く、設定 `sceneryShowsHiddenMountains` で隠せる)、名前は印の上に3段まで、優先の高い順に重ならない段へ(`SceneryLabelLayout`。文字の幅は見積もり)、1コマ30山まで。タップで詳細(`SceneryMountainSheet`)と「地点に登録」(標高は山岳標高の値を手入力として入れ、標高APIは呼ばない)。コンパス表示では、優先の高い12山を印にする
     - 稜線(`SkylineCalculator`、`Skyline`): 現在地から方角0.5°ごと(720本)に、25mから距離の1.2%ずつ(半径100kmで約400点)標高を引き、地点と同じ仰角の式で、見える高さが上がった所を記録する(0.02°未満の上がり方は最後の記録を更新するだけ)。最後が地平線。隠れているか: 目標の手前(2%か300m)までで一番高い仰角より低ければ隠れている(隣の方角も見て、どれかで見えていれば見える)。手前のデータがなければ「分からない」。描く線(`RidgeExtractor`): 次に見える所まで距離が開いている点(奥が谷)と地平線を、隣の方角で距離の比が1.25以内の点とつなぐ。濃さと太さは距離で決める(1kmで0.95、100kmで0.25)
-    - 地形(`TerrainGrid`、`GSIElevationTile`): 地理院の標高タイル(dem_png、DEM10B)を、5kmまでズーム12(約30m)、30kmまでズーム10(約125m)、それより遠くはズーム9(約250m)で使う(なければ粗いほうへ)。海の上は「データなし」なので海(0m)、タイルがない所は分からない。PNG は CGImage のビットの並びをそのまま読む(色の変換をしない)。404 は空のファイルで覚え、海として扱う。自分の高さが分からないときは、標高タイルの地面 + 手の高さ
-    - 水面(`WaterMap`、`WaterBands`、`SceneryLabelReader`、`VectorTile`): ベクトルタイル提供実験のズーム8(128km四方)の waterarea(ftCode 5000。海も湖も面で入っている)を、1タイル512×512のます目に偶奇の規則で塗り、隣り合う水面を1つの区域にまとめる(タイルの境目もつなぐ)。名前は注記の 321(湖)・344/345(海・湾・水道)を、区域の中(5ますまで)に付ける。小さいズームの注記は1文字ずつに分かれているが、annoChar に名前全体があるので、同じ名前で30km以内の文字をまとめる。稜線の計算と同じ道のりで、方角ごとに一番手前の見える水面を記録し、同じ名前が続く方角を帯にする(1°未満は出さない。名前がなければ、標高タイルで海なら「海」、ほかは「湖・川」)。川の名前(322、30kmまで)と地名(記号の name、範囲まで)は、地面の高さで見えるものだけ点と文字で出す。protobuf の読み取りは自前(外部のライブラリは使わない)
+    - 地形(`TerrainGrid`、`GSIElevationTile`): 地理院の標高タイル(dem_png、DEM10B)を、5kmまでズーム12(約30m)、30kmまでズーム10(約125m)、100kmまでズーム9(約250m)、200kmまでズーム8(約500m)、それより遠くはズーム7(約1km)で使う(なければ粗いほうへ)。粗いタイルでは山頂が低く出るので、30kmより遠い山の一覧の山頂を、半径3km・傾き0.25の円すいとして高さに足し、山頂の距離でも必ず調べる(`SkylinePeak`、`SkylineCalculator.rayPeaks`)。地球の丸みと屈折の式(距離²÷2R')は、球の上の厳密な式と比べて400kmまで0.001°以内(テストで確かめている)。海の上は「データなし」なので海(0m)、タイルがない所は分からない。PNG は CGImage のビットの並びをそのまま読む(色の変換をしない)。404 は空のファイルで覚え、海として扱う。自分の高さが分からないときは、標高タイルの地面 + 手の高さ
+    - 水面(`WaterMap`、`WaterBands`、`SceneryLabelReader`、`VectorTile`): 100kmまで(`SceneryRadius.vectorLimit`。範囲が広くても、格子とデータ量を増やさない)。ベクトルタイル提供実験のズーム8(128km四方)の waterarea(ftCode 5000。海も湖も面で入っている)を、1タイル512×512のます目に偶奇の規則で塗り、隣り合う水面を1つの区域にまとめる(タイルの境目もつなぐ)。名前は注記の 321(湖)・344/345(海・湾・水道)を、区域の中(5ますまで)に付ける。小さいズームの注記は1文字ずつに分かれているが、annoChar に名前全体があるので、同じ名前で30km以内の文字をまとめる。稜線の計算と同じ道のりで、方角ごとに一番手前の見える水面を記録し、同じ名前が続く方角を帯にする(1°未満は出さない。名前がなければ、標高タイルで海なら「海」、ほかは「湖・川」)。川の名前(322、30kmまで)と地名(記号の name、範囲まで)は、地面の高さで見えるものだけ点と文字で出す。protobuf の読み取りは自前(外部のライブラリは使わない)
     - 計算(`SceneryEngine`、actor): メインスレッドの外。読み込んだ標高タイルとベクトルタイルは覚えておき、使わなくなったタイルは捨てる。計算し直すのは、200m以上動いたとき、自分の高さが20m以上変わったとき、範囲や層を変えたとき、タイルを保存し終えたときだけ(`SceneryStore.update`)。計算中の依頼は、終わってから最後の1つだけ
-    - 保存(`SceneryStore`、`SceneryTileStore`): Application Support/SmartDashboard/tiles/terrain/(dem|vector)/z/x/y。景色の画面かカメラ表示を開いている間(`setActive`)で、従量制でも省データでもない回線(`MapMode.canDownloadTiles`)のときだけ、2本ずつ取得する。地図タイルと合わせて、地図の設定の保存の上限まで(`TileDownloader.otherStoredBytes`)。モバイル通信では保存済みの範囲だけで計算し、その旨を出す。受信量は「スコープ」(`UsageCategory`。パスが /xyz/dem_png/ か /xyz/experimental_bvmap/)。景色の画面から削除できる。1か所あたりの量(実測): 30kmで約1.3〜2.2MB、50kmで約2.5〜3.4MB、100kmで約2.6〜4.6MB
+    - 保存(`SceneryStore`、`SceneryTileStore`): Application Support/SmartDashboard/tiles/terrain/(dem|vector)/z/x/y。景色の画面かカメラ表示を開いている間(`setActive`)で、従量制でも省データでもない回線(`MapMode.canDownloadTiles`)のときだけ、2本ずつ取得する。地図タイルと合わせて、地図の設定の保存の上限まで(`TileDownloader.otherStoredBytes`)。モバイル通信では保存済みの範囲だけで計算し、その旨を出す。受信量は「スコープ」(`UsageCategory`。パスが /xyz/dem_png/ か /xyz/experimental_bvmap/)。景色の画面から削除できる。1か所あたりの量(実測): 30kmで約1.3〜2.2MB、50kmで約2.5〜3.4MB、100kmで約2.6〜4.6MB、150kmで約3.3〜5.7MB、200kmで約3.6〜5.9MB、300・350kmで約4.0〜6.5MB
     - 描画(`SceneryRenderer`): 地点・電車の印と同じ Canvas の中で、印より先に描く(`ScopeOverlay` / `ScopeTrainOverlay` に scenery を渡す)。毎コマ、画面の中心の方角から(画角+12°)より離れた点は投影しない。順に、稜線(遠い線から、暗い縁取り+白い線)、水面の帯(青、文字「東京湾 8km」)、川と地名、山(優先の低い順に描き、優先の高い山が上)
     - 位置のデバッグ: 仮想の移動の間は、景色を仮想の位置で計算する(カメラ表示は2秒ごとに見て、200m以上動いたら計算し直す。`MovementStore.setVisible(true)` で仮想の位置を進める)。自分の高さは標高タイルの地面 + 手の高さ
     - 出典(`SceneryAttribution`): 景色の画面と山の詳細、README
