@@ -43,6 +43,7 @@ final class AppEnvironment {
     let trains: TrainStore
     let tiles: TileDownloader
     let scenery: SceneryStore
+    let objects: ObjectStore
     let radar: RadarStore
     let rain: RainNowcastStore
     let live: TrainLiveStore
@@ -167,6 +168,8 @@ final class AppEnvironment {
         let elevationStore = ElevationStore(http: http, network: network, settings: settings, waypoints: waypointStore,
                                             onFetched: { fetchLog.mark(.elevation, at: $0) })
         elevation = elevationStore
+        // スコープのオブジェクト(置いたものの地面の標高は、地点と同じ標高APIで取る)
+        objects = ObjectStore(fileURL: ObjectStore.defaultURL(), elevation: elevationStore)
         // 登録した地点・座標を変えた地点の標高を取る(オフラインなら未設定のまま。Wi-Fi接続中に取り直す)
         waypointStore.onNeedsElevation = { [weak elevationStore] id in
             Task { await elevationStore?.fetchElevation(for: id) }
