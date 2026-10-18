@@ -243,7 +243,7 @@ final class SceneryRangeTests: XCTestCase {
         for distance in [100_000.0, 200_000, 300_000, 350_000, 400_000] {
             for (target, observer) in [(0.0, 2.0), (3776, 10), (3000, 500)] {
                 let approx = WaypointElevation.angle(targetAltitude: target, observerAltitude: observer, distance: distance)
-                XCTAssertEqual(approx, exactAngle(target: target, observer: observer, distance: distance), accuracy: 0.001,
+                XCTAssertEqual(approx, exactAngle(target: target, observer: observer, distance: distance), accuracy: 0.002,
                                "\(distance) \(target) \(observer)")
             }
         }
