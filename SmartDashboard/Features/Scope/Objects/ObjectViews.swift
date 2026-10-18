@@ -367,7 +367,7 @@ struct ObjectImportView: View {
                     json = text
                     message = nil
                 } else {
-                    message = "読み込めませんでした(UTF-8のテキストで、200KBまで)"
+                    message = "読み込めませんでした(UTF-8のテキストで、400KBまで)"
                 }
             }
         }

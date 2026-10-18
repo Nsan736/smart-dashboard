@@ -74,7 +74,45 @@ struct ScopeObject: Codable, Equatable, Identifiable {
     var shapes: [ObjectShape]
     var updatedAt = Date()
 
-    static let maxShapes = 64
+    /// 形の数の上限(手で作るときも、文章から作るときの「とても細かい」と同じ)
+    static let maxShapes = 300
+}
+
+/// 文章から作るときの細かさ。形の数の上限と、出力トークンの上限(思考を含む)を決める
+enum ObjectDetail: String, CaseIterable, Identifiable {
+    case normal
+    case detailed
+    case veryDetailed
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .normal: return "ふつう"
+        case .detailed: return "細かい"
+        case .veryDetailed: return "とても細かい"
+        }
+    }
+
+    static let initial = ObjectDetail.detailed
+
+    /// 形の数の上限
+    var maxShapes: Int {
+        switch self {
+        case .normal: return 30
+        case .detailed: return 100
+        case .veryDetailed: return 300
+        }
+    }
+
+    /// 出力トークンの上限(思考を含む)。形1つは省略した書き方で約40〜60トークン。思考と検索の後の文章の分を足す
+    var maxTokens: Int {
+        switch self {
+        case .normal: return 8_000
+        case .detailed: return 24_000
+        case .veryDetailed: return 56_000
+        }
+    }
 }
 
 /// 地図に置いたオブジェクト
@@ -131,7 +169,7 @@ enum ObjectColor {
 enum ObjectCodec {
     static let currentFormat = 1
     static let type = "scope-object"
-    static let maxBytes = 200_000
+    static let maxBytes = 400_000
     static let sizeRange = 0.01...2000.0
     static let positionRange = -2000.0...2000.0
 
@@ -140,7 +178,7 @@ enum ObjectCodec {
         case failure([ToolIssue])
     }
 
-    static func parse(_ text: String) -> Result {
+    static func parse(_ text: String, maxShapes: Int = ScopeObject.maxShapes) -> Result {
         guard let data = text.data(using: .utf8), data.count <= maxBytes else {
             return .failure([ToolIssue(path: "", message: "大きすぎます(\(maxBytes / 1000)KBまで)")])
         }
@@ -157,14 +195,14 @@ enum ObjectCodec {
         let name = String(((root["name"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines).prefix(40))
         if name.isEmpty { issues.append(ToolIssue(path: "name", message: "名前が必要です")) }
         guard let rawShapes = root["shapes"] as? [[String: Any]], !rawShapes.isEmpty else {
-            issues.append(ToolIssue(path: "shapes", message: "形の配列(1〜\(ScopeObject.maxShapes)個)が必要です"))
+            issues.append(ToolIssue(path: "shapes", message: "形の配列(1〜\(maxShapes)個)が必要です"))
             return .failure(issues)
         }
-        if rawShapes.count > ScopeObject.maxShapes {
-            issues.append(ToolIssue(path: "shapes", message: "多すぎます(\(ScopeObject.maxShapes)個まで)"))
+        if rawShapes.count > maxShapes {
+            issues.append(ToolIssue(path: "shapes", message: "多すぎます(\(maxShapes)個まで。今は\(rawShapes.count)個)"))
         }
         var shapes: [ObjectShape] = []
-        for (index, raw) in rawShapes.prefix(ScopeObject.maxShapes).enumerated() {
+        for (index, raw) in rawShapes.prefix(maxShapes).enumerated() {
             let path = "shapes[\(index)]"
             guard let kindText = raw["kind"] as? String, let kind = ObjectShapeKind(rawValue: kindText) else {
                 issues.append(ToolIssue(path: "\(path).kind", message: ObjectShapeKind.allCases.map(\.rawValue).joined(separator: " / ") + " のどれかにしてください"))
