@@ -262,6 +262,9 @@ def check_script_examples():
                      os.path.join(ROOT, "SmartDashboardTests", "Fixtures", "tool_script_" + name.replace("-", "_") + ".json")):
             same = os.path.exists(path) and open(path, encoding="utf-8").read() == expected
             check(same, f"{os.path.relpath(path, ROOT)} が examples/tools/src/{name}.js と合いません(python scripts/build_tool_examples.py を実行)")
+    bundle = build_tool_examples.BUNDLE
+    same = os.path.exists(bundle) and open(bundle, encoding="utf-8").read() == build_tool_examples.bundle_text()
+    check(same, "SmartDashboard/Resources/tool_samples.json が examples/tools と合いません(python scripts/build_tool_examples.py を実行)")
 
 
 for step in (check_fixtures, check_committed_secrets, check_yaml, check_apps_json, check_swift_brackets, check_double_backslash,

@@ -6,7 +6,10 @@
 examples/tools/src/*.js(スクリプトの本体)と、下の TOOLS(名前・部品など)から、
 examples/tools/<名前>.json と、テストのフィクスチャ SmartDashboardTests/Fixtures/tool_script_<名前>.json を書く。
 JSON の文字列にスクリプトを手で埋め込むと、改行や引用符のエスケープを誤りやすいため。
+あわせて、examples/tools のサンプル全部を1つにまとめた SmartDashboard/Resources/tool_samples.json(アプリに同梱し、
+小ツールの「サンプル」の一覧から追加できるようにする)を書く。
 """
+import glob
 import json
 import os
 
@@ -68,6 +71,18 @@ def build(name, meta):
     return json.dumps(tool, ensure_ascii=False, indent=2) + "\n"
 
 
+BUNDLE = os.path.join(ROOT, "SmartDashboard", "Resources", "tool_samples.json")
+
+
+def bundle_text():
+    """examples/tools/*.json を、ファイル名の順に1つの JSON にまとめる(中身は文字列のまま)"""
+    samples = []
+    for path in sorted(glob.glob(os.path.join(ROOT, "examples", "tools", "*.json"))):
+        name = os.path.splitext(os.path.basename(path))[0]
+        samples.append({"file": name, "json": open(path, encoding="utf-8").read()})
+    return json.dumps({"samples": samples}, ensure_ascii=False, indent=1) + "\n"
+
+
 def main():
     for name, meta in TOOLS.items():
         text = build(name, meta)
@@ -76,6 +91,9 @@ def main():
             with open(path, "w", encoding="utf-8", newline="\n") as f:
                 f.write(text)
         print("書いた:", name)
+    with open(BUNDLE, "w", encoding="utf-8", newline="\n") as f:
+        f.write(bundle_text())
+    print("書いた: tool_samples.json")
 
 
 if __name__ == "__main__":

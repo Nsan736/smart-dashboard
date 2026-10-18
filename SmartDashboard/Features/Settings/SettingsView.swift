@@ -163,6 +163,9 @@ struct SettingsView: View {
                             .multilineTextAlignment(.trailing)
                             .fixedSize(horizontal: false, vertical: true)
                     }
+                    // スクリプト型の小ツールの、JavaScript の実行時間の制限(非公開の関数を dlsym で探して使う)
+                    LabeledContent("JavaScript の実行時間の制限",
+                                   value: ScriptTimeLimit.isAvailable ? "有効" : "見つからないため監視のみ")
                 } header: {
                     Text("開発者向け")
                 } footer: {

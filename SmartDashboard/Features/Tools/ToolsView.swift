@@ -106,6 +106,7 @@ struct ToolsView: View {
     @State private var query = ""
     @State private var isImporting = false
     @State private var isComposing = false
+    @State private var showsSamples = false
 
     var body: some View {
         let library = env.tools
@@ -145,6 +146,11 @@ struct ToolsView: View {
                     } label: {
                         Label("文章から作る(Claude)", systemImage: "text.bubble")
                     }
+                    Button {
+                        showsSamples = true
+                    } label: {
+                        Label("サンプルから追加", systemImage: "square.grid.2x2")
+                    }
                 } footer: {
                     Text("長押しで、お気に入りに追加・削除できます。お気に入りは、ホームの「小ツール」カードにも出せます。JSONの形式は、リポジトリの docs/tools-format.md にあります。「文章から作る」は Claude API を使います(APIキーは設定の「Claude API」で入力)。")
                 }
@@ -154,6 +160,7 @@ struct ToolsView: View {
             .navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented: $isImporting) { ToolImportView() }
             .sheet(isPresented: $isComposing) { ToolComposeView(mode: .create) }
+            .sheet(isPresented: $showsSamples) { ToolSamplesView() }
         }
     }
 
