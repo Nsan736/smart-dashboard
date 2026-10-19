@@ -91,6 +91,31 @@ enum ScriptNotifications {
     }
 }
 
+/// アプリを開いている間に届いたスクリプト型のツールの通知を出す(v0.9.33。タイマーが、ほかの画面を見ている間に終わったとき)。
+/// そのツールの画面を開いているときは、ツールが自分で音を鳴らすので出さない。スクリプト以外の通知は今までどおり(出さない)。
+final class ScriptNotificationPresenter: NSObject, UNUserNotificationCenterDelegate, @unchecked Sendable {
+    static let shared = ScriptNotificationPresenter()
+    private let lock = NSLock()
+    private var openTools: Set<String> = []
+
+    func setOpen(_ toolID: String, _ isOpen: Bool) {
+        lock.withLock {
+            if isOpen { openTools.insert(toolID) } else { openTools.remove(toolID) }
+        }
+    }
+
+    /// 出すか(テスト用に、判定だけを切り出す)
+    func shouldPresent(identifier: String) -> Bool {
+        guard identifier.hasPrefix("script.") else { return false }
+        return lock.withLock { !openTools.contains { identifier.hasPrefix(ScriptNotificationRequest.prefix(toolID: $0)) } }
+    }
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
+                                withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        completionHandler(shouldPresent(identifier: notification.request.identifier) ? [.banner, .list, .sound] : [])
+    }
+}
+
 /// 暗号に使える乱数(SecRandomCopyBytes)。パスワードを作るツール用(`random.secure()`)。0 以上 1 未満
 enum ScriptSecureRandom {
     static func next() -> Double {

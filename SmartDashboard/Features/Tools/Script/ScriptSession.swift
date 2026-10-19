@@ -70,6 +70,7 @@ final class ScriptSession {
         isUnresponsive = false
         status = .running
         markRunning()
+        if !isPreview { ScriptNotificationPresenter.shared.setOpen(tool.id, true) }
         let content = content
         let storageURL = storageURL
         let granted = granted
@@ -112,6 +113,7 @@ final class ScriptSession {
     private func stopRunner() {
         runner?.cancel()
         runner = nil
+        ScriptNotificationPresenter.shared.setOpen(tool.id, false)
         ScreenAwake.set(awakeReason, false)
         watchdog?.invalidate()
         watchdog = nil
