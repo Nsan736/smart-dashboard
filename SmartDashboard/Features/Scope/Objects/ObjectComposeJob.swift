@@ -66,6 +66,38 @@ struct ObjectComposeRecord: ClaudeRecentEntry {
 }
 
 /// 文章からオブジェクトを作る作業。画面を閉じても作るのは続け(アプリの中で)、結果は「最近作ったもの」に残す。
+/// 「撮って聞く」で撮って囲んだあとに選ぶもの(v0.9.31): 聞く(下の質問の欄へ)か、オブジェクトを作る(写真から作る画面へ。写真は3枚まで)
+enum ScopeAskUse {
+    enum Kind: Hashable {
+        case ask
+        case makeObject
+    }
+
+    struct Choice: Equatable {
+        var kind: Kind
+        var label: String
+        var isEnabled: Bool
+    }
+
+    /// 出すボタン。前回の続き(保存してあった画像)では出さない。作っている途中と、写真が3枚あるときは「オブジェクト」を押せない
+    static func choices(isRestored: Bool, photoCount: Int, isComposing: Bool) -> [Choice] {
+        guard !isRestored else { return [] }
+        let max = ObjectPhotoImage.maxPhotos
+        let label = photoCount == 0 ? "オブジェクトを作る" : "オブジェクトの写真に足す(\(min(photoCount + 1, max))/\(max))"
+        return [
+            Choice(kind: .ask, label: "聞く", isEnabled: true),
+            Choice(kind: .makeObject, label: label, isEnabled: photoCount < max && !isComposing),
+        ]
+    }
+
+    /// 「オブジェクトを作る」を選んだ: 写真を足して、作る画面を開く印を付ける。足せなければ false(聞く画面は閉じない)
+    @MainActor
+    static func useForObject(compose: ObjectComposeJob, image: CGImage, shape: [CGPoint]?) -> Bool {
+        guard !compose.isRunning else { return false }
+        return compose.addCapturedPhoto(image, shape: shape)
+    }
+}
+
 /// 入力した文・細かさ・検索のオンとオフも残す(作る画面に戻ったときに、そのまま入っている)
 @MainActor
 @Observable
@@ -139,10 +171,14 @@ final class ObjectComposeJob {
     var canAddPhoto: Bool { photos.count < ObjectPhotoImage.maxPhotos }
 
     /// 「撮って聞く」で撮って囲んだ写真を、オブジェクトの写真にする(作る画面を出す)
-    func addCapturedPhoto(_ image: CGImage, shape: [CGPoint]?) {
+    /// 足せたら true(3枚あるときは足さず、作る画面も開かない)
+    @discardableResult
+    func addCapturedPhoto(_ image: CGImage, shape: [CGPoint]?) -> Bool {
+        guard canAddPhoto else { return false }
         addPhoto(image, shape: shape)
         isCollectingPhotos = true
         opensPhotoComposer = true
+        return true
     }
 
     func removePhoto(_ id: UUID) {

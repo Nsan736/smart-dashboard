@@ -77,7 +77,9 @@ struct ScopeAskView: View {
                     imageArea(snapshot)
                         .frame(height: geometry.size.height * 0.45)
                     drawingControls
-                    if env.scopeAsk.live?.isRestored != true { useChoices(snapshot) }
+                    if !ScopeAskUse.choices(isRestored: env.scopeAsk.live?.isRestored == true, photoCount: 0, isComposing: false).isEmpty {
+                        useChoices(snapshot)
+                    }
                     Divider()
                     ScrollViewReader { proxy in
                         ScrollView {
@@ -191,19 +193,19 @@ struct ScopeAskView: View {
 
     @ViewBuilder
     private func useButtons(_ snapshot: ScopeAskSnapshot, compose: ObjectComposeJob) -> some View {
-        Button {
-            isQuestionFocused = true
-        } label: {
-            Label("聞く", systemImage: "questionmark.bubble")
+        let choices = ScopeAskUse.choices(isRestored: false, photoCount: compose.photos.count, isComposing: compose.isRunning)
+        ForEach(choices, id: \.kind) { choice in
+            Button {
+                switch choice.kind {
+                case .ask: isQuestionFocused = true
+                case .makeObject:
+                    if ScopeAskUse.useForObject(compose: compose, image: snapshot.image, shape: shape) { dismiss() }
+                }
+            } label: {
+                Label(choice.label, systemImage: choice.kind == .ask ? "questionmark.bubble" : "cube")
+            }
+            .disabled(!choice.isEnabled)
         }
-        Button {
-            compose.addCapturedPhoto(snapshot.image, shape: shape)
-            dismiss()
-        } label: {
-            Label(compose.photos.isEmpty ? "オブジェクトを作る" : "オブジェクトの写真に足す(\(compose.photos.count + 1)/\(ObjectPhotoImage.maxPhotos))",
-                  systemImage: "cube")
-        }
-        .disabled(!compose.canAddPhoto || compose.isRunning)
     }
 
     private var drawingText: String {
