@@ -265,6 +265,14 @@ def check_script_examples():
     bundle = build_tool_examples.BUNDLE
     same = os.path.exists(bundle) and open(bundle, encoding="utf-8").read() == build_tool_examples.bundle_text()
     check(same, "SmartDashboard/Resources/tool_samples.json が examples/tools と合いません(python scripts/build_tool_examples.py を実行)")
+    # 組み込みのツールの JavaScript 版(v0.9.32)
+    for name, meta in build_tool_examples.BUILTIN.items():
+        path = os.path.join(ROOT, "examples", "tools", "builtin", name + ".json")
+        same = os.path.exists(path) and open(path, encoding="utf-8").read() == build_tool_examples.build_builtin(name, meta)
+        check(same, f"examples/tools/builtin/{name}.json が examples/tools/src/builtin/{name}.js と合いません(python scripts/build_tool_examples.py を実行)")
+    bundle = build_tool_examples.BUILTIN_BUNDLE
+    same = os.path.exists(bundle) and open(bundle, encoding="utf-8").read() == build_tool_examples.builtin_bundle_text()
+    check(same, "SmartDashboard/Resources/builtin_script_tools.json が examples/tools/src/builtin と合いません(python scripts/build_tool_examples.py を実行)")
 
 
 for step in (check_fixtures, check_committed_secrets, check_yaml, check_apps_json, check_swift_brackets, check_double_backslash,

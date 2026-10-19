@@ -56,9 +56,11 @@ struct ToolDescriptor: Equatable, Identifiable {
     enum Source: Equatable {
         case builtin(BuiltinTool)
         case custom(CustomTool)
+        /// 組み込みのツールの JavaScript 版(v0.9.32。アプリに同梱。編集はできず、複製して編集する)
+        case bundled(CustomTool)
     }
 
-    /// 内蔵は "builtin.◯◯"、読み込んだものは "custom.◯◯"
+    /// 内蔵は "builtin.◯◯"、読み込んだものは "custom.◯◯"、組み込みの JavaScript 版は "bundled.◯◯"
     var id: String
     var name: String
     var summary: String
@@ -87,14 +89,33 @@ struct ToolDescriptor: Equatable, Identifiable {
         source = .custom(tool)
     }
 
+    init(bundled: BuiltinScriptTool) {
+        let tool = bundled.tool
+        id = "bundled." + tool.id
+        name = tool.name + BuiltinScriptTools.nameSuffix
+        summary = tool.summary
+        symbol = tool.symbol
+        category = tool.category
+        keywords = tool.keywords
+        source = .bundled(tool)
+    }
+
     var isCustom: Bool {
         if case .custom = source { return true }
         return false
     }
 
-    var isScript: Bool {
-        if case .custom(let tool) = source { return tool.kind == .script }
+    var isBundled: Bool {
+        if case .bundled = source { return true }
         return false
+    }
+
+    var isScript: Bool {
+        switch source {
+        case .custom(let tool): return tool.kind == .script
+        case .bundled: return true
+        case .builtin: return false
+        }
     }
 }
 
@@ -125,6 +146,20 @@ enum BuiltinTools {
         ToolDescriptor(.scoreboard, name: "スコアボード", summary: "2〜4チームの点とセット数", symbol: "sportscourt", category: .play, keywords: ["score", "すこあ", "得点", "点数", "試合", "セット"]),
         ToolDescriptor(.metronome, name: "メトロノーム", summary: "テンポと拍子を決めて鳴らす", symbol: "metronome", category: .measure, keywords: ["metronome", "めとろのーむ", "テンポ", "BPM", "リズム", "拍子"]),
     ]
+
+    /// 内蔵ツールと、その JavaScript 版(Swift の版のすぐ後ろに並べる。置き換えるものがない版は最後)
+    static let withScripts: [ToolDescriptor] = arranged(builtin: all, scripts: BuiltinScriptTools.all)
+
+    static func arranged(builtin: [ToolDescriptor], scripts: [BuiltinScriptTool]) -> [ToolDescriptor] {
+        var result: [ToolDescriptor] = []
+        for descriptor in builtin {
+            result.append(descriptor)
+            guard case .builtin(let kind) = descriptor.source else { continue }
+            result.append(contentsOf: scripts.filter { $0.replaces == kind }.map { ToolDescriptor(bundled: $0) })
+        }
+        result.append(contentsOf: scripts.filter { $0.replaces == nil }.map { ToolDescriptor(bundled: $0) })
+        return result
+    }
 }
 
 /// 検索。ひらがな・カタカナ・全角半角・大文字小文字の表記ゆれを吸収する。
@@ -201,7 +236,7 @@ final class ToolLibrary {
         }
     }
 
-    var all: [ToolDescriptor] { BuiltinTools.all + customTools.map { ToolDescriptor($0) } }
+    var all: [ToolDescriptor] { BuiltinTools.withScripts + customTools.map { ToolDescriptor($0) } }
 
     func descriptor(id: String) -> ToolDescriptor? { all.first { $0.id == id } }
 
@@ -234,6 +269,7 @@ final class ToolLibrary {
 
     func delete(customID: String) {
         onDeleteCustom?(customID)
+        ScriptNotifications.cancelAll(toolID: customID)
         customSources[customID] = nil
         let descriptorID = "custom." + customID
         favorites.removeAll { $0 == descriptorID }
@@ -254,6 +290,15 @@ final class ToolLibrary {
     }
 
     func customTool(id: String) -> CustomTool? { customTools.first { $0.id == id } }
+
+    /// スクリプト型のツール(読み込んだものか、組み込みの JavaScript 版)
+    func scriptTool(id: String) -> CustomTool? { customTool(id: id) ?? BuiltinScriptTools.tool(id: id)?.tool }
+
+    /// 組み込みの JavaScript 版を、編集できる複製として保存する JSON(保存は確認の画面で利用者が押す)
+    func copyJSON(of bundled: BuiltinScriptTool) -> String? {
+        let identity = BuiltinScriptTools.copyIdentity(of: bundled, existing: Set(customSources.keys))
+        return BuiltinScriptTools.copyJSON(bundled.json, newID: identity.id, name: identity.name)
+    }
 
     private func rebuild() {
         customTools = customSources.values.compactMap { json -> CustomTool? in

@@ -276,8 +276,19 @@ struct ScriptControlsPanel: View {
             Toggle(control.label, isOn: Binding(get: { isOn }, set: { onChange(control.id, .bool($0)) }))
         case .text:
             let text: String = { if case .text(let v) = control.value { return v } else { return "" } }()
-            TextField(control.label, text: Binding(get: { text }, set: { onChange(control.id, .text(String($0.prefix(200)))) }))
-                .textFieldStyle(.roundedBorder)
+            let binding = Binding(get: { text }, set: { onChange(control.id, .text(String($0.prefix(control.maxLength)))) })
+            if control.multiline {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(control.label).font(.caption).foregroundStyle(.secondary)
+                    TextField(control.placeholder.isEmpty ? control.label : control.placeholder, text: binding, axis: .vertical)
+                        .lineLimit(3...6)
+                        .textFieldStyle(.roundedBorder)
+                }
+            } else {
+                TextField(control.placeholder.isEmpty ? control.label : control.placeholder, text: binding)
+                    .textFieldStyle(.roundedBorder)
+                    .keyboardType(Self.keyboardType(control.keyboard))
+            }
         case .choice:
             let selected: String = { if case .text(let v) = control.value { return v } else { return control.options.first ?? "" } }()
             let binding = Binding(get: { selected }, set: { onChange(control.id, .text($0)) })
@@ -297,6 +308,14 @@ struct ScriptControlsPanel: View {
 
     static func number(_ value: Double) -> String {
         value == value.rounded() && abs(value) < 1e9 ? String(Int(value)) : String(format: "%.2f", value)
+    }
+
+    static func keyboardType(_ keyboard: ScriptControlSpec.Keyboard) -> UIKeyboardType {
+        switch keyboard {
+        case .text: return .default
+        case .number: return .numbersAndPunctuation
+        case .decimal: return .decimalPad
+        }
     }
 }
 
@@ -349,7 +368,7 @@ struct ScriptCrashRecoveryView: View {
     var body: some View {
         NavigationStack {
             Group {
-                if isRetrying, let tool = env.tools.customTool(id: record.toolID) {
+                if isRetrying, let tool = env.tools.scriptTool(id: record.toolID) {
                     ScriptToolView(tool: tool)
                 } else {
                     Form {
@@ -361,7 +380,7 @@ struct ScriptCrashRecoveryView: View {
                                  + "を動かしている間に、アプリが終了しました(固まって終了した、メモリを使いすぎた、など)。このツールは開いていません。")
                                 .fixedSize(horizontal: false, vertical: true)
                         }
-                        if !record.isPreview, env.tools.customTool(id: record.toolID) != nil {
+                        if !record.isPreview, env.tools.scriptTool(id: record.toolID) != nil {
                             Section {
                                 Button("もう一度試す") {
                                     env.settings.disabledScriptTools.removeAll { $0 == record.toolID }
@@ -373,9 +392,11 @@ struct ScriptCrashRecoveryView: View {
                                     }
                                     close()
                                 }
-                                Button("削除する", role: .destructive) {
-                                    env.tools.delete(customID: record.toolID)
-                                    close()
+                                if !BuiltinScriptTools.isReserved(record.toolID) {
+                                    Button("削除する", role: .destructive) {
+                                        env.tools.delete(customID: record.toolID)
+                                        close()
+                                    }
                                 }
                             } footer: {
                                 Text("無効にしたツールは、一覧には残り、開いたときに有効に戻せます。設定の「小ツール」で、スクリプト型のツールをすべて止めることもできます。")

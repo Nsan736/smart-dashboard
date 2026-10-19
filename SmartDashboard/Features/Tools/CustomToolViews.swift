@@ -205,6 +205,13 @@ struct ToolImportView: View {
                 } footer: {
                     Text("URLからの取得は、このボタンを押したときだけ行います(https のみ、200KBまで)。読み込んだツールは、決まった型に中身を当てはめるか、決まった機能だけを使うスクリプトで、通信・カメラ・ファイルにはアクセスできません。アプリのデータを使うスクリプト型のツールは、種類ごとに許可したものだけを読めます(書き換えはできません)。")
                 }
+                if case .success(let tool)? = result, BuiltinScriptTools.isReserved(tool.id) {
+                    Section {
+                        Text("ID が「\(BuiltinScriptTools.idPrefix)」で始まるツールは、組み込みの JavaScript 版のために取ってあるので保存できません。id を変えてください。")
+                            .foregroundStyle(.orange)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
                 if let result {
                     switch result {
                     case .success(let tool): ToolPreviewSections(tool: tool)
@@ -257,7 +264,7 @@ struct ToolImportView: View {
     }
 
     private static func isValid(_ result: CustomToolParser.Result?) -> Bool {
-        if case .success? = result { return true }
+        if case .success(let tool)? = result { return !BuiltinScriptTools.isReserved(tool.id) }
         return false
     }
 

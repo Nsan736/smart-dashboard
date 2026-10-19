@@ -8,6 +8,8 @@ struct ToolScreen: View {
     @State private var isRevising = false
     @State private var confirmDelete = false
     @State private var showsPermissions = false
+    /// 組み込みの JavaScript 版の、編集できる複製(確認の画面で保存する)
+    @State private var copyJSON: String?
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -51,7 +53,22 @@ struct ToolScreen: View {
                             Label("その他", systemImage: "ellipsis.circle")
                         }
                     }
+                    if case .bundled(let script) = tool.source, let bundled = BuiltinScriptTools.tool(id: script.id) {
+                        Menu {
+                            Button {
+                                copyJSON = env.tools.copyJSON(of: bundled)
+                            } label: {
+                                Label("複製して編集", systemImage: "doc.on.doc")
+                            }
+                            ShareLink(item: bundled.json, subject: Text(script.name)) { Label("書き出す(共有)", systemImage: "square.and.arrow.up") }
+                        } label: {
+                            Label("その他", systemImage: "ellipsis.circle")
+                        }
+                    }
                 }
+            }
+            .sheet(isPresented: Binding(get: { copyJSON != nil }, set: { if !$0 { copyJSON = nil } })) {
+                ToolImportView(json: copyJSON ?? "")
             }
             .sheet(isPresented: $isEditing) {
                 if case .custom(let custom) = tool.source {
@@ -88,6 +105,8 @@ struct ToolScreen: View {
         case .custom(let custom):
             // 編集して保存したら、新しい内容で表示する
             CustomToolRunner(tool: currentCustom(custom))
+        case .bundled(let script):
+            CustomToolRunner(tool: script)
         case .builtin(let builtin):
             switch builtin {
             case .timer: TimerTabView(initialMode: 0)

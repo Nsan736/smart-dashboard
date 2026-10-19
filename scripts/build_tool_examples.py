@@ -8,6 +8,10 @@ examples/tools/<名前>.json と、テストのフィクスチャ SmartDashboard
 JSON の文字列にスクリプトを手で埋め込むと、改行や引用符のエスケープを誤りやすいため。
 あわせて、examples/tools のサンプル全部を1つにまとめた SmartDashboard/Resources/tool_samples.json(アプリに同梱し、
 小ツールの「サンプル」の一覧から追加できるようにする)を書く。
+
+組み込みのツールの JavaScript 版(v0.9.32): examples/tools/src/builtin/*.js の先頭に、共通の部品 _kit.js を付けて、
+下の BUILTIN(名前・部品など)から examples/tools/builtin/<名前>.json と、アプリに同梱する
+SmartDashboard/Resources/builtin_script_tools.json(小ツールの一覧に「JavaScript 版」として並ぶ)を書く。
 """
 import glob
 import json
@@ -87,6 +91,201 @@ TOOLS = {
 }
 
 
+KIT_NOTE = "// ---- 共通の部品(_kit.js) ----\n"
+TOOL_NOTE = "// ---- ここからツールの本体 ----\n"
+
+
+def kit_text():
+    return open(os.path.join(ROOT, "examples", "tools", "src", "builtin", "_kit.js"), encoding="utf-8").read()
+
+
+def build_builtin(name, meta):
+    script = KIT_NOTE + kit_text() + TOOL_NOTE + open(os.path.join(ROOT, "examples", "tools", "src", "builtin", name + ".js"), encoding="utf-8").read()
+    tool = {"format": 1, "id": "builtin-js." + name, "name": meta["name"], "type": "script"}
+    for key in ("description", "icon", "category", "keywords", "fps", "aspect", "controlsPosition", "controls"):
+        if key in meta:
+            tool[key] = meta[key]
+    tool["script"] = script
+    return json.dumps(tool, ensure_ascii=False, indent=2) + "\n"
+
+
+BUILTIN_BUNDLE = os.path.join(ROOT, "SmartDashboard", "Resources", "builtin_script_tools.json")
+
+
+def builtin_bundle_text():
+    """組み込みのツールの JavaScript 版を、BUILTIN の順に1つの JSON にまとめる(replaces は置き換える前の Swift の版)"""
+    tools = [{"file": name, "replaces": meta["replaces"], "json": build_builtin(name, meta)} for name, meta in BUILTIN.items()]
+    return json.dumps({"tools": tools}, ensure_ascii=False, indent=1) + "\n"
+
+
+JS_NOTE = "(JavaScript 版。「その他」→「複製して編集」で中身を変えられます)"
+
+# 組み込みのツールの JavaScript 版。replaces は Swift の版(BuiltinTool の値)。並びは一覧の並び。
+BUILTIN = {
+    "timer": {
+        "replaces": "timer", "name": "タイマー", "icon": "timer", "category": "time", "fps": 15,
+        "description": "複数のタイマー。閉じても進み、終わったら通知と音" + JS_NOTE,
+        "keywords": ["timer", "カウントダウン", "アラーム", "javascript"],
+        "controlsPosition": "top",
+        "controls": [
+            {"id": "duration", "type": "text", "label": "時間(例 5分、90秒、1時間30分、1:30:00)", "value": "5分"},
+            {"id": "label", "type": "text", "label": "名前(省略可)", "value": ""},
+            {"id": "add", "type": "button", "label": "追加して開始"},
+            {"id": "notify", "type": "toggle", "label": "終わったら通知する", "value": True},
+            {"id": "awake", "type": "toggle", "label": "画面を消さない", "value": False},
+        ],
+    },
+    "stopwatch": {
+        "replaces": "stopwatch", "name": "ストップウォッチ", "icon": "stopwatch", "category": "time", "fps": 30,
+        "description": "経過時間とラップ。閉じても進む" + JS_NOTE,
+        "keywords": ["stopwatch", "ラップ", "計測", "javascript"],
+        "controls": [{"id": "awake", "type": "toggle", "label": "画面を消さない", "value": False}],
+    },
+    "time-calc": {
+        "replaces": "timeCalc", "name": "時間計算", "icon": "clock.arrow.2.circlepath", "category": "time", "fps": 15,
+        "description": "時間の合計、時刻に足す・引く、2つの時刻の間" + JS_NOTE,
+        "keywords": ["time", "じかん", "勤務時間", "合計", "何時間", "足し算", "javascript"],
+        "controlsPosition": "top",
+        "controls": [{"id": "mode", "type": "choice", "label": "計算", "options": ["合計", "時刻に足す", "2つの時刻の間"], "value": "合計"}],
+    },
+    "date-calc": {
+        "replaces": "dateCalc", "name": "日付計算", "icon": "calendar", "category": "time", "fps": 15,
+        "description": "日数の差、◯日後、曜日と祝日" + JS_NOTE,
+        "keywords": ["date", "日数", "何日後", "曜日", "カレンダー", "javascript"],
+        "controlsPosition": "top",
+        "controls": [{"id": "mode", "type": "choice", "label": "計算", "options": ["日数の差", "◯日後", "曜日"], "value": "日数の差"}],
+    },
+    "wareki": {
+        "replaces": "wareki", "name": "和暦・西暦・年齢", "icon": "calendar.badge.clock", "category": "time", "fps": 15,
+        "description": "令和・平成・昭和と西暦、年齢の変換" + JS_NOTE,
+        "keywords": ["wareki", "元号", "令和", "平成", "昭和", "年齢", "干支", "javascript"],
+        "controlsPosition": "top",
+        "controls": [{"id": "mode", "type": "choice", "label": "変換", "options": ["西暦→和暦", "和暦→西暦", "年齢"], "value": "西暦→和暦"}],
+    },
+    "split-bill": {
+        "replaces": "splitBill", "name": "割り勘", "icon": "person.2", "category": "calc", "fps": 15,
+        "description": "人数で割り、端数の扱いを選べる" + JS_NOTE,
+        "keywords": ["warikan", "わりかん", "会計", "飲み会", "split", "javascript"],
+        "controlsPosition": "top",
+        "controls": [
+            {"id": "total", "type": "text", "label": "合計の金額(円)", "value": "12800", "keyboard": "number"},
+            {"id": "people", "type": "slider", "label": "人数", "min": 2, "max": 30, "step": 1, "value": 4},
+            {"id": "rounding", "type": "choice", "label": "1人あたりの単位(切り上げ)", "options": ["1円単位", "10円単位", "100円単位", "500円単位", "1000円単位"], "value": "100円単位"},
+        ],
+    },
+    "percent": {
+        "replaces": "percent", "name": "パーセント・割引・消費税", "icon": "percent", "category": "calc", "fps": 15,
+        "description": "◯%引き、税込・税抜、何%か" + JS_NOTE,
+        "keywords": ["percent", "割引", "消費税", "税込", "税抜", "セール", "ぜい", "javascript"],
+        "controlsPosition": "top",
+        "controls": [
+            {"id": "price", "type": "text", "label": "値段(円)", "value": "1980", "keyboard": "decimal"},
+            {"id": "off", "type": "slider", "label": "割引(%)", "min": 0, "max": 90, "step": 5, "value": 20},
+            {"id": "tax", "type": "choice", "label": "消費税", "options": ["10%", "8%"], "value": "10%"},
+            {"id": "a", "type": "text", "label": "何%か: この数は", "value": "30", "keyboard": "decimal"},
+            {"id": "b", "type": "text", "label": "この数の", "value": "120", "keyboard": "decimal"},
+        ],
+    },
+    "unit-convert": {
+        "replaces": "unitConvert", "name": "単位換算", "icon": "arrow.left.arrow.right", "category": "calc", "fps": 15,
+        "description": "長さ・重さ・温度・面積・体積・速度" + JS_NOTE,
+        "keywords": ["unit", "換算", "インチ", "ポンド", "マイル", "華氏", "坪", "javascript"],
+        "controlsPosition": "top",
+        "controls": [
+            {"id": "kind", "type": "choice", "label": "種類", "options": ["長さ", "重さ", "温度", "面積", "体積", "速度"], "value": "長さ"},
+            {"id": "value", "type": "text", "label": "値", "value": "1", "keyboard": "number"},
+        ],
+    },
+    "base-convert": {
+        "replaces": "baseConvert", "name": "進数変換", "icon": "number", "category": "calc", "fps": 15,
+        "description": "2進・8進・10進・16進と、2〜36進" + JS_NOTE,
+        "keywords": ["binary", "hex", "2進数", "16進数", "ビット", "javascript"],
+        "controlsPosition": "top",
+        "controls": [
+            {"id": "value", "type": "text", "label": "数", "value": "FF"},
+            {"id": "base", "type": "choice", "label": "入れた数の進数", "options": ["2", "8", "10", "16", "その他"], "value": "16"},
+            {"id": "custom", "type": "slider", "label": "その他の進数", "min": 2, "max": 36, "step": 1, "value": 36},
+        ],
+    },
+    "roulette": {
+        "replaces": "roulette", "name": "ルーレット", "icon": "arrow.triangle.2.circlepath.circle", "category": "play", "fps": 30,
+        "description": "登録した項目から1つ選ぶ。くじ引きと履歴つき" + JS_NOTE,
+        "keywords": ["roulette", "抽選", "くじ", "ランダム", "選ぶ", "javascript"],
+    },
+    "dice": {
+        "replaces": "dice", "name": "サイコロ", "icon": "dice", "category": "play", "fps": 30,
+        "description": "個数と面の数を指定" + JS_NOTE,
+        "keywords": ["dice", "さいころ", "ダイス", "乱数", "javascript"],
+    },
+    "coin": {
+        "replaces": "coin", "name": "コイントス", "icon": "circle.lefthalf.filled", "category": "play", "fps": 30,
+        "description": "表か裏か。回数を数える" + JS_NOTE,
+        "keywords": ["coin", "こいん", "表裏", "おもてうら", "javascript"],
+    },
+    "teams": {
+        "replaces": "teams", "name": "チーム分け", "icon": "person.3", "category": "play", "fps": 15,
+        "description": "メンバーをランダムにチームに分ける" + JS_NOTE,
+        "keywords": ["team", "グループ分け", "班分け", "javascript"],
+    },
+    "order": {
+        "replaces": "order", "name": "順番決め", "icon": "list.number", "category": "play", "fps": 15,
+        "description": "メンバーをランダムな順に並べる" + JS_NOTE,
+        "keywords": ["order", "シャッフル", "じゅんばん", "発表順", "javascript"],
+    },
+    "tournament": {
+        "replaces": "tournament", "name": "トーナメント表", "icon": "trophy", "category": "play", "fps": 15,
+        "description": "組み合わせを作り、勝者をタップで進める" + JS_NOTE,
+        "keywords": ["tournament", "とーなめんと", "対戦表", "シード", "勝ち抜き", "javascript"],
+    },
+    "counter": {
+        "replaces": "counter", "name": "カウンター", "icon": "plusminus.circle", "category": "play", "fps": 15,
+        "description": "複数の数を数える" + JS_NOTE,
+        "keywords": ["counter", "かうんたー", "数取り", "カウント", "javascript"],
+        "controls": [
+            {"id": "name", "type": "text", "label": "新しいカウンターの名前", "value": ""},
+            {"id": "add", "type": "button", "label": "カウンターを足す"},
+        ],
+    },
+    "amida": {
+        "replaces": "amida", "name": "あみだくじ", "icon": "square.grid.3x3.middle.filled", "category": "play", "fps": 30,
+        "description": "名前をタップして道をたどる" + JS_NOTE,
+        "keywords": ["amida", "アミダ", "くじ", "抽選", "当たり", "javascript"],
+    },
+    "scoreboard": {
+        "replaces": "scoreboard", "name": "スコアボード", "icon": "sportscourt", "category": "play", "fps": 15,
+        "description": "2〜4チームの点とセット数" + JS_NOTE,
+        "keywords": ["score", "すこあ", "得点", "点数", "試合", "セット", "javascript"],
+    },
+    "text-count": {
+        "replaces": "textCount", "name": "文字数カウント", "icon": "textformat.123", "category": "text", "fps": 15,
+        "description": "文字数、空白を除く、半角換算、行数、バイト数" + JS_NOTE,
+        "keywords": ["count", "もじすう", "文字数", "字数", "javascript"],
+        "controlsPosition": "top",
+    },
+    "kana-convert": {
+        "replaces": "kanaConvert", "name": "文字の変換", "icon": "textformat.alt", "category": "text", "fps": 15,
+        "description": "全角・半角・ひらがな・カタカナ。結果をコピー" + JS_NOTE,
+        "keywords": ["kana", "ぜんかく", "はんかく", "ひらがな", "カタカナ", "変換", "javascript"],
+        "controlsPosition": "top",
+        "controls": [
+            {"id": "mode", "type": "choice", "label": "変換", "options": ["ひらがな→カタカナ", "カタカナ→ひらがな", "全角→半角", "半角→全角"], "value": "ひらがな→カタカナ"},
+            {"id": "alnum", "type": "toggle", "label": "全角・半角: 英数字と記号", "value": True},
+            {"id": "kana", "type": "toggle", "label": "全角・半角: カタカナ", "value": True},
+        ],
+    },
+    "password": {
+        "replaces": "password", "name": "パスワード・乱数", "icon": "key", "category": "text", "fps": 15,
+        "description": "文字の種類と長さを選んで作る。暗号に使える乱数" + JS_NOTE,
+        "keywords": ["password", "ぱすわーど", "乱数", "ランダム", "random", "javascript"],
+        "controlsPosition": "top",
+        "controls": [
+            {"id": "mode", "type": "choice", "label": "作るもの", "options": ["パスワード", "乱数"], "value": "パスワード"},
+            {"id": "make", "type": "button", "label": "作り直す"},
+        ],
+    },
+}
+
+
 def build(name, meta):
     script = open(os.path.join(ROOT, "examples", "tools", "src", name + ".js"), encoding="utf-8").read()
     tool = {"format": 1, "id": name, "name": meta["name"], "type": "script"}
@@ -120,6 +319,13 @@ def main():
     with open(BUNDLE, "w", encoding="utf-8", newline="\n") as f:
         f.write(bundle_text())
     print("書いた: tool_samples.json")
+    os.makedirs(os.path.join(ROOT, "examples", "tools", "builtin"), exist_ok=True)
+    for name, meta in BUILTIN.items():
+        with open(os.path.join(ROOT, "examples", "tools", "builtin", name + ".json"), "w", encoding="utf-8", newline="\n") as f:
+            f.write(build_builtin(name, meta))
+    with open(BUILTIN_BUNDLE, "w", encoding="utf-8", newline="\n") as f:
+        f.write(builtin_bundle_text())
+    print("書いた: builtin_script_tools.json(" + str(len(BUILTIN)) + "個)")
 
 
 if __name__ == "__main__":
