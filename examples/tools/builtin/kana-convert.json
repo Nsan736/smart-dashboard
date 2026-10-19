@@ -3,7 +3,7 @@
   "id": "builtin-js.kana-convert",
   "name": "文字の変換",
   "type": "script",
-  "description": "全角・半角・ひらがな・カタカナ。結果をコピー(JavaScript 版。「その他」→「複製して編集」で中身を変えられます)",
+  "description": "全角・半角・ひらがな・カタカナ。結果をコピー",
   "icon": "textformat.alt",
   "category": "text",
   "keywords": [
@@ -12,8 +12,7 @@
     "はんかく",
     "ひらがな",
     "カタカナ",
-    "変換",
-    "javascript"
+    "変換"
   ],
   "fps": 15,
   "controlsPosition": "top",

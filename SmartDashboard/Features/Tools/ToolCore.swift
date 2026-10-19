@@ -23,31 +23,11 @@ enum ToolCategory: String, CaseIterable, Identifiable {
     }
 }
 
-/// 内蔵ツールの種類。増やすときは、ここに足して、BuiltinTools.all に登録し、ToolScreen に画面を足す。
+/// Swift で作っている内蔵ツール(機器や iOS のデータ・正確な音が要るもの)。ほかの内蔵ツールは JavaScript 版(`BuiltinScriptTools`)。
+/// 増やすときは、ここに足して、BuiltinTools.all に登録し、ToolScreen に画面を足す。
 enum BuiltinTool: String, CaseIterable {
-    case timer
-    case stopwatch
-    case dateCalc
-    case wareki
-    case splitBill
-    case percent
-    case unitConvert
-    case baseConvert
-    case roulette
-    case dice
-    case coin
-    case teams
-    case order
-    case tournament
-    case counter
-    case textCount
-    case kanaConvert
-    case password
     case flashlight
-    case timeCalc
     case worldClock
-    case amida
-    case scoreboard
     case metronome
 }
 
@@ -60,7 +40,8 @@ struct ToolDescriptor: Equatable, Identifiable {
         case bundled(CustomTool)
     }
 
-    /// 内蔵は "builtin.◯◯"、読み込んだものは "custom.◯◯"、組み込みの JavaScript 版は "bundled.◯◯"
+    /// 内蔵は "builtin.◯◯"(JavaScript 版も、Swift の版と同じ "builtin.timer" など。お気に入りと最近使ったを引き継ぐため)、
+    /// 読み込んだものは "custom.◯◯"。以前の名前のない JavaScript 版(v0.9.32 だけ)は "bundled.◯◯" だった
     var id: String
     var name: String
     var summary: String
@@ -91,8 +72,8 @@ struct ToolDescriptor: Equatable, Identifiable {
 
     init(bundled: BuiltinScriptTool) {
         let tool = bundled.tool
-        id = "bundled." + tool.id
-        name = tool.name + BuiltinScriptTools.nameSuffix
+        id = "builtin." + (bundled.legacy ?? bundled.file)
+        name = tool.name
         summary = tool.summary
         symbol = tool.symbol
         category = tool.category
@@ -121,43 +102,38 @@ struct ToolDescriptor: Equatable, Identifiable {
 
 enum BuiltinTools {
     static let all: [ToolDescriptor] = [
-        ToolDescriptor(.timer, name: "タイマー", summary: "複数のタイマー。終了時に通知と音", symbol: "timer", category: .time, keywords: ["timer", "カウントダウン", "アラーム"]),
-        ToolDescriptor(.stopwatch, name: "ストップウォッチ", summary: "経過時間とラップ", symbol: "stopwatch", category: .time, keywords: ["stopwatch", "ラップ", "計測"]),
-        ToolDescriptor(.dateCalc, name: "日付計算", summary: "日数の差、◯日後、曜日", symbol: "calendar", category: .time, keywords: ["date", "日数", "何日後", "曜日", "カレンダー"]),
-        ToolDescriptor(.wareki, name: "和暦・西暦・年齢", summary: "令和・平成・昭和と西暦、年齢の変換", symbol: "calendar.badge.clock", category: .time, keywords: ["wareki", "元号", "令和", "平成", "昭和", "年齢", "干支"]),
-        ToolDescriptor(.splitBill, name: "割り勘", summary: "人数で割り、端数の扱いを選べる", symbol: "person.2", category: .calc, keywords: ["warikan", "わりかん", "会計", "飲み会", "split"]),
-        ToolDescriptor(.percent, name: "パーセント・割引・消費税", summary: "◯%引き、税込・税抜", symbol: "percent", category: .calc, keywords: ["percent", "割引", "消費税", "税込", "税抜", "セール", "ぜい"]),
-        ToolDescriptor(.unitConvert, name: "単位換算", summary: "長さ・重さ・温度・面積・体積・速度", symbol: "arrow.left.arrow.right", category: .calc, keywords: ["unit", "換算", "インチ", "ポンド", "マイル", "華氏", "坪"]),
-        ToolDescriptor(.baseConvert, name: "進数変換", summary: "2進・8進・10進・16進", symbol: "number", category: .calc, keywords: ["binary", "hex", "2進数", "16進数", "ビット"]),
-        ToolDescriptor(.roulette, name: "ルーレット", summary: "登録した項目から1つ選ぶ。履歴つき", symbol: "arrow.triangle.2.circlepath.circle", category: .play, keywords: ["roulette", "抽選", "くじ", "ランダム", "選ぶ"]),
-        ToolDescriptor(.dice, name: "サイコロ", summary: "個数と面の数を指定", symbol: "dice", category: .play, keywords: ["dice", "さいころ", "ダイス", "乱数"]),
-        ToolDescriptor(.coin, name: "コイントス", summary: "表か裏か", symbol: "circle.lefthalf.filled", category: .play, keywords: ["coin", "こいん", "表裏", "おもてうら"]),
-        ToolDescriptor(.teams, name: "チーム分け", summary: "メンバーをランダムにチームに分ける", symbol: "person.3", category: .play, keywords: ["team", "グループ分け", "班分け"]),
-        ToolDescriptor(.order, name: "順番決め", summary: "メンバーをランダムな順に並べる", symbol: "list.number", category: .play, keywords: ["order", "シャッフル", "じゅんばん", "発表順"]),
-        ToolDescriptor(.tournament, name: "トーナメント表", summary: "組み合わせを作り、勝者をタップで進める", symbol: "trophy", category: .play, keywords: ["tournament", "とーなめんと", "対戦表", "シード", "勝ち抜き"]),
-        ToolDescriptor(.counter, name: "カウンター", summary: "複数の数を数える", symbol: "plusminus.circle", category: .play, keywords: ["counter", "かうんたー", "数取り", "カウント"]),
-        ToolDescriptor(.textCount, name: "文字数カウント", summary: "全角・半角・改行の扱いを選べる", symbol: "textformat.123", category: .text, keywords: ["count", "もじすう", "文字数", "字数"]),
-        ToolDescriptor(.kanaConvert, name: "文字の変換", summary: "全角・半角・ひらがな・カタカナ", symbol: "textformat.alt", category: .text, keywords: ["kana", "ぜんかく", "はんかく", "ひらがな", "カタカナ", "変換"]),
-        ToolDescriptor(.password, name: "パスワード・乱数", summary: "文字の種類と長さを選んで作る", symbol: "key", category: .text, keywords: ["password", "ぱすわーど", "乱数", "ランダム", "random"]),
         ToolDescriptor(.flashlight, name: "懐中電灯", summary: "ライトを点け、明るさを調整", symbol: "flashlight.on.fill", category: .measure, keywords: ["light", "らいと", "ライト", "かいちゅうでんとう", "torch"]),
-        ToolDescriptor(.timeCalc, name: "時間計算", summary: "時間の合計、時刻に足す・引く、2つの時刻の間", symbol: "clock.arrow.2.circlepath", category: .time, keywords: ["time", "じかん", "勤務時間", "合計", "何時間", "足し算"]),
         ToolDescriptor(.worldClock, name: "世界時計", summary: "各地の時刻と、日本との時差", symbol: "globe", category: .time, keywords: ["world", "clock", "時差", "じさ", "タイムゾーン", "海外", "夏時間"]),
-        ToolDescriptor(.amida, name: "あみだくじ", summary: "名前をタップして道をたどる", symbol: "square.grid.3x3.middle.filled", category: .play, keywords: ["amida", "アミダ", "くじ", "抽選", "当たり"]),
-        ToolDescriptor(.scoreboard, name: "スコアボード", summary: "2〜4チームの点とセット数", symbol: "sportscourt", category: .play, keywords: ["score", "すこあ", "得点", "点数", "試合", "セット"]),
         ToolDescriptor(.metronome, name: "メトロノーム", summary: "テンポと拍子を決めて鳴らす", symbol: "metronome", category: .measure, keywords: ["metronome", "めとろのーむ", "テンポ", "BPM", "リズム", "拍子"]),
     ]
 
-    /// 内蔵ツールと、その JavaScript 版(Swift の版のすぐ後ろに並べる。置き換えるものがない版は最後)
+    /// 一覧の並び(v0.9.32 までの内蔵ツールの並び。ID の "builtin." の後ろ)。ないものは最後
+    static let order = ["timer", "stopwatch", "dateCalc", "wareki", "splitBill", "percent", "unitConvert", "baseConvert", "roulette", "dice",
+                        "coin", "teams", "order", "tournament", "counter", "textCount", "kanaConvert", "password", "flashlight", "timeCalc",
+                        "worldClock", "amida", "scoreboard", "metronome"]
+
+    /// Swift の内蔵ツールと、JavaScript 版の内蔵ツールを、決まった並びにする
     static let withScripts: [ToolDescriptor] = arranged(builtin: all, scripts: BuiltinScriptTools.all)
 
     static func arranged(builtin: [ToolDescriptor], scripts: [BuiltinScriptTool]) -> [ToolDescriptor] {
-        var result: [ToolDescriptor] = []
-        for descriptor in builtin {
-            result.append(descriptor)
-            guard case .builtin(let kind) = descriptor.source else { continue }
-            result.append(contentsOf: scripts.filter { $0.replaces == kind }.map { ToolDescriptor(bundled: $0) })
+        let tools = builtin + scripts.map { ToolDescriptor(bundled: $0) }
+        func rank(_ tool: ToolDescriptor) -> Int {
+            order.firstIndex(of: String(tool.id.dropFirst("builtin.".count))) ?? order.count
         }
-        result.append(contentsOf: scripts.filter { $0.replaces == nil }.map { ToolDescriptor(bundled: $0) })
+        return tools.enumerated().sorted { (rank($0.element), $0.offset) < (rank($1.element), $1.offset) }.map(\.element)
+    }
+
+    /// 保存したお気に入り・最近使ったの ID を、今の ID に直す(v0.9.32 の JavaScript 版の "bundled.builtin-js.◯◯" → "builtin.◯◯")。
+    /// 重なったら前のほうを残す
+    static func migratedIDs(_ ids: [String], scripts: [BuiltinScriptTool] = BuiltinScriptTools.all) -> [String] {
+        var result: [String] = []
+        for id in ids {
+            var next = id
+            if id.hasPrefix("bundled."), let script = scripts.first(where: { "bundled." + $0.tool.id == id }) {
+                next = ToolDescriptor(bundled: script).id
+            }
+            if !result.contains(next) { result.append(next) }
+        }
         return result
     }
 }
@@ -228,8 +204,12 @@ final class ToolLibrary {
         runGuard = ScriptRunGuard(fileURL: base.appendingPathComponent("script-running.json"))
         scriptStorageDirectory = base.appendingPathComponent("script-storage", isDirectory: true)
         crashedScript = runGuard.load()
-        favorites = defaults.stringArray(forKey: Self.favoritesKey) ?? []
-        recents = defaults.stringArray(forKey: Self.recentsKey) ?? []
+        let savedFavorites = defaults.stringArray(forKey: Self.favoritesKey) ?? []
+        let savedRecents = defaults.stringArray(forKey: Self.recentsKey) ?? []
+        favorites = BuiltinTools.migratedIDs(savedFavorites)
+        recents = BuiltinTools.migratedIDs(savedRecents)
+        if favorites != savedFavorites { defaults.set(favorites, forKey: Self.favoritesKey) }
+        if recents != savedRecents { defaults.set(recents, forKey: Self.recentsKey) }
         if let data = try? Data(contentsOf: fileURL), let saved = try? JSONDecoder().decode([String: String].self, from: data) {
             customSources = saved
             rebuild()

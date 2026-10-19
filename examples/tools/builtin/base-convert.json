@@ -3,7 +3,7 @@
   "id": "builtin-js.base-convert",
   "name": "進数変換",
   "type": "script",
-  "description": "2進・8進・10進・16進と、2〜36進(JavaScript 版。「その他」→「複製して編集」で中身を変えられます)",
+  "description": "2進・8進・10進・16進と、2〜36進",
   "icon": "number",
   "category": "calc",
   "keywords": [
@@ -11,8 +11,7 @@
     "hex",
     "2進数",
     "16進数",
-    "ビット",
-    "javascript"
+    "ビット"
   ],
   "fps": 15,
   "controlsPosition": "top",

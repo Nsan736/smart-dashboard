@@ -3,15 +3,14 @@
   "id": "builtin-js.counter",
   "name": "カウンター",
   "type": "script",
-  "description": "複数の数を数える(JavaScript 版。「その他」→「複製して編集」で中身を変えられます)",
+  "description": "複数の数を数える",
   "icon": "plusminus.circle",
   "category": "play",
   "keywords": [
     "counter",
     "かうんたー",
     "数取り",
-    "カウント",
-    "javascript"
+    "カウント"
   ],
   "fps": 15,
   "controls": [

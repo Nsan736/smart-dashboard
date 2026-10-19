@@ -3,7 +3,7 @@
   "id": "builtin-js.wareki",
   "name": "和暦・西暦・年齢",
   "type": "script",
-  "description": "令和・平成・昭和と西暦、年齢の変換(JavaScript 版。「その他」→「複製して編集」で中身を変えられます)",
+  "description": "令和・平成・昭和と西暦、年齢の変換",
   "icon": "calendar.badge.clock",
   "category": "time",
   "keywords": [
@@ -13,8 +13,7 @@
     "平成",
     "昭和",
     "年齢",
-    "干支",
-    "javascript"
+    "干支"
   ],
   "fps": 15,
   "controlsPosition": "top",

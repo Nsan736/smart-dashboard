@@ -59,7 +59,7 @@ enum HomeCardKind: String, Codable, CaseIterable, Identifiable {
     /// 編集画面に出す補足
     var detail: String? {
         switch self {
-        case .timer: return "動作中のタイマーがあるときだけ表示"
+        case .timer: return "動作中のタイマー・ストップウォッチがあるときだけ表示(タップで開く)"
         case .nextTrain, .trainInfo: return "路線・駅を登録しているときだけ表示"
         case .speed: return "表示中は高精度のGPSを使います"
         case .waypoint: return "一番近い地点か、ピン留めした地点を表示(測位はしません)"

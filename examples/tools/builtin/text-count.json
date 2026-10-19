@@ -3,15 +3,14 @@
   "id": "builtin-js.text-count",
   "name": "文字数カウント",
   "type": "script",
-  "description": "文字数、空白を除く、半角換算、行数、バイト数(JavaScript 版。「その他」→「複製して編集」で中身を変えられます)",
+  "description": "文字数、空白を除く、半角換算、行数、バイト数",
   "icon": "textformat.123",
   "category": "text",
   "keywords": [
     "count",
     "もじすう",
     "文字数",
-    "字数",
-    "javascript"
+    "字数"
   ],
   "fps": 15,
   "controlsPosition": "top",

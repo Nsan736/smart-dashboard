@@ -9,6 +9,9 @@ struct HomeView: View {
     @State private var device = DeviceStatus()
     @State private var isVisible = false
     @State private var isEditing = false
+    /// JavaScript 版のタイマーとストップウォッチの保存領域(ホームのタイマーのカード用。v0.9.33)
+    @State private var timerJSON: String?
+    @State private var stopwatchOrigin: Date?
 
     var body: some View {
         NavigationStack {
@@ -20,6 +23,8 @@ struct HomeView: View {
                 }
                 .padding()
             }
+            // ツールの画面から戻ったときも読み直す(閉じたときに保存領域を書くので、少しあとにもう1回)
+            .onAppear { reloadTimerState(again: true) }
             .background(Color(.systemGroupedBackground))
             .navigationTitle("ホーム")
             .toolbar {
@@ -107,29 +112,63 @@ struct HomeView: View {
         location.stop()
     }
 
-    // MARK: - タイマー
+    // MARK: - タイマー(JavaScript 版のタイマーとストップウォッチ。保存領域を読むだけ)
 
     @ViewBuilder
     private var timerCard: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
-            let running = env.timers.runningTimers(now: context.date)
-            if !running.isEmpty || env.timers.stopwatch.isRunning {
+            let running = BuiltinTimerState.runningTimers(timerJSON, now: context.date)
+            if !running.isEmpty || stopwatchOrigin != nil {
                 HomeCard(title: "タイマー", symbol: "timer") {
                     ForEach(running) { timer in
-                        HStack {
-                            Text(timer.label).foregroundStyle(.secondary).lineLimit(2)
-                            Spacer(minLength: 8)
-                            BigValue(value: TimeText.countdown(timer.remaining(now: context.date)), size: 34)
+                        toolLink("builtin.timer") {
+                            HStack {
+                                Text(timer.label).foregroundStyle(.secondary).lineLimit(2)
+                                Spacer(minLength: 8)
+                                BigValue(value: BuiltinTimerState.text(timer.endAt.timeIntervalSince(context.date).rounded(.up)), size: 34)
+                            }
                         }
                     }
-                    if env.timers.stopwatch.isRunning {
-                        HStack {
-                            Text("ストップウォッチ").foregroundStyle(.secondary)
-                            Spacer()
-                            BigValue(value: TimeText.countdown(env.timers.stopwatch.elapsed(now: context.date)), size: 34)
+                    if let origin = stopwatchOrigin {
+                        toolLink("builtin.stopwatch") {
+                            HStack {
+                                Text("ストップウォッチ").foregroundStyle(.secondary)
+                                Spacer()
+                                BigValue(value: BuiltinTimerState.text(context.date.timeIntervalSince(origin)), size: 34)
+                            }
                         }
                     }
                 }
+            }
+        }
+    }
+
+    /// 内蔵ツール(JavaScript 版)を開く
+    @ViewBuilder
+    private func toolLink<Content: View>(_ id: String, @ViewBuilder label: () -> Content) -> some View {
+        if let tool = env.tools.descriptor(id: id) {
+            NavigationLink {
+                ToolScreen(tool: tool)
+            } label: {
+                label().contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        } else {
+            label()
+        }
+    }
+
+    private func reloadTimerState(again: Bool = false) {
+        guard env.settings.homeLayout.shows(.timer) else { return }
+        let directory = env.tools.scriptStorageDirectory
+        let prefix = BuiltinScriptTools.idPrefix
+        timerJSON = ScriptStorage(fileURL: ScriptStorage.storageURL(toolID: prefix + "timer", directory: directory)).get("timers")
+        stopwatchOrigin = BuiltinTimerState.stopwatchOrigin(
+            ScriptStorage(fileURL: ScriptStorage.storageURL(toolID: prefix + "stopwatch", directory: directory)).get("stopwatch"))
+        if again {
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 700_000_000)
+                reloadTimerState()
             }
         }
     }

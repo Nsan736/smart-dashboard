@@ -3,7 +3,7 @@
   "id": "builtin-js.split-bill",
   "name": "割り勘",
   "type": "script",
-  "description": "人数で割り、端数の扱いを選べる(JavaScript 版。「その他」→「複製して編集」で中身を変えられます)",
+  "description": "人数で割り、端数の扱いを選べる",
   "icon": "person.2",
   "category": "calc",
   "keywords": [
@@ -11,8 +11,7 @@
     "わりかん",
     "会計",
     "飲み会",
-    "split",
-    "javascript"
+    "split"
   ],
   "fps": 15,
   "controlsPosition": "top",

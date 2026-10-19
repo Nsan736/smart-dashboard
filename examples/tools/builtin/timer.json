@@ -3,14 +3,13 @@
   "id": "builtin-js.timer",
   "name": "タイマー",
   "type": "script",
-  "description": "複数のタイマー。閉じても進み、終わったら通知と音(JavaScript 版。「その他」→「複製して編集」で中身を変えられます)",
+  "description": "複数のタイマー。閉じても進み、終わったら通知と音",
   "icon": "timer",
   "category": "time",
   "keywords": [
     "timer",
     "カウントダウン",
-    "アラーム",
-    "javascript"
+    "アラーム"
   ],
   "fps": 15,
   "controlsPosition": "top",

@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import UserNotifications
 
 /// 各データの最終更新時刻(設定画面に表示する)
 @MainActor
@@ -37,7 +38,6 @@ final class AppEnvironment {
     let fetchLog: FetchLog
     let weather: WeatherStore
     let exchange: ExchangeStore
-    let timers: TimerStore
     /// ODPTの事業者の自動検出(トークンで使える事業者・路線・データの種類)
     let discovery: OperatorDiscoveryStore
     let trains: TrainStore
@@ -130,7 +130,6 @@ final class AppEnvironment {
         discovery.onDetected = { [weak trainStore] in
             Task { await trainStore?.ensureStationCatalog(manual: false) }
         }
-        timers = TimerStore()
         trainDisplay = TrainDisplayState()
         let location = LocationProvider()
         self.location = location
@@ -182,7 +181,10 @@ final class AppEnvironment {
         // ツールを削除したら、データの許可の記録も消す
         toolLibrary.onDeleteCustom = { [weak settings] id in settings?.scriptPermissions.reset(toolID: id) }
         tools = toolLibrary
-        let keeper = BackgroundKeeper(settings: settings)
+        // 消した Swift の版の内蔵ツールの保存データを、JavaScript 版に写す(1回だけ。v0.9.33)
+        LegacyToolMigration.runIfNeeded(directory: toolLibrary.scriptStorageDirectory)
+        // スクリプト型のツールの通知は、アプリを開いている間も出す(そのツールの画面を開いているときは出さない)
+        UNUserNotificationCenter.current().delegate = ScriptNotificationPresenter.shared        let keeper = BackgroundKeeper(settings: settings)
         self.keeper = keeper
         keeper.onStateChange = { [weak recorder] state in
             // バックグラウンドで止まったら、気圧計も止める
@@ -211,7 +213,6 @@ final class AppEnvironment {
 
     /// 起動時とフォアグラウンド復帰時に呼ぶ。古くなったデータだけを各Storeが取得する。
     func refreshStaleData() async {
-        timers.resume()
         tiles.evaluate(isForeground: true)
         // ホームで非表示にしたカードのデータは取得しない(各タブを開いたときは、そのタブが取得する)
         let layout = settings.homeLayout

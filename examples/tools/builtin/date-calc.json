@@ -3,7 +3,7 @@
   "id": "builtin-js.date-calc",
   "name": "日付計算",
   "type": "script",
-  "description": "日数の差、◯日後、曜日と祝日(JavaScript 版。「その他」→「複製して編集」で中身を変えられます)",
+  "description": "日数の差、◯日後、曜日と祝日",
   "icon": "calendar",
   "category": "time",
   "keywords": [
@@ -11,8 +11,7 @@
     "日数",
     "何日後",
     "曜日",
-    "カレンダー",
-    "javascript"
+    "カレンダー"
   ],
   "fps": 15,
   "controlsPosition": "top",

@@ -3,14 +3,13 @@
   "id": "builtin-js.stopwatch",
   "name": "ストップウォッチ",
   "type": "script",
-  "description": "経過時間とラップ。閉じても進む(JavaScript 版。「その他」→「複製して編集」で中身を変えられます)",
+  "description": "経過時間とラップ。閉じても進む",
   "icon": "stopwatch",
   "category": "time",
   "keywords": [
     "stopwatch",
     "ラップ",
-    "計測",
-    "javascript"
+    "計測"
   ],
   "fps": 30,
   "controls": [

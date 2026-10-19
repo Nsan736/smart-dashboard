@@ -3,7 +3,7 @@
   "id": "builtin-js.time-calc",
   "name": "時間計算",
   "type": "script",
-  "description": "時間の合計、時刻に足す・引く、2つの時刻の間(JavaScript 版。「その他」→「複製して編集」で中身を変えられます)",
+  "description": "時間の合計、時刻に足す・引く、2つの時刻の間",
   "icon": "clock.arrow.2.circlepath",
   "category": "time",
   "keywords": [
@@ -12,8 +12,7 @@
     "勤務時間",
     "合計",
     "何時間",
-    "足し算",
-    "javascript"
+    "足し算"
   ],
   "fps": 15,
   "controlsPosition": "top",

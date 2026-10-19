@@ -3,7 +3,7 @@
   "id": "builtin-js.percent",
   "name": "パーセント・割引・消費税",
   "type": "script",
-  "description": "◯%引き、税込・税抜、何%か(JavaScript 版。「その他」→「複製して編集」で中身を変えられます)",
+  "description": "◯%引き、税込・税抜、何%か",
   "icon": "percent",
   "category": "calc",
   "keywords": [
@@ -13,8 +13,7 @@
     "税込",
     "税抜",
     "セール",
-    "ぜい",
-    "javascript"
+    "ぜい"
   ],
   "fps": 15,
   "controlsPosition": "top",

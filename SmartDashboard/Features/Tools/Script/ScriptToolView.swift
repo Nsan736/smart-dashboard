@@ -17,7 +17,7 @@ struct ScriptToolView: View {
     @State private var lastSize: CGSize = .zero
 
     var body: some View {
-        if env.settings.scriptToolsStopped {
+        if env.settings.scriptToolsStopped, !BuiltinScriptTools.isReserved(tool.id) {
             ContentUnavailableView("スクリプト型のツールを止めています", systemImage: "pause.circle",
                                    description: Text("設定の「小ツール」で、止める切り替えをオフにすると動かせます。"))
         } else if !isPreview, env.settings.disabledScriptTools.contains(tool.id) {

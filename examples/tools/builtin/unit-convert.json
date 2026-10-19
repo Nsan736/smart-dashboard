@@ -3,7 +3,7 @@
   "id": "builtin-js.unit-convert",
   "name": "単位換算",
   "type": "script",
-  "description": "長さ・重さ・温度・面積・体積・速度(JavaScript 版。「その他」→「複製して編集」で中身を変えられます)",
+  "description": "長さ・重さ・温度・面積・体積・速度",
   "icon": "arrow.left.arrow.right",
   "category": "calc",
   "keywords": [
@@ -13,8 +13,7 @@
     "ポンド",
     "マイル",
     "華氏",
-    "坪",
-    "javascript"
+    "坪"
   ],
   "fps": 15,
   "controlsPosition": "top",
