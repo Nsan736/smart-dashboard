@@ -10,7 +10,7 @@ iOS向けの個人用「手元ダッシュボード」アプリ。SwiftUI製。A
 
 ## 現在の状況と引き継ぎ
 
-- 最新のリリースは **v0.9.32**(2026-10-19)。**v1.0.0 は、利用者が判断したときに付ける。それまでは 0.9.x で進める**(次は v0.9.33)。勝手に 1.0.0 にしない
+- 最新のリリースは **v0.9.33**(2026-10-19)。**v1.0.0 は、利用者が判断したときに付ける。それまでは 0.9.x で進める**(次は v0.9.34)。勝手に 1.0.0 にしない
 - 新しい会話で作業を続けるときは、まず [docs/handoff.md](docs/handoff.md) を読む。次の内容をまとめてある
   - 実装済みの機能の一覧
   - 実機(iPhone SE 第2世代、LiveContainer)で確認済みの点と、まだ未確認の点。開発機は Windows で実機がないので、画面・センサー・MapKit・カメラの動作は、利用者の報告に頼っている。未確認のものを「動く」と書かない
@@ -209,9 +209,10 @@ iOS向けの個人用「手元ダッシュボード」アプリ。SwiftUI製。A
 - 不明な点(APIのレスポンス形式など)は推測で埋めない。公式ドキュメントを確認するか、ユーザーにサンプルJSONを求める
 - 小ツール(`Features/Tools`。初期の並びでは「その他」の中。軽さの基準は iPhone SE 第2世代。内蔵ツールは通信しない)
   - 一覧(`ToolsView`): 上部に検索欄。お気に入り → 最近使った → カテゴリ別(時間、計算、決める・遊ぶ、文字、測る、その他)の順。長押し(と、ツールの画面の星)でお気に入り。お気に入りは、ホームの「小ツール」カード(`HomeCardKind.tools`。お気に入りがなければ何も出さない)にも並ぶ
-  - ツールは、内蔵でもJSONでも `ToolDescriptor`(ID、名前、説明、アイコン、カテゴリ、キーワード)で同じように扱う。内蔵ツールを増やすときは、`BuiltinTool` に足し、`BuiltinTools.all` に登録し、`ToolScreen` に画面を1行足す。計算などのロジックは View の外(`BuiltinToolLogic.swift`)に置いてテストする
+  - ツールは、内蔵でもJSONでも `ToolDescriptor`(ID、名前、説明、アイコン、カテゴリ、キーワード)で同じように扱う。内蔵ツールは、ふつうは JavaScript 版(下の「組み込みのツールの JavaScript 版」)で足す。機器や iOS のデータが要るものだけ Swift で、`BuiltinTool` に足し、`BuiltinTools.all` に登録し、`ToolScreen` に画面を1行足す(ロジックは View の外に置いてテストする)
   - 検索(`ToolSearch`): 名前・説明・カテゴリ・キーワードが対象。小文字化、全角→半角、カタカナ→ひらがな、空白・長音・中点の除去で、表記ゆれを吸収する。複数の語は、すべて含むものだけ
-  - タイマーとストップウォッチは、小ツールの中に移した(`TimerTabView(initialMode:)`)。保存済みのタイマー(`TimerStore`)と、ホームのタイマーのカードは、そのまま。以前の「タイマー」のタブの位置は、保存済みの並びの中で「小ツール」に置き換える(`TabOrder.decode`)
+  - タイマーとストップウォッチは小ツールの中(v0.9.33 から JavaScript 版だけ)。以前の「タイマー」のタブの位置は、保存済みの並びの中で「小ツール」に置き換える(`TabOrder.decode`)
+  - ホームのタイマーのカード(`HomeCardKind.timer`): JavaScript 版のタイマーとストップウォッチの保存領域(script-storage/builtin-js.timer.json の timers、builtin-js.stopwatch.json の stopwatch)を読むだけ(`BuiltinTimerState`)。読むのはホームを表示したときと、ツールの画面から戻ったとき(閉じたときに保存領域を書くので、0.7秒後にもう1回)。行をタップでそのツールを開く
   - JSONで読み込むツール(`CustomTool`、形式の説明は docs/tools-format.md、サンプルは examples/tools/。サンプルと同じものをテストのフィクスチャ tool_*.json にも置いてある)
     - 計算型 calc / リスト型 list / 表型 table / チェックリスト型 checklist は、プログラムを実行しない。決まった型に中身を当てはめるだけ。通信・位置情報・カメラ・ファイル・アプリのほかのデータに触れる項目は、形式に存在しない。スクリプト型 script(v0.9.19)だけは JavaScript を動かす(下の「スクリプト型」)
     - 計算式は、アプリ専用の評価器(`ToolExpression`。再帰下降の構文解析 → 木を評価)。四則演算、べき乗、括弧、比較、論理、`if`、数学関数、丸め、`days`。NSExpression と JavaScript は使わない。上限は、式の長さ500文字、入れ子32段、計算5000回。ループも再帰もない。`if` と `&&` `||` は、必要な側だけを計算する
@@ -239,34 +240,25 @@ iOS向けの個人用「手元ダッシュボード」アプリ。SwiftUI製。A
       - 文字の欄の `multiline`(5000文字まで。1行は200文字)、`keyboard`(text / number / decimal)、`placeholder`(`ScriptControlSpec`)。JSON の controls と `ui.text` の両方で使える
     - スレッド(`ScriptRunner`): 専用の Thread(スタック8MB)で、JSContext を作るのも呼ぶのもそのスレッドだけ。fps に合わせて frame を呼び、結果(`ScriptOutput`: 描画の命令、画像、ログ、部品の変更、音、振動、書き出し、通知、画面を消さない、コピー、エラー)をメインスレッドに渡す(`ScriptSession.apply`)。触れたこと・部品の変更は次のコマの前に渡す(動かしたことはまとめる)。バックグラウンドでは止める
     - 固まったとき: 呼び出しの間は `ScriptRunner.busySince` に時刻を入れ、画面の側が0.5秒ごとに見て、2秒以上なら「応答なし」と閉じるボタン(閉じると実行を打ち切る。スレッドは戻ったところで終わる)。実行時間の制限 JSContextGroupSetExecutionTimeLimit は公開のヘッダーにない関数なので、利用者の判断で、実行時に dlsym で探して使う(`ScriptTimeLimit`。見つからなければ使わない)。1回の呼び出しが5秒を超えたら JavaScriptCore が打ち切り、ツールを止めて「無限ループの可能性」と出す
-    - 落ちたとき(`ScriptRunGuard`、`ToolLibrary.crashedScript`): 実行を始める前に Application Support/script-running.json に「実行中のツール」を書き(.atomic)、閉じたとき・バックグラウンドに回ったとき・エラーで止まったときに消す。起動したときに残っていれば、そのツールを開かずに「前回このツールの実行中に止まりました」(`ScriptCrashRecoveryView`、「もう一度試す」「無効にする」「削除する」)。メモリの使いすぎで落ちた場合も同じ。無効にしたツールは `AppSettings.disabledScriptTools`、設定の「小ツール」に「スクリプト型のツールをすべて止める」(`scriptToolsStopped`)
+    - 落ちたとき(`ScriptRunGuard`、`ToolLibrary.crashedScript`): 実行を始める前に Application Support/script-running.json に「実行中のツール」を書き(.atomic)、閉じたとき・バックグラウンドに回ったとき・エラーで止まったときに消す。起動したときに残っていれば、そのツールを開かずに「前回このツールの実行中に止まりました」(`ScriptCrashRecoveryView`、「もう一度試す」「無効にする」「削除する」)。メモリの使いすぎで落ちた場合も同じ。無効にしたツールは `AppSettings.disabledScriptTools`、設定の「小ツール」に「読み込んだスクリプト型のツールをすべて止める」(`scriptToolsStopped`。v0.9.33 から、内蔵の JavaScript 版は止めない)
     - データを壊さない: ツールの一覧(custom-tools.json)・保存領域・実行中の記録はどれも .atomic で書く。設定は UserDefaults。スクリプトの実行中に書くのは、そのツールの保存領域と実行中の記録だけ
     - 読み込みの確認(`ScriptPreviewSection`): 「スクリプトを含みます」、コード(20,000文字まで表示)、使うアプリのデータの一覧、「保存する前に動かしてみる」(プレビュー。保存領域を使わず、アプリのデータの代わりに仮のデータを渡す)。書き出し・読み込み(ファイル、クリップボード、URL)は既存のまま
     - Claude での作成(`ToolGenerator`): system prompt に script 型の使い分けと注意を足した(v0.9.21 で、permissions には必要な種類だけを書くこと、location.precise と sensors は必要なときだけ、null のときの表示、onData で受け取ることも)。形式の検証を通ったスクリプト型は、構文(JSCheckScriptSyntax)と、試しの実行(`ScriptTrial`: 専用のスレッドで setup・2秒分のコマ・触れる・部品・onStop を早回し、1回の呼び出し2秒・全体8秒まで、音などは出さない。アプリのデータは仮のデータを渡し、途中で onData を呼び、センサーの開始にも仮の値で応える)で確かめ、エラーがあれば添えて1回だけ作り直しを頼む。出力の上限は32,000トークン、待つ時間は360秒(`ClaudeRequest.timeout`)
     - サンプル: examples/tools/src/*.js を `python scripts/build_tool_examples.py` で JSON(examples/tools と、テストのフィクスチャ tool_script_*.json)にする。check_local.py が一致を確かめ、テストが10個とも試しの実行でエラーがないことを確かめる。アプリのデータを使うサンプル(v0.9.21): 自分好みの天気(weather)、次の電車のカウントダウン(trains)、地点を指すコンパス(places と sensors)、気圧の小さなグラフ(pressure)。どれもデータが変わったときだけ描き直す(コンパスと秒のカウントダウンを除く)
   - サンプル(v0.9.20、`ToolSampleCatalog`、`ToolSamplesView`): examples/tools のサンプル全部を `Resources/tool_samples.json` に同梱し(`python scripts/build_tool_examples.py` で作り、check_local.py が一致を確かめる)、小ツールの一覧の「サンプルから追加」でワンタップで追加する。追加済みは「追加済み」
-  - 組み込みのツールの JavaScript 版(v0.9.32、`BuiltinScriptTools`、`Resources/builtin_script_tools.json`): 内蔵ツールのうち21個をスクリプト型で書き直し、一覧で Swift の版のすぐ後ろに「◯◯(JavaScript 版)」として並べる(`BuiltinTools.withScripts`、`ToolDescriptor.Source.bundled`、ID は bundled.builtin-js.<名前>)。Swift の版はしばらく残す
-    - JavaScript 版にしたもの: タイマー、ストップウォッチ、時間計算、日付計算、和暦・西暦・年齢、割り勘、パーセント・割引・消費税、単位換算、進数変換、ルーレット、サイコロ、コイントス、チーム分け、順番決め、トーナメント表、カウンター、あみだくじ、スコアボード、文字数カウント、文字の変換、パスワード・乱数。Swift のまま: 懐中電灯(ライトの機器を使う)、世界時計(iOS のタイムゾーンと夏時間のデータが要る。JavaScriptCore の Intl のタイムゾーンは端末で確かめられない)、メトロノーム(サンプル単位の正確な間隔が要る。スクリプトの音は1コマごとで1秒に20回まで)。一覧の検索はアプリの機能で、ツールではない
-    - ソースは examples/tools/src/builtin/*.js。共通の部品 `_kit.js`(描き直しの管理 `K.frame`・キャンバスのボタン `K.button` / `K.hit`・縦のスクロール `K.touch`・日付 `K.days` / `K.civil`・時間の長さ `K.parseDuration`・数の表示)を先頭に付けて、`python scripts/build_tool_examples.py` で examples/tools/builtin/*.json と同梱の JSON を作る(check_local.py が一致を確かめる)。名前・部品などは build_tool_examples.py の `BUILTIN`
+  - 組み込みのツールの JavaScript 版(v0.9.32 で追加、v0.9.33 で Swift の版を消して内蔵ツールにした。`BuiltinScriptTools`、`Resources/builtin_script_tools.json`): 内蔵ツール24個のうち21個。一覧ではふつうの名前で、v0.9.32 までの内蔵ツールの並び(`BuiltinTools.order`)に並べる(`BuiltinTools.withScripts`、`ToolDescriptor.Source.bundled`)。ID は Swift の版と同じ builtin.<以前の名前>(builtin.timer など。`BuiltinScriptTool.legacy`。お気に入り・最近使ったをそのまま引き継ぐ。v0.9.32 の bundled.builtin-js.<名前> は `BuiltinTools.migratedIDs` で直す)。スクリプトの中のツールの ID(保存領域・通知・許可に使う)は builtin-js.<名前>
+    - JavaScript 版: タイマー、ストップウォッチ、時間計算、日付計算、和暦・西暦・年齢、割り勘、パーセント・割引・消費税、単位換算、進数変換、ルーレット、サイコロ、コイントス、チーム分け、順番決め、トーナメント表、カウンター、あみだくじ、スコアボード、文字数カウント、文字の変換、パスワード・乱数。Swift のまま(`BuiltinTool`): 懐中電灯(ライトの機器を使う)、世界時計(iOS のタイムゾーンと夏時間のデータが要る。JavaScriptCore の Intl のタイムゾーンは端末で確かめられない)、メトロノーム(サンプル単位の正確な間隔が要る。スクリプトの音は1コマごとで1秒に20回まで)。一覧の検索はアプリの機能で、ツールではない
+    - ソースは examples/tools/src/builtin/*.js。共通の部品 `_kit.js`(描き直しの管理 `K.frame`・キャンバスのボタン `K.button` / `K.hit`・縦のスクロール `K.touch`・日付 `K.days` / `K.civil`・時間の長さ `K.parseDuration`・数の表示)を先頭に付けて、`python scripts/build_tool_examples.py` で examples/tools/builtin/*.json と同梱の JSON を作る(check_local.py が一致を確かめる)。名前・部品・以前の名前(legacy)などは build_tool_examples.py の `BUILTIN`
     - 作り方の決まり: 読み込んだ時点ではアプリの関数を呼ばない(計算の関数 `TimeCalc` `Tournament` `Roulette` などを、テストがアプリの関数なしの JSContext で直接呼ぶ)。変わったときだけ描く(`K.invalidate`。アニメーションの間だけ毎コマ)。入れた文字を残すツールは、部品を setup で保存した値から作る(JSON の controls の初期値は、始めたときに onInput で送られて上書きするため)
-    - 元の版はアプリに同梱するだけで端末に保存しないので、アプリの更新で新しくなる。「その他」→「複製して編集」で、ID を my-<名前>-<乱数>、名前に「(コピー)」を付けた JSON を作り(`BuiltinScriptTools.copyJSON`)、読み込みの確認の画面(`ToolImportView`)で保存する。builtin-js. で始まる ID は読み込んで保存できない(`BuiltinScriptTools.isReserved`)
-    - 保存しているデータは引き継がない: Swift の版のデータ(タイマーの一覧 `TimerStore`、トーナメントの途中、スコア、カウンターなど)はそのまま Swift の版に残り、JavaScript 版は自分の保存領域(script-storage/builtin-js.<名前>.json)で空から始まる。複製も元の版のデータを引き継がない
-  - 内蔵ツール(第1弾、v0.9.7): タイマー、ストップウォッチ、日付計算、和暦・西暦・年齢、割り勘、パーセント・割引・消費税、単位換算、進数変換、ルーレット(くじ引きを含む)、サイコロ、コイントス、チーム分け、順番決め、トーナメント表(シードと不戦勝)、カウンター、文字数カウント、文字の変換、パスワード・乱数、懐中電灯
-  - 内蔵ツール(第2弾、v0.9.8): 時間計算、世界時計、あみだくじ、スコアボード、メトロノーム。ロジックは `MoreToolLogic.swift`、画面は `MoreToolViews.swift` と `PlayToolViews.swift`
+    - 元の版はアプリに同梱するだけで端末に保存しないので、アプリの更新で新しくなる。「その他」→「複製して編集」で、ID を my-<名前>-<乱数>、名前に「(コピー)」を付けた JSON を作り(`BuiltinScriptTools.copyJSON`)、読み込みの確認の画面(`ToolImportView`)で保存する。builtin-js. で始まる ID は読み込んで保存できない(`BuiltinScriptTools.isReserved`)。複製は元の版のデータを引き継がない
+    - Swift の版のデータの移行(v0.9.33、`LegacyToolMigration`。起動したときに1回だけ、UserDefaults の tools.legacyMigrated): Swift の版が UserDefaults に保存していたものを、JavaScript 版の保存領域の形にして書き、元のキーは消す。JavaScript 版にすでにデータがあるツール(v0.9.32 で使ったもの)は写さない
+      - タイマー(timer.timers → timers。動作中・一時停止・終了・停止の状態と残り。Swift の版の通知は取り消し、動作中のものを JavaScript 版の通知 script.builtin-js.timer.t<番号> に予約し直す)、ストップウォッチ(timer.stopwatch → 経過とラップ。ミリ秒)、ルーレットの項目(tools.roulette.items)、メンバー(tools.members → チーム分け・順番決め・あみだくじの名前)、あみだくじの結果(tools.amida.goals)、カウンター(tools.counters。8個まで)、スコアボード(tools.scoreboard。点とセット)、トーナメント表(tools.tournament.players と tools.tournament.state。名前で持っていた表を参加者の番号にする。形が合わなければ表だけ捨てる)
+      - 消すだけのもの: タイマーの「画面を消さない」(timer.keepAwake。JavaScript 版は開くたびに部品で選ぶ)、9個目からのカウンター。ほかの Swift の版(日付計算、割り勘など)は保存データがなかった
+    - 開いているとき以外の通知(v0.9.33、`ScriptNotificationPresenter`。UNUserNotificationCenter の delegate): スクリプト型のツールの通知(script. で始まる)は、アプリを開いている間も出す(タイマーが、ほかの画面を見ている間に終わったとき)。そのツールの画面を開いている間は出さない(ツールが音を鳴らす。`ScriptSession` が開いているツールを伝える)。それ以外の通知は今までどおり出さない
+  - Swift のままの内蔵ツール(v0.9.8): 世界時計・メトロノームのロジックは `MoreToolLogic.swift`、画面は `MoreToolViews.swift`。懐中電灯は `BuiltinToolViews.swift`
     - 世界時計の時差と夏時間は、iOS のタイムゾーンのデータ(TimeZone)から求める。通信しない。都市の表は `WorldClock.cities`
     - メトロノーム(`MetronomePlayer`): 1小節ぶんの波形(`MetronomeLogic.barSamples`)を AVAudioEngine でループ再生する(拍の間隔はサンプル単位)。気圧の無音再生と同じ .playback + .mixWithOthers を使い、セッションがすでに .playback か、騒音計の .playAndRecord のときは、カテゴリーを変えない。止めるときは自分のエンジンだけを止め、セッションを非アクティブにしない(無音再生を巻き込まないため)。中断や出力先の変更で音が止まったら、表示も停止にそろえる(自動では再開しない)。画面を離れたときとバックグラウンドでは止める
-  - 「決める・遊ぶ」の見た目(v0.9.8)。アニメーションは、iOS の「視差効果を減らす」(accessibilityReduceMotion)がオンなら省略して、結果だけを出す
-    - トーナメント表: 山型の表(1回戦が左端、決勝が右端、右端に優勝者)。配置は純粋なロジックの `TournamentLayout.make`(各試合の枠、折れ線、シードの印、優勝者の枠、表の大きさ)。枠・名前・線を1枚の Canvas(`TournamentChartCanvas`、Equatable)でまとめて描き、部品を試合の数だけ作らない(64人で63試合)。タップは `TournamentLayout.hit` で判定する
-      - 1回戦の不戦勝の試合は、枠も線も描かない。2回戦の枠に「シード」の印を付ける
-      - 長い名前は全角7文字ぶんで省略する(`TournamentLayout.shortName`)。タップした試合の、省略していない名前を表の下に出す。勝者のタップ、もう一度のタップでの取り消し、その先の取り消しは、以前のまま(`Tournament.setWinner`)
-      - ScrollView(縦横)の中で、Canvas の大きさと描画の縮尺を変えて拡大・縮小する(MagnifyGesture)。開いたときは全体が入る縮尺(`TournamentLayout.fitScale`)。右下のボタンで全体表示に戻る
-    - ルーレット: 色分けした円盤(`RouletteWheelView`、Equatable。描くのは項目が変わったときだけ)を rotationEffect で回す。止まる角度は、先に決めた結果の扇形の中(`RouletteWheel.stopRotation`。針は真上)。JSONのリスト型のルーレットも同じ円盤
-    - サイコロ: 6面は点(`DicePips`)、ほかは数字の面を Canvas で描く。振ると、約0.5秒だけ目を切り替えながら傾ける
-    - コイントス: 表(金)と裏(銀)の絵。横軸の回転で、角度から手前の面を決める(`CoinFlip`)
-    - あみだくじ: 横線は、同じ段で隣り合わず、どの間にも1本以上(`Amida`)。名前をタップすると、道を trim で少しずつ描く
-- タイマー: 終了時刻はDateで保持。ローカル通知 + アプリ内の音とバイブ。画面を消さないオプション。プリセット機能はない
-  - 削除は各行のゴミ箱ボタンと確認ダイアログで行う(スワイプ削除と編集モードは使わない)。削除時は登録済みのローカル通知も取り消す
-  - 行全体をTimelineViewで再描画しない(操作を妨げる)。再描画するのは残り時間の文字だけ
+  - JSON のリスト型のルーレット: 色分けした円盤(`RouletteWheelView`、Equatable。描くのは項目が変わったときだけ。`PlayToolViews.swift`)を rotationEffect で回す。止まる角度は、先に決めた結果の扇形の中(`RouletteWheel.stopRotation`。針は真上)。名前の省略は `RouletteWheel.shortName`。くじ引き・順番決めとあわせて `ListPickerView`。アニメーションは、iOS の「視差効果を減らす」がオンなら省略する
 - センサー: バッテリーは表示しない(iOSのステータスバーで見られるため)
   - 速度: センサー画面とホームが表示されている間は、常にリアルタイムで表示する(開始・停止ボタンはない)。画面を離れたら測位を止める。`LocationSensors` は天気用の `LocationProvider` とは別のインスタンスで、desiredAccuracy = BestForNavigation、distanceFilter = None、activityType = .otherNavigation、pausesLocationUpdatesAutomatically = false
   - 速度の計算は `SpeedEstimator`(CoreLocationに依存しない純粋なロジック)。speedAccuracy が十分なら CLLocation.speed、無効なら直近の位置の差分から求め、3点で平滑化する。horizontalAccuracy の悪い点は除外する。屋内や地下などGPSで動きを検出できないときは、CMPedometer の currentPace から歩行速度を推定する。優先順位は (1) GPSの速度 (2) 位置の差分 (3) 歩行ペース (4) 停止中(0)または「測位中…」(`SpeedEstimator.reading`)。どの方法で出した値かを必ず表示し、位置の差分で停止と判定したときは理由(精度±◯mのため検出できない)も表示する。歩行ペースは最高・平均・距離にも使うが、GPSで動きが取れている区間では足さない(二重に数えない)。無効な速度を0と表示しない。最高・平均・距離は「画面を開いてからの値」でリセットできる

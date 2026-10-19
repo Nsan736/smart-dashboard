@@ -312,7 +312,7 @@ JavaScript で、アニメーション、模様(テクスチャ)、タップへ�
 
 ## 組み込みのツールの JavaScript 版
 
-小ツールの一覧に「(JavaScript 版)」として並ぶもの(タイマー、時間計算、トーナメント表、ルーレットなど)は、スクリプト型で書いた組み込みのツールです。ソースは [examples/tools/src/builtin/](../examples/tools/src/builtin/)(共通の部品 `_kit.js` を先頭に付けて JSON にしたものが [examples/tools/builtin/](../examples/tools/builtin/))。
+小ツールの一覧の内蔵ツールのうち、懐中電灯・世界時計・メトロノーム以外(タイマー、時間計算、トーナメント表、ルーレットなど21個)は、スクリプト型で書いています。ソースは [examples/tools/src/builtin/](../examples/tools/src/builtin/)(共通の部品 `_kit.js` を先頭に付けて JSON にしたものが [examples/tools/builtin/](../examples/tools/builtin/))。
 
 - 元の版はアプリに同梱していて、アプリの更新で新しくなります(書き換えはできません)
 - ツールの画面の「その他」→「複製して編集」で、読み込んだツールとして保存できる複製を作れます(ID は `my-…`、名前の後ろに「(コピー)」)。複製はアプリの更新で変わりません
