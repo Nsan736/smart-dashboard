@@ -184,7 +184,8 @@ final class AppEnvironment {
         // 消した Swift の版の内蔵ツールの保存データを、JavaScript 版に写す(1回だけ。v0.9.33)
         LegacyToolMigration.runIfNeeded(directory: toolLibrary.scriptStorageDirectory)
         // スクリプト型のツールの通知は、アプリを開いている間も出す(そのツールの画面を開いているときは出さない)
-        UNUserNotificationCenter.current().delegate = ScriptNotificationPresenter.shared        let keeper = BackgroundKeeper(settings: settings)
+        UNUserNotificationCenter.current().delegate = ScriptNotificationPresenter.shared
+        let keeper = BackgroundKeeper(settings: settings)
         self.keeper = keeper
         keeper.onStateChange = { [weak recorder] state in
             // バックグラウンドで止まったら、気圧計も止める
