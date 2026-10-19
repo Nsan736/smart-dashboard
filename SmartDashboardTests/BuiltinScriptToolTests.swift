@@ -32,29 +32,32 @@ final class BuiltinScriptToolTests: XCTestCase {
         let tools = BuiltinScriptTools.all
         XCTAssertEqual(tools.count, 21)
         XCTAssertTrue(tools.allSatisfy { $0.tool.id.hasPrefix(BuiltinScriptTools.idPrefix) && $0.tool.kind == .script })
-        // どれも Swift の版を置き換える(重ならない)。懐中電灯・世界時計・メトロノームは Swift のまま
-        let replaced = tools.compactMap(\.replaces)
-        XCTAssertEqual(replaced.count, tools.count)
-        XCTAssertEqual(Set(replaced).count, replaced.count)
-        XCTAssertEqual(Set(BuiltinTool.allCases).subtracting(replaced), [.flashlight, .worldClock, .metronome])
-        // スクリプトは上限の中
+        // どれも以前の Swift の版の名前を持つ(重ならない。Swift のままの3つとも重ならない)
+        let legacy = tools.compactMap(\.legacy)
+        XCTAssertEqual(legacy.count, tools.count)
+        XCTAssertEqual(Set(legacy).count, legacy.count)
+        XCTAssertTrue(Set(legacy).isDisjoint(with: BuiltinTool.allCases.map(\.rawValue)))
+        XCTAssertEqual(Set(legacy).union(BuiltinTool.allCases.map(\.rawValue)), Set(BuiltinTools.order))
+        // スクリプトは上限の中。名前と説明に「JavaScript 版」は付けない
         XCTAssertTrue(tools.allSatisfy { ($0.tool.script?.script.count ?? .max) <= ScriptToolContent.maxScriptLength })
+        XCTAssertFalse(tools.contains { $0.tool.name.contains("JavaScript") || $0.tool.summary.contains("JavaScript") })
     }
 
-    func testListPlacesJavaScriptVersionAfterSwiftVersion() throws {
+    func testListShowsJavaScriptToolsAsBuiltin() throws {
         let list = BuiltinTools.withScripts
-        XCTAssertEqual(list.count, BuiltinTools.all.count + BuiltinScriptTools.all.count)
-        XCTAssertEqual(Set(list.map(\.id)).count, list.count)
-        let timer = try XCTUnwrap(list.firstIndex { $0.id == "builtin.timer" })
-        let js = list[timer + 1]
-        XCTAssertEqual(js.id, "bundled.builtin-js.timer")
-        XCTAssertEqual(js.name, "タイマー(JavaScript 版)")
-        XCTAssertTrue(js.isBundled)
-        XCTAssertTrue(js.isScript)
-        XCTAssertFalse(js.isCustom)
-        XCTAssertEqual(js.category, .time)
+        let timer = try XCTUnwrap(list.first { $0.id == "builtin.timer" })
+        XCTAssertEqual(timer.name, "タイマー")
+        XCTAssertTrue(timer.isBundled)
+        XCTAssertTrue(timer.isScript)
+        XCTAssertFalse(timer.isCustom)
+        XCTAssertEqual(timer.category, .time)
+        guard case .bundled(let script) = timer.source else { return XCTFail("JavaScript 版のはず") }
+        XCTAssertEqual(script.id, "builtin-js.timer")
         // 検索でも見つかる
-        XCTAssertTrue(ToolSearch.filter(list, query: "javascript トーナメント").contains { $0.isBundled })
+        XCTAssertTrue(ToolSearch.filter(list, query: "トーナメント").contains { $0.id == "builtin.tournament" && $0.isBundled })
+        // v0.9.32 の JavaScript 版の ID は、今の ID に直す(重なったら1つ)
+        XCTAssertEqual(BuiltinTools.migratedIDs(["bundled.builtin-js.timer", "custom.x", "builtin.timer", "bundled.builtin-js.time-calc", "builtin.metronome"]),
+                       ["builtin.timer", "custom.x", "builtin.timeCalc", "builtin.metronome"])
     }
 
     func testCopyJSONMakesEditableTool() throws {

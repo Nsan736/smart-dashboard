@@ -1,22 +1,12 @@
 import XCTest
 @testable import SmartDashboard
 
-/// 決まった順に値を返す乱数(テスト用)
-private struct FixedGenerator: RandomNumberGenerator {
-    var state: UInt64 = 0x9E37_79B9_7F4A_7C15
-
-    mutating func next() -> UInt64 {
-        state = state &* 6364136223846793005 &+ 1442695040888963407
-        return state
-    }
-}
-
 /// 小ツール: 検索、お気に入り、式の評価器、JSONの読み込みと検証
 final class ToolFrameworkTests: XCTestCase {
     // MARK: - 検索
 
     func testSearchAbsorbsNotationDifferences() {
-        let all = BuiltinTools.all
+        let all = BuiltinTools.withScripts
         func names(_ query: String) -> [String] { ToolSearch.filter(all, query: query).map(\.name) }
         // ひらがな・カタカナ・全角・大文字小文字・長音の違いを吸収する
         XCTAssertEqual(names("わりかん"), ["割り勘"])
@@ -34,13 +24,18 @@ final class ToolFrameworkTests: XCTestCase {
     }
 
     func testBuiltinRegistryIsConsistent() {
-        // すべての内蔵ツールが1回ずつ登録されていて、IDが重ならない
+        // Swift の内蔵ツールは3つ(懐中電灯・世界時計・メトロノーム)。すべてが1回ずつ登録されていて、IDが重ならない
+        XCTAssertEqual(BuiltinTool.allCases, [.flashlight, .worldClock, .metronome])
         XCTAssertEqual(BuiltinTools.all.count, BuiltinTool.allCases.count)
-        XCTAssertEqual(Set(BuiltinTools.all.map(\.id)).count, BuiltinTools.all.count)
-        XCTAssertTrue(BuiltinTools.all.allSatisfy { $0.id.hasPrefix("builtin.") && !$0.name.isEmpty && !$0.keywords.isEmpty })
-        // タイマーとストップウォッチは、小ツールの中にある
-        XCTAssertTrue(BuiltinTools.all.contains { $0.source == .builtin(.timer) && $0.category == .time })
-        XCTAssertTrue(BuiltinTools.all.contains { $0.source == .builtin(.stopwatch) })
+        let all = BuiltinTools.withScripts
+        XCTAssertEqual(all.count, 24)
+        XCTAssertEqual(Set(all.map(\.id)).count, all.count)
+        XCTAssertTrue(all.allSatisfy { $0.id.hasPrefix("builtin.") && !$0.name.isEmpty && !$0.keywords.isEmpty })
+        // 並びは v0.9.32 までの内蔵ツールの並び
+        XCTAssertEqual(all.map(\.id), BuiltinTools.order.map { "builtin." + $0 })
+        // タイマーとストップウォッチは、小ツールの中の JavaScript 版
+        XCTAssertTrue(all.contains { $0.id == "builtin.timer" && $0.isBundled && $0.category == .time })
+        XCTAssertTrue(all.contains { $0.id == "builtin.stopwatch" && $0.isBundled })
     }
 
     func testFavoritesAndRecents() {
@@ -219,171 +214,3 @@ final class ToolFrameworkTests: XCTestCase {
 }
 
 /// 内蔵ツールの計算
-final class BuiltinToolLogicTests: XCTestCase {
-    func testSplitBillRounding() {
-        // 10,000円を3人で。足りなくならないよう、切り上げる
-        XCTAssertEqual(SplitBill.calculate(total: 10_000, people: 3, rounding: .none), SplitBill.Result(perPerson: 3334, collected: 10_002, surplus: 2))
-        XCTAssertEqual(SplitBill.calculate(total: 10_000, people: 3, rounding: .up10)?.perPerson, 3340)
-        XCTAssertEqual(SplitBill.calculate(total: 10_000, people: 3, rounding: .up100), SplitBill.Result(perPerson: 3400, collected: 10_200, surplus: 200))
-        XCTAssertEqual(SplitBill.calculate(total: 10_000, people: 3, rounding: .up500)?.perPerson, 3500)
-        XCTAssertEqual(SplitBill.calculate(total: 10_000, people: 3, rounding: .up1000)?.perPerson, 4000)
-        // 割り切れるときは、余りなし
-        XCTAssertEqual(SplitBill.calculate(total: 9000, people: 3, rounding: .up100)?.surplus, 0)
-        XCTAssertNil(SplitBill.calculate(total: 1000, people: 0, rounding: .none))
-        XCTAssertNil(SplitBill.calculate(total: -1, people: 2, rounding: .none))
-    }
-
-    func testPercentAndTax() {
-        XCTAssertEqual(PercentCalc.discounted(price: 1980, percentOff: 20), 1584)
-        XCTAssertEqual(PercentCalc.discounted(price: 1000, percentOff: 30), 700)
-        XCTAssertEqual(PercentCalc.withTax(price: 1000, rate: 10), 1100)
-        XCTAssertEqual(PercentCalc.withTax(price: 999, rate: 8), 1078)
-        // 2進数の誤差で1円ずれない
-        XCTAssertEqual(PercentCalc.withoutTax(price: 1100, rate: 10), 1000)
-        XCTAssertEqual(PercentCalc.withoutTax(price: 1080, rate: 8), 1000)
-        XCTAssertEqual(PercentCalc.ratio(30, of: 120), 25)
-        XCTAssertNil(PercentCalc.ratio(1, of: 0))
-    }
-
-    func testUnitConversion() throws {
-        func convert(_ value: Double, _ kind: UnitKind, _ from: String, _ to: String) throws -> Double {
-            let names = kind.units.map(\.name)
-            return try XCTUnwrap(UnitConverter.convert(value, kind: kind, from: try XCTUnwrap(names.firstIndex(of: from)), to: try XCTUnwrap(names.firstIndex(of: to))))
-        }
-        XCTAssertEqual(try convert(1, .length, "インチ", "cm"), 2.54, accuracy: 1e-9)
-        XCTAssertEqual(try convert(1, .length, "マイル", "km"), 1.609344, accuracy: 1e-9)
-        XCTAssertEqual(try convert(1, .weight, "ポンド", "g"), 453.59237, accuracy: 1e-6)
-        XCTAssertEqual(try convert(100, .temperature, "℃", "℉"), 212, accuracy: 1e-9)
-        XCTAssertEqual(try convert(32, .temperature, "℉", "K"), 273.15, accuracy: 1e-9)
-        XCTAssertEqual(try convert(1, .area, "坪", "m²"), 3.305785, accuracy: 1e-6)
-        XCTAssertEqual(try convert(1, .volume, "L", "mL"), 1000, accuracy: 1e-9)
-        XCTAssertEqual(try convert(60, .speed, "km/h", "m/s"), 16.6666667, accuracy: 1e-6)
-        XCTAssertNil(UnitConverter.convert(1, kind: .length, from: 0, to: 99))
-        XCTAssertEqual(Set(UnitKind.allCases.map(\.label)), ["長さ", "重さ", "温度", "面積", "体積", "速度"])
-    }
-
-    func testBaseConversion() {
-        XCTAssertEqual(BaseConverter.convert("255", from: 10, to: 16), "FF")
-        XCTAssertEqual(BaseConverter.convert("ff", from: 16, to: 2), "11111111")
-        XCTAssertEqual(BaseConverter.convert("-10", from: 10, to: 2), "-1010")
-        XCTAssertEqual(BaseConverter.convert("1111_0000", from: 2, to: 10), "240")
-        XCTAssertNil(BaseConverter.convert("12", from: 2, to: 10))
-        XCTAssertNil(BaseConverter.convert("", from: 10, to: 2))
-    }
-
-    func testWareki() {
-        // 元号の切り替わりの日
-        XCTAssertEqual(Wareki.text(year: 2019, month: 4, day: 30), "平成31年")
-        XCTAssertEqual(Wareki.text(year: 2019, month: 5, day: 1), "令和元年")
-        XCTAssertEqual(Wareki.text(year: 2026, month: 9, day: 20), "令和8年")
-        XCTAssertEqual(Wareki.text(year: 1989, month: 1, day: 7), "昭和64年")
-        XCTAssertEqual(Wareki.text(year: 1989, month: 1, day: 8), "平成元年")
-        XCTAssertEqual(Wareki.text(year: 1926, month: 12, day: 24), "大正15年")
-        XCTAssertNil(Wareki.text(year: 1868, month: 1, day: 24))
-        XCTAssertEqual(Wareki.westernYear(era: "平成", year: 1), 1989)
-        XCTAssertEqual(Wareki.westernYear(era: "令和", year: 8), 2026)
-        XCTAssertEqual(Wareki.westernYear(era: "昭和", year: 64), 1989)
-        XCTAssertNil(Wareki.westernYear(era: "令和", year: 0))
-        XCTAssertNil(Wareki.westernYear(era: "未来", year: 1))
-        // 満年齢は、誕生日の当日に増える
-        XCTAssertEqual(Wareki.age(birthYear: 2000, birthMonth: 9, birthDay: 21, onYear: 2026, month: 9, day: 20), 25)
-        XCTAssertEqual(Wareki.age(birthYear: 2000, birthMonth: 9, birthDay: 21, onYear: 2026, month: 9, day: 21), 26)
-        XCTAssertEqual(Wareki.zodiac(year: 2026), "午")
-        XCTAssertEqual(Wareki.zodiac(year: 2020), "子")
-    }
-
-    func testDateCalc() throws {
-        let calendar = DateCalc.calendar
-        let start = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 9, day: 20, hour: 23)))
-        let end = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 10, day: 20, hour: 1)))
-        // 時刻は無視して、日付だけで数える
-        XCTAssertEqual(DateCalc.days(from: start, to: end), 30)
-        XCTAssertEqual(DateCalc.days(from: end, to: start), -30)
-        XCTAssertEqual(DateCalc.days(from: start, to: DateCalc.adding(days: 100, to: start)), 100)
-        XCTAssertEqual(DateCalc.weekdayText(start), "日曜日")
-    }
-
-    func testTournamentSeedingAndByes() throws {
-        XCTAssertEqual(Tournament.seedOrder(size: 8), [1, 8, 4, 5, 2, 7, 3, 6])
-        // 5人: 8枠。第1〜3シード(A, B, C)が不戦勝
-        var tournament = try XCTUnwrap(Tournament(players: ["A", "B", "C", "D", "E"]))
-        XCTAssertEqual(tournament.rounds.map(\.count), [4, 2, 1])
-        XCTAssertEqual(tournament.rounds[0].map(\.isBye), [true, false, true, true])
-        XCTAssertEqual(tournament.rounds[0][1].first, "D")
-        XCTAssertEqual(tournament.rounds[0][1].second, "E")
-        // 不戦勝の人は、最初から次の試合に入っている。第1シードと第2シードは決勝まで当たらない
-        XCTAssertEqual(tournament.rounds[1][0].first, "A")
-        XCTAssertNil(tournament.rounds[1][0].second)
-        XCTAssertEqual(tournament.rounds[1][1].first, "B")
-        XCTAssertEqual(tournament.rounds[1][1].second, "C")
-        // 勝者をタップして進める
-        tournament.setWinner(round: 0, index: 1, name: "D")
-        XCTAssertEqual(tournament.rounds[1][0].second, "D")
-        tournament.setWinner(round: 1, index: 0, name: "D")
-        tournament.setWinner(round: 1, index: 1, name: "B")
-        XCTAssertEqual(tournament.rounds[2][0].first, "D")
-        XCTAssertEqual(tournament.rounds[2][0].second, "B")
-        tournament.setWinner(round: 2, index: 0, name: "B")
-        XCTAssertEqual(tournament.champion, "B")
-        // 前の試合の結果を変えたら、その先の結果は取り消す
-        tournament.setWinner(round: 0, index: 1, name: "E")
-        XCTAssertEqual(tournament.rounds[1][0].second, "E")
-        XCTAssertNil(tournament.rounds[1][0].winner)
-        XCTAssertNil(tournament.rounds[2][0].first)
-        XCTAssertNil(tournament.champion)
-        // 出場していない名前は勝者にできない
-        tournament.setWinner(round: 1, index: 0, name: "Z")
-        XCTAssertNil(tournament.rounds[1][0].winner)
-        // 4人なら不戦勝なし。1人と65人は作れない
-        XCTAssertEqual(try XCTUnwrap(Tournament(players: ["A", "B", "C", "D"])).rounds.map(\.count), [2, 1])
-        XCTAssertNil(Tournament(players: ["A"]))
-        XCTAssertNil(Tournament(players: (1...65).map(String.init)))
-        // 保存して復元できる
-        let restored = try JSONDecoder().decode(Tournament.self, from: JSONEncoder().encode(tournament))
-        XCTAssertEqual(restored, tournament)
-    }
-
-    func testTeamsAndNames() {
-        XCTAssertEqual(Shuffler.names(from: "A, B、C\nD\n\n ，E "), ["A", "B", "C", "D", "E"])
-        var generator = FixedGenerator()
-        let members = ["A", "B", "C", "D", "E", "F", "G"]
-        let teams = Shuffler.teams(members, count: 3, using: &generator)
-        // 人数がなるべく同じになる。全員がどこかに入る
-        XCTAssertEqual(teams.map(\.count), [3, 2, 2])
-        XCTAssertEqual(Set(teams.flatMap { $0 }), Set(members))
-        XCTAssertEqual(Shuffler.teams(["A"], count: 3, using: &generator).map(\.count), [1])
-        XCTAssertTrue(Shuffler.teams(members, count: 0, using: &generator).isEmpty)
-    }
-
-    func testTextCountAndKana() {
-        let text = "abc あいう\n１２"
-        let ignoring = TextCount.count(text, countsNewlines: false)
-        XCTAssertEqual(ignoring.characters, 9)
-        XCTAssertEqual(ignoring.charactersWithoutSpaces, 8)
-        XCTAssertEqual(ignoring.halfWidthUnits, 14)
-        XCTAssertEqual(ignoring.lines, 2)
-        let counting = TextCount.count(text, countsNewlines: true)
-        XCTAssertEqual(counting.characters, 10)
-        XCTAssertEqual(counting.halfWidthUnits, 15)
-        XCTAssertEqual(TextCount.count("", countsNewlines: true).lines, 0)
-        // 絵文字は1文字
-        XCTAssertEqual(TextCount.count("👨‍👩‍👧", countsNewlines: true).characters, 1)
-        XCTAssertEqual(KanaConvert.hiragana("カタカナ"), "かたかな")
-        XCTAssertEqual(KanaConvert.katakana("ひらがな"), "ヒラガナ")
-        XCTAssertEqual(KanaConvert.halfWidth("ＡＢＣ１２３"), "ABC123")
-        XCTAssertEqual(KanaConvert.fullWidth("abc"), "ａｂｃ")
-    }
-
-    func testPasswordGenerator() {
-        var generator = FixedGenerator()
-        let password = PasswordGenerator.generate(PasswordGenerator.Options(), using: &generator)
-        XCTAssertEqual(password.count, 16)
-        XCTAssertFalse(password.contains { "0Oo1lI".contains($0) })
-        var digits = PasswordGenerator.Options(length: 8, lowercase: false, uppercase: false, digits: true, symbols: false, avoidsAmbiguous: false)
-        XCTAssertTrue(PasswordGenerator.generate(digits, using: &generator).allSatisfy(\.isNumber))
-        digits.digits = false
-        // 文字の種類を1つも選んでいなければ、作らない
-        XCTAssertEqual(PasswordGenerator.generate(digits, using: &generator), "")
-        XCTAssertEqual(PasswordGenerator.alphabet(PasswordGenerator.Options()).count, 26 + 26 + 10 - 6)
-    }
-}
