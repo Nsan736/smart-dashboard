@@ -176,7 +176,7 @@ JavaScript で、アニメーション、模様(テクスチャ)、タップへ�
 | `setup()` | 始めたときに1回 |
 | `frame(t, dt)` | 毎コマ。`t` は始めてからの秒数、`dt` は前のコマからの秒数(最大0.1) |
 | `onTouch(event)` | 触れた・動かした・離したとき。`event.type` は `"down"` / `"move"` / `"up"`、`event.x` `event.y` はキャンバスの左上からの位置(pt) |
-| `onInput(name, value)` | 入力の部品が変わったとき。`name` は部品の `id`。始めたときにも、各部品の初期値で1回ずつ呼ばれます |
+| `onInput(name, value)` | 入力の部品が変わったとき。`name` は部品の `id`。始めたときにも、JSON の `controls` に書いた部品の初期値で1回ずつ呼ばれます(`ui.*` で作った部品は呼ばれません。値はスクリプトが知っています) |
 | `onStop()` | 画面を閉じるとき |
 | `onData(kind)` | アプリのデータが変わったとき(下の「アプリのデータ」) |
 
@@ -209,11 +209,14 @@ JavaScript で、アニメーション、模様(テクスチャ)、タップへ�
 ### 画面・入力の部品・音・振動・保存・乱数・ログ
 
 - `screen.width` `screen.height`(キャンバスの大きさ、pt)、`screen.dark`(ダークモードなら true)、`screen.scale`(1ptのピクセル数)
-- 入力の部品(スクリプトから): `ui.slider(id, { label, min, max, step, value })` `ui.button(id, { label })` `ui.toggle(id, { label, value })` `ui.text(id, { label, value })` `ui.choice(id, { label, options: [...], value })` `ui.set(id, value)` `ui.remove(id)`。変わると `onInput(id, value)` が呼ばれます(ボタンは value が true)
+- 入力の部品(スクリプトから): `ui.slider(id, { label, min, max, step, value })` `ui.button(id, { label })` `ui.toggle(id, { label, value })` `ui.text(id, { label, value, multiline, keyboard, placeholder })` `ui.choice(id, { label, options: [...], value })` `ui.set(id, value)` `ui.remove(id)`。変わると `onInput(id, value)` が呼ばれます(ボタンは value が true)。入れた文字を次に開いたときも残したいときは、`storage` に保存して、`setup` で `ui.text(id, { value: 保存した値 })` のように作ります
+- 画面を消さない: `screen.keepAwake(true)`(`false` で戻す)。ツールの画面を閉じると、必ず戻ります
 - 音: `sound.play(名前)`(`click` `pop` `beep` `coin` `success` `failure` `jump` `hit`)、`sound.tone(周波数Hz, 長さ秒, 音量0〜1)`(20〜8000Hz、2秒まで)。1秒に20回まで。ほかのアプリの音楽を止めません
 - 振動: `haptic(種類)`(`light` `medium` `heavy` `success` `warning` `error` `selection`)
 - 保存(このツールだけの領域): `storage.get(key)` `storage.set(key, value)`(JSON で表せる値) `storage.remove(key)` `storage.keys()` `storage.clear()`。合計256KBまで、キーは100文字・1000個まで。端末に書くのは2秒ごとと、閉じたとき
-- 乱数: `random.seed(n)` `random.next()`(0以上1未満) `random.range(a, b)` `random.int(a, b)`(a以上b以下の整数) `random.pick(配列)`。`Math.random()` も使えます
+- 乱数: `random.seed(n)` `random.next()`(0以上1未満) `random.range(a, b)` `random.int(a, b)`(a以上b以下の整数) `random.pick(配列)`。`Math.random()` も使えます。パスワードなどには、暗号に使える乱数 `random.secure()`(0以上1未満) `random.secureInt(a, b)`(a以上b以下の整数。`seed` の影響を受けない)
+- 通知: `notify.schedule(id, 秒, { title, body })` で、その秒数のあとに端末の通知を出します(アプリを閉じていても出ます。初めてのときに通知の許可を求めます)。`notify.cancel(id)` `notify.cancelAll()` で取り消し。`id` は英数字と `_` `-` の30文字まで(同じ `id` で予約し直すと置き換え)、秒は1〜86400(24時間)、`title` は40文字、`body` は120文字まで。予約は1つのツールで8件まで、1回の呼び出し(1コマ)で4件まで。保存する前の確かめ(プレビュー)と試しの実行では予約しません。ツールを削除すると、そのツールの通知も消えます
+- クリップボード: `clipboard.copy(文字)` で、クリップボードに書きます(10,000文字まで、1回の呼び出しで1回まで。画面に「コピーしました」)。読み出す機能はありません
 - ログ: `console.log(...)` `console.warn` `console.error`。ツールの画面の「ログ」で直近300行を見られます
 
 ### 入力の部品(`controls`)
@@ -226,6 +229,9 @@ JavaScript で、アニメーション、模様(テクスチャ)、タップへ�
 | `min` `max` `step` `value` | | スライダーの範囲・刻み・初期値 |
 | `value` | | 切り替えは true / false、文字は文字列、選択肢は選んでおく文字列 |
 | `options` | | 選択肢の文字列の配列(`choice` のとき、1〜30個) |
+| `multiline` | | 文字の欄を複数行にする(true / false)。1行は200文字、複数行は5000文字まで |
+| `keyboard` | | 文字の欄のキーボード。`text`(初期値) / `number`(数字と記号) / `decimal`(小数点つきの数字) |
+| `placeholder` | | 文字の欄が空のときに出す説明(60文字まで) |
 
 ### アプリのデータ(`app`、`permissions`)
 
@@ -303,6 +309,15 @@ JavaScript で、アニメーション、模様(テクスチャ)、タップへ�
 - スクリプトは専用のスレッドで動き、画面の操作(閉じるボタンなど)は止まりません。1回の呼び出し(`setup` `frame` など)が2秒以上戻らないと「応答なし」と出て、閉じるボタンで実行を打ち切れます。端末の JavaScriptCore で実行時間の制限が使えるときは、5秒で自動的に止めます
 - 実行中にアプリが落ちたとき(固まって終了した、メモリを使いすぎた、など)は、次に起動したときに「前回このツールの実行中に止まりました」と出て、そのツールを開かずに「もう一度試す」「無効にする」「削除する」を選べます。設定の「小ツール」で、スクリプト型のツールをすべて止めることもできます
 - 軽く作るこつ(iPhone SE 第2世代を基準に): 1コマの図形は数百個まで、粒子(パーティクル)は数百個まで、`measureText` や `image.create` を毎コマ呼ばない、大きな画像は `setup` で1回だけ作る
+
+## 組み込みのツールの JavaScript 版
+
+小ツールの一覧に「(JavaScript 版)」として並ぶもの(タイマー、時間計算、トーナメント表、ルーレットなど)は、スクリプト型で書いた組み込みのツールです。ソースは [examples/tools/src/builtin/](../examples/tools/src/builtin/)(共通の部品 `_kit.js` を先頭に付けて JSON にしたものが [examples/tools/builtin/](../examples/tools/builtin/))。
+
+- 元の版はアプリに同梱していて、アプリの更新で新しくなります(書き換えはできません)
+- ツールの画面の「その他」→「複製して編集」で、読み込んだツールとして保存できる複製を作れます(ID は `my-…`、名前の後ろに「(コピー)」)。複製はアプリの更新で変わりません
+- `id` が `builtin-js.` で始まるツールは、組み込みの版のために取ってあるので、読み込んで保存することはできません
+- 保存領域はツールごとなので、複製は元の版のデータ(タイマーの一覧など)を引き継ぎません
 
 ## サンプル
 

@@ -65,6 +65,12 @@ struct ScriptOutput {
     var sounds: [ScriptSoundRequest] = []
     var haptics: [String] = []
     var sensorRequests: [ScriptSensorRequest] = []
+    /// 通知の予約・取り消し(v0.9.32)
+    var notifications: [ScriptNotificationRequest] = []
+    /// 画面を消さない(v0.9.32。最後の指定だけ。nil は変更なし)
+    var keepAwake: Bool?
+    /// クリップボードに書く文字(v0.9.32。1回の呼び出しで1つだけ)
+    var clipboard: String?
     /// 止めるほどのエラー(例外、時間切れ)
     var error: String?
     var timedOut = false
@@ -417,6 +423,45 @@ final class ScriptRuntime {
             JapaneseHolidays.holidayName(year: year, month: month, day: day) ?? ""
         }
         set("holidayName", unsafeBitCast(holidayName, to: AnyObject.self))
+
+        // 通知(v0.9.32)。予約するのは画面の側(ツールの ID で分ける)。試しの実行では受け付けない
+        let notify: @convention(block) (String) -> Bool = { [weak self] json in
+            guard let self else { return false }
+            self.lastError = ""
+            switch ScriptNotificationRequest.parse(json) {
+            case .success(let request):
+                guard !self.headless, self.pending.notifications.count < ScriptNotificationRequest.maxPerCall else { return false }
+                self.pending.notifications.append(request)
+                return true
+            case .failure(let issue):
+                self.lastError = "notify: " + issue.message
+                return false
+            }
+        }
+        set("notify", unsafeBitCast(notify, to: AnyObject.self))
+
+        let keepAwake: @convention(block) (Bool) -> Void = { [weak self] on in
+            guard let self, !self.headless else { return }
+            self.pending.keepAwake = on
+        }
+        set("keepAwake", unsafeBitCast(keepAwake, to: AnyObject.self))
+
+        // クリップボードに書くだけ(読む関数はない)
+        let copy: @convention(block) (String) -> Bool = { [weak self] text in
+            guard let self else { return false }
+            self.lastError = ""
+            guard text.count <= ScriptClipboard.maxLength else {
+                self.lastError = "clipboard.copy: \(ScriptClipboard.maxLength)文字までにしてください"
+                return false
+            }
+            guard !self.headless, self.pending.clipboard == nil else { return false }
+            self.pending.clipboard = text
+            return true
+        }
+        set("copy", unsafeBitCast(copy, to: AnyObject.self))
+
+        let secureRandom: @convention(block) () -> Double = { ScriptSecureRandom.next() }
+        set("secureRandom", unsafeBitCast(secureRandom, to: AnyObject.self))
 
         context.setObject(native, forKeyedSubscript: "__native" as NSString)
     }

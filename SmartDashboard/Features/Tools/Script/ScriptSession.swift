@@ -112,6 +112,7 @@ final class ScriptSession {
     private func stopRunner() {
         runner?.cancel()
         runner = nil
+        ScreenAwake.set(awakeReason, false)
         watchdog?.invalidate()
         watchdog = nil
         sound.stop()
@@ -186,9 +187,34 @@ final class ScriptSession {
         // バックグラウンドの間の依頼は、データの出どころが覚えておき、戻ったときに動かす
         for request in output.sensorRequests where granted.contains(.sensors) { data.setSensor(request.kind, on: request.on) }
         for request in output.exports { export(request) }
+        applySystem(output)
         if let error = output.error {
             status = .failed(error)
             stopRunner()
+        }
+    }
+
+    // MARK: - 通知・画面を消さない・コピー(v0.9.32)
+
+    private var awakeReason: String { "script.\(tool.id)" }
+
+    private func applySystem(_ output: ScriptOutput) {
+        // プレビュー(保存する前)では、通知を予約しない
+        if !isPreview {
+            for request in output.notifications { ScriptNotifications.apply(request, toolID: tool.id, toolName: tool.name) }
+        }
+        if let on = output.keepAwake { ScreenAwake.set(awakeReason, on) }
+        if let text = output.clipboard {
+            UIPasteboard.general.string = text
+            showMessage("コピーしました")
+        }
+    }
+
+    private func showMessage(_ text: String) {
+        exportMessage = text
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(1.5))
+            if self?.exportMessage == text { self?.exportMessage = nil }
         }
     }
 

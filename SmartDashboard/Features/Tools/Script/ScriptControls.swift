@@ -31,6 +31,16 @@ struct ScriptControlSpec: Equatable, Identifiable {
 
     static let maxControls = 20
     static let maxOptions = 30
+    /// 文字の欄の長さの上限(1行・複数行。v0.9.32)
+    static let maxTextLength = 200
+    static let maxMultilineLength = 5000
+
+    /// 文字の欄のキーボード(v0.9.32)
+    enum Keyboard: String, CaseIterable {
+        case text
+        case number
+        case decimal
+    }
 
     var id: String
     var kind: Kind
@@ -40,6 +50,13 @@ struct ScriptControlSpec: Equatable, Identifiable {
     var step = 0.0
     var options: [String] = []
     var value: ScriptControlValue
+    /// 文字の欄: 複数行(5000文字まで)。v0.9.32
+    var multiline = false
+    var keyboard: Keyboard = .text
+    var placeholder = ""
+
+    /// 文字の欄の長さの上限
+    var maxLength: Int { multiline ? Self.maxMultilineLength : Self.maxTextLength }
 
     /// JSON の辞書から作る。読めなければ理由(path は場所の表示に使う)。
     static func parse(_ raw: [String: Any], path: String) -> Result<ScriptControlSpec, ToolIssue> {
@@ -68,7 +85,15 @@ struct ScriptControlSpec: Equatable, Identifiable {
         case .toggle:
             spec.value = .bool((raw["value"] as? Bool) ?? (raw["default"] as? Bool) ?? false)
         case .text:
-            spec.value = .text(String(((raw["value"] as? String) ?? (raw["default"] as? String) ?? "").prefix(200)))
+            spec.multiline = (raw["multiline"] as? Bool) ?? false
+            if let keyboard = raw["keyboard"], !(keyboard is NSNull) {
+                guard let text = keyboard as? String, let value = Keyboard(rawValue: text) else {
+                    return .failure(ToolIssue(path: "\(path).keyboard", message: Keyboard.allCases.map(\.rawValue).joined(separator: " / ") + " のどれかにしてください"))
+                }
+                spec.keyboard = value
+            }
+            spec.placeholder = String(((raw["placeholder"] as? String) ?? "").prefix(60))
+            spec.value = .text(String(((raw["value"] as? String) ?? (raw["default"] as? String) ?? "").prefix(spec.maxLength)))
         case .choice:
             guard let options = raw["options"] as? [String], !options.isEmpty, options.count <= maxOptions else {
                 return .failure(ToolIssue(path: "\(path).options", message: "選択肢の文字列の配列(1〜\(maxOptions)個)にしてください"))
@@ -109,7 +134,7 @@ enum ScriptUIChange: Equatable {
         case "set":
             if let value = raw["value"] as? NSNumber, CFGetTypeID(value) == CFBooleanGetTypeID() { return .set(id: id, value: .bool(value.boolValue)) }
             if let value = raw["value"] as? NSNumber { return .set(id: id, value: .number(value.doubleValue)) }
-            if let value = raw["value"] as? String { return .set(id: id, value: .text(String(value.prefix(200)))) }
+            if let value = raw["value"] as? String { return .set(id: id, value: .text(String(value.prefix(ScriptControlSpec.maxMultilineLength)))) }
             return .invalid("ui.set: 値は数・真偽値・文字にしてください")
         case "remove":
             return .remove(id: id)
@@ -133,7 +158,8 @@ enum ScriptUIChange: Equatable {
                 guard let index = result.firstIndex(where: { $0.id == id }) else { continue }
                 switch (result[index].kind, value) {
                 case (.slider, .number(let number)): result[index].value = .number(result[index].snapped(number))
-                case (.toggle, .bool), (.text, .text): result[index].value = value
+                case (.toggle, .bool): result[index].value = value
+                case (.text, .text(let text)): result[index].value = .text(String(text.prefix(result[index].maxLength)))
                 case (.choice, .text(let text)) where result[index].options.contains(text): result[index].value = value
                 default: break
                 }

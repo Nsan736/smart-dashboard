@@ -136,6 +136,26 @@ enum ScriptPrelude {
       global.ctx = ctx;
 
       global.screen = { width: 0, height: 0, dark: false, scale: 2 };
+      Object.defineProperty(global.screen, 'keepAwake', { value: function (on) { native.keepAwake(!!on); }, enumerable: false });
+
+      // 通知(端末のローカル通知。ツールごとに8件まで)
+      function notifyCall(spec) { if (!native.notify(JSON.stringify(spec))) { var e = native.lastError(); if (e) throw new Error(e); return false; } return true; }
+      global.notify = Object.freeze({
+        schedule: function (id, seconds, o) {
+          o = (typeof o === 'string') ? { title: o } : (o || {});
+          return notifyCall({ op: 'schedule', id: String(id), seconds: +seconds, title: o.title === undefined ? '' : String(o.title), body: o.body === undefined ? '' : String(o.body) });
+        },
+        cancel: function (id) { return notifyCall({ op: 'cancel', id: String(id) }); },
+        cancelAll: function () { return notifyCall({ op: 'cancelAll' }); }
+      });
+      // クリップボード(書くだけ)
+      global.clipboard = Object.freeze({
+        copy: function (text) {
+          var ok = native.copy(String(text));
+          if (!ok) { var e = native.lastError(); if (e && e.indexOf('clipboard') === 0) throw new Error(e); }
+          return ok;
+        }
+      });
 
       global.image = {
         create: function (width, height, pixels) {
@@ -167,7 +187,11 @@ enum ScriptPrelude {
         slider: function (id, o) { o = o || {}; native.ui(JSON.stringify({ op: 'add', id: String(id), type: 'slider', label: o.label, min: o.min, max: o.max, step: o.step, value: o.value })); },
         button: function (id, o) { o = (typeof o === 'string') ? { label: o } : (o || {}); native.ui(JSON.stringify({ op: 'add', id: String(id), type: 'button', label: o.label })); },
         toggle: function (id, o) { o = o || {}; native.ui(JSON.stringify({ op: 'add', id: String(id), type: 'toggle', label: o.label, value: !!o.value })); },
-        text: function (id, o) { o = o || {}; native.ui(JSON.stringify({ op: 'add', id: String(id), type: 'text', label: o.label, value: o.value === undefined ? '' : String(o.value) })); },
+        text: function (id, o) {
+          o = o || {};
+          native.ui(JSON.stringify({ op: 'add', id: String(id), type: 'text', label: o.label, value: o.value === undefined ? '' : String(o.value),
+                                     multiline: !!o.multiline, keyboard: o.keyboard, placeholder: o.placeholder }));
+        },
         choice: function (id, o) { o = o || {}; native.ui(JSON.stringify({ op: 'add', id: String(id), type: 'choice', label: o.label, options: o.options, value: o.value })); },
         set: function (id, value) { native.ui(JSON.stringify({ op: 'set', id: String(id), value: value })); },
         remove: function (id) { native.ui(JSON.stringify({ op: 'remove', id: String(id) })); }
@@ -207,7 +231,10 @@ enum ScriptPrelude {
         },
         range: function (a, b) { return a + (b - a) * this.next(); },
         int: function (a, b) { return Math.floor(a + (b - a + 1) * this.next()); },
-        pick: function (list) { return list[Math.floor(this.next() * list.length)]; }
+        pick: function (list) { return list[Math.floor(this.next() * list.length)]; },
+        // 暗号に使える乱数(パスワードなど。シードの影響を受けない)
+        secure: function () { return native.secureRandom(); },
+        secureInt: function (a, b) { a = Math.ceil(a); b = Math.floor(b); return Math.min(b, a + Math.floor((b - a + 1) * native.secureRandom())); }
       };
 
       function text(args) {
